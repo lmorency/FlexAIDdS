@@ -15,6 +15,8 @@
 #include "cuda_eval.cuh"
 #endif
 
+#include "statmech.h"
+
 // in milliseconds
 # define SLEEP 25
 
@@ -391,6 +393,22 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		printf("Save snapshot == END ==\n");
 		print_par((*chrom_snapshot),(*gene_lim),n_chrom_snapshot,GB->num_genes);
 	*/
+
+	// Thermodynamic analysis of the final conformational ensemble
+	if(n_chrom_snapshot > 0) {
+		double T_K = (FA->temperature > 0) ? static_cast<double>(FA->temperature) : 300.0;
+		statmech::StatMechEngine sme(T_K);
+		for(int s = 0; s < n_chrom_snapshot; ++s)
+			sme.add_sample((*chrom_snapshot)[s].evalue);
+		statmech::Thermodynamics td = sme.compute();
+		printf("--- Thermodynamics (T = %.1f K, N = %d conformers) ---\n",
+		       td.temperature, n_chrom_snapshot);
+		printf("  Helmholtz free energy  F  = %10.4f kcal/mol\n", td.free_energy);
+		printf("  Mean energy          <E>  = %10.4f kcal/mol\n", td.mean_energy);
+		printf("  Energy std dev        σ_E = %10.4f kcal/mol\n", td.std_energy);
+		printf("  Heat capacity         C_v = %10.4f kcal/(mol·K)\n", td.heat_capacity);
+		printf("  Entropy               S   = %10.6f kcal/(mol·K)\n", td.entropy);
+	}
 
 	return n_chrom_snapshot;
 }
