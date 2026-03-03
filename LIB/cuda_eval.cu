@@ -50,6 +50,11 @@ struct CudaEvalCtx {
     int n_atoms;
     int n_types;
     int max_pop;
+
+    // Ligand atom range and VdW permeability (from FA_Global)
+    int   lig_first;  // 0-based index of first ligand atom
+    int   lig_last;   // 0-based index of last ligand atom
+    float perm;       // van-der-Waals permeability
 };
 
 // ─── pairwise CF kernel ──────────────────────────────────────────────────────
@@ -165,15 +170,21 @@ __global__ void kernel_eval_cf(
 CudaEvalCtx* cuda_eval_init(int   n_atoms,
                              int   n_types,
                              int   max_pop,
+                             int   lig_first,
+                             int   lig_last,
+                             float perm,
                              const float* h_atom_xyz,
                              const int*   h_atom_type,
                              const float* h_atom_radius,
                              const float* h_emat)
 {
     CudaEvalCtx* ctx = new CudaEvalCtx;
-    ctx->n_atoms = n_atoms;
-    ctx->n_types = n_types;
-    ctx->max_pop = max_pop;
+    ctx->n_atoms   = n_atoms;
+    ctx->n_types   = n_types;
+    ctx->max_pop   = max_pop;
+    ctx->lig_first = lig_first;
+    ctx->lig_last  = lig_last;
+    ctx->perm      = perm;
 
     size_t xyz_bytes    = static_cast<size_t>(n_atoms) * 3 * sizeof(float);
     size_t type_bytes   = static_cast<size_t>(n_atoms) * sizeof(int);
@@ -209,11 +220,9 @@ void cuda_eval_batch(CudaEvalCtx* ctx,
     CUDA_CHECK(cudaMemcpy(ctx->d_genes, h_genes, gene_bytes, cudaMemcpyHostToDevice));
 
     // Launch: one block per chromosome, BLOCK_SIZE threads per block
-    // Ligand atom range and permeability are hardcoded for now — in production
-    // these would come from FA_Global uploaded to constant memory.
-    int lig_first = 0;   // placeholder: set from FA->resligand
-    int lig_last  = 0;
-    float perm    = 1.0f;
+    int lig_first = ctx->lig_first;
+    int lig_last  = ctx->lig_last;
+    float perm    = ctx->perm;
 
     kernel_eval_cf<<<pop_size, BLOCK_SIZE>>>(
         ctx->d_atom_xyz,

@@ -24,6 +24,9 @@ struct CudaEvalCtx;
 //   n_atoms       – total atom count (atoms array size)
 //   n_types       – number of atom types (energy_matrix dimension)
 //   max_pop       – maximum population size (upper bound on batch)
+//   lig_first     – 0-based index of first ligand atom in atoms array
+//   lig_last      – 0-based index of last ligand atom in atoms array
+//   perm          – van-der-Waals permeability (FA->permeability)
 //   h_atom_xyz    – host atom coordinates   [n_atoms × 3, float]
 //   h_atom_type   – host atom type array    [n_atoms, int]
 //   h_atom_radius – host atom radii         [n_atoms, float]
@@ -31,6 +34,9 @@ struct CudaEvalCtx;
 CudaEvalCtx* cuda_eval_init(int   n_atoms,
                              int   n_types,
                              int   max_pop,
+                             int   lig_first,
+                             int   lig_last,
+                             float perm,
                              const float* h_atom_xyz,
                              const int*   h_atom_type,
                              const float* h_atom_radius,

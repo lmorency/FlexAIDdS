@@ -10,6 +10,13 @@
 #include <omp.h>
 #endif
 
+#ifdef FLEXAIDS_USE_CUDA
+#include <vector>
+#include "cuda_eval.cuh"
+#endif
+
+#include "statmech.h"
+
 // in milliseconds
 # define SLEEP 25
 
@@ -386,6 +393,22 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		printf("Save snapshot == END ==\n");
 		print_par((*chrom_snapshot),(*gene_lim),n_chrom_snapshot,GB->num_genes);
 	*/
+
+	// Thermodynamic analysis of the final conformational ensemble
+	if(n_chrom_snapshot > 0) {
+		double T_K = (FA->temperature > 0) ? static_cast<double>(FA->temperature) : 300.0;
+		statmech::StatMechEngine sme(T_K);
+		for(int s = 0; s < n_chrom_snapshot; ++s)
+			sme.add_sample((*chrom_snapshot)[s].evalue);
+		statmech::Thermodynamics td = sme.compute();
+		printf("--- Thermodynamics (T = %.1f K, N = %d conformers) ---\n",
+		       td.temperature, n_chrom_snapshot);
+		printf("  Helmholtz free energy  F  = %10.4f kcal/mol\n", td.free_energy);
+		printf("  Mean energy          <E>  = %10.4f kcal/mol\n", td.mean_energy);
+		printf("  Energy std dev        σ_E = %10.4f kcal/mol\n", td.std_energy);
+		printf("  Heat capacity         C_v = %10.4f kcal/(mol·K)\n", td.heat_capacity);
+		printf("  Entropy               S   = %10.6f kcal/(mol·K)\n", td.entropy);
+	}
 
 	return n_chrom_snapshot;
 }
@@ -837,6 +860,79 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 	//float tot=0.0;
 	double share,rmsp;
 
+	// Chromosome evaluation: GPU batch path (FLEXAIDS_USE_CUDA) or
+	// OpenMP-parallelised CPU path.
+#ifdef FLEXAIDS_USE_CUDA
+	{
+		int n_atoms = FA->MIN_NUM_ATOM;
+		int n_types = FA->ntypes;
+		int n_genes = GB->num_genes;
+
+		// Build flat host arrays from atoms[]
+		std::vector<float> h_xyz(n_atoms * 3);
+		std::vector<int>   h_type(n_atoms);
+		std::vector<float> h_radius(n_atoms);
+		for (int a = 0; a < n_atoms; ++a) {
+			h_xyz[a*3+0] = atoms[a].coor[0];
+			h_xyz[a*3+1] = atoms[a].coor[1];
+			h_xyz[a*3+2] = atoms[a].coor[2];
+			h_type[a]    = atoms[a].type - 1;  // convert 1-based to 0-based
+			h_radius[a]  = atoms[a].radius;
+		}
+
+		// Flatten energy matrix: use y-value at full contact (weight==1) or
+		// midpoint interpolation (density function) as a representative scalar.
+		std::vector<float> h_emat(n_types * n_types, 0.0f);
+		for (int t1 = 0; t1 < n_types; ++t1) {
+			for (int t2 = 0; t2 < n_types; ++t2) {
+				struct energy_matrix* em = &FA->energy_matrix[t1*n_types + t2];
+				if (em->energy_values != NULL) {
+					if (em->weight)
+						h_emat[t1*n_types + t2] = em->energy_values->y;
+					else
+						h_emat[t1*n_types + t2] = static_cast<float>(get_yval(em, 0.5));
+				}
+			}
+		}
+
+		// Ligand atom range (0-based indices into atoms[])
+		int lig_first = (FA->resligand != NULL && FA->resligand->fatm != NULL)
+		                ? FA->resligand->fatm[0] : 0;
+		int lig_last  = (FA->resligand != NULL && FA->resligand->latm != NULL)
+		                ? FA->resligand->latm[0] : 0;
+
+		CudaEvalCtx* ctx = cuda_eval_init(
+			n_atoms, n_types, pop_size,
+			lig_first, lig_last, FA->permeability,
+			h_xyz.data(), h_type.data(), h_radius.data(), h_emat.data());
+
+		// Build flat gene array [pop_size × n_genes] from to_ic values
+		std::vector<double> h_genes(pop_size * n_genes, 0.0);
+		for (int c = 0; c < pop_size; ++c) {
+			for (int g = 0; g < n_genes; ++g)
+				h_genes[c*n_genes + g] = chrom[c].genes[g].to_ic;
+		}
+
+		std::vector<double> h_cf_out(pop_size, 0.0);
+		cuda_eval_batch(ctx, pop_size, n_genes, h_genes.data(), h_cf_out.data());
+		cuda_eval_shutdown(ctx);
+
+		// Copy CUDA scores back; skip chromosomes already marked evaluated ('n')
+		for (int c = 0; c < pop_size; ++c) {
+			if (chrom[c].status != 'n') {
+				chrom[c].cf.com     = h_cf_out[c];
+				chrom[c].cf.con     = 0.0;
+				chrom[c].cf.wal     = 0.0;
+				chrom[c].cf.sas     = 0.0;
+				chrom[c].cf.totsas  = 0.0;
+				chrom[c].cf.rclash  = 0;
+				chrom[c].evalue     = h_cf_out[c];
+				chrom[c].app_evalue = h_cf_out[c];
+				chrom[c].status     = 'n';
+			}
+		}
+	}
+#else
 	// OpenMP-parallelised chromosome evaluation: each thread gets its own
 	// copy of the mutable scoring state via firstprivate on the VC context.
 	#ifdef _OPENMP
@@ -851,6 +947,7 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 			chrom[i].status='n';
 		}
 	}
+#endif
 
 	QuickSort(chrom,0,pop_size-1,true);
 
