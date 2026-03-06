@@ -149,6 +149,8 @@ target_sources(FlexAID PRIVATE
         LIB/LigandRingFlex/SugarPucker.cpp
         LIB/LigandRingFlex/LigandRingFlex.cpp
         LIB/NATURaL/NATURaLDualAssembly.cpp
+        LIB/NATURaL/RibosomeElongation.cpp
+        LIB/NATURaL/TransloconInsertion.cpp
         LIB/ChiralCenter/ChiralCenterGene.cpp
 )
 
