@@ -1,5 +1,5 @@
 #include "flexaid.h"
-#include "boinc.h"
+#include "fileio.h"
 
 /*****************************************************/
 /******* this function updates the atoms str  ********/

@@ -1,5 +1,5 @@
 #include "flexaid.h"
-#include "boinc.h"
+#include "fileio.h"
 
 /******************************************************************************
  * SUBROUTINE write_MODEL_to_pdb writes a MODEL structure to a PDB file

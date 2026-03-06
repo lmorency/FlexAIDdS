@@ -1,5 +1,5 @@
 #include "flexaid.h"
-#include "boinc.h"
+#include "fileio.h"
 
 /***********************************************************************************
  * This subroutine reads a rotamer library and records in an array of structures of

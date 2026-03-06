@@ -1,5 +1,5 @@
 #include "flexaid.h"
-#include "boinc.h"
+#include "fileio.h"
 
 /*****************************************************************************
  * SUBROUTINE read_lig reads the ligand information from the input file 

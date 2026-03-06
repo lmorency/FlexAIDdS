@@ -1,5 +1,5 @@
 #include "gaboom.h"
-#include "boinc.h"
+#include "fileio.h"
 
 // Chi(x) function as defined in :
 //   Science 344(6191):1492-1496, 2014, Eq. (1)

@@ -1,5 +1,5 @@
 #include "flexaid.h"
-#include "boinc.h"
+#include "fileio.h"
 
 void read_grid(FA_Global* FA,gridpoint** cleftgrid,char filename[]){
 

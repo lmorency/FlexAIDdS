@@ -1,5 +1,5 @@
 #include "flexaid.h"
-#include "boinc.h"
+#include "fileio.h"
 /********************************************************************************
  * This function calculates the RSMD between atomic coordinates of the atoms in *
  * the register ori_ligatm and those for the atoms of the ligand in             *

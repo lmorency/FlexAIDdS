@@ -1,5 +1,5 @@
 #include "gaboom.h"
-#include "boinc.h"
+#include "fileio.h"
 
 void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, genlim* gene_lim, atom* atoms, resid* residue, gridpoint* cleftgrid, int num_chrom, char* end_strfile, char* tmp_end_strfile, char* dockinp, char* gainp)
 {

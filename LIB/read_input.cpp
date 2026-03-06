@@ -1,5 +1,5 @@
 #include "flexaid.h"
-#include "boinc.h"
+#include "fileio.h"
 
 /***************************************************************************** 
  * SUBROUTINE read_input reads input file.

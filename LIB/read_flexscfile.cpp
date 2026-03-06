@@ -1,5 +1,5 @@
 #include "flexaid.h"
-#include "boinc.h"
+#include "fileio.h"
 
 /***********************************************************************************
  * This subroutine reads the identities of the side chains to be set flexible

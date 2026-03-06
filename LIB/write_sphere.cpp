@@ -1,5 +1,5 @@
 #include "flexaid.h"
-#include "boinc.h"
+#include "fileio.h"
 
 void write_sphere(FA_Global* FA,char filename[]){
 

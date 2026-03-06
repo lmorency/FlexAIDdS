@@ -1,6 +1,6 @@
 #include "gaboom.h"
 #include "Vcontacts.h"
-#include "boinc.h"
+#include "fileio.h"
 
 #include <random>
 #include <functional>
@@ -256,10 +256,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 
 		////////////////////////////////
 
-		// BOINC CLIENT GUI PROGRESS BAR
-#ifdef ENABLE_BOINC
-		boinc_fraction_done((double)(i+1)/(double)GB->max_generations);
-#endif
+		////////////////////////////////
 
 		////////////////////////////////
 
@@ -359,12 +356,9 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 
 	QuickSort((*chrom),0,GB->num_chrom-1,true);
 
-#ifndef ENABLE_BOINC
-        // do not write binary files to continue simulations
 	strcpy(outfile,FA->rrgfile);
 	strcat(outfile,"_par.res");
 	if (FA->htpmode == false) {write_par((*chrom),(*gene_lim),i+1,outfile,GB->num_chrom,GB->num_genes);}
-#endif
 
 	printf("sorting chrom_snapshot\n");
 	//quicksort_app_evalue((*chrom_snapshot),0,n_chrom_snapshot-1);

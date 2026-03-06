@@ -1,5 +1,5 @@
 #include "flexaid.h"
-#include "boinc.h"
+#include "fileio.h"
 
 void assign_eigen(FA_Global *FA,atom* atoms,resid* residue, int res_cnt, int nmodes){
     int i,j,k,l;

@@ -1,5 +1,5 @@
 #include "gaboom.h"
-#include "boinc.h"
+#include "fileio.h"
 
 /******************************************************************************
  * SUBROUTINE ic2cf gets a vector with internal coordinates rebuilds the 

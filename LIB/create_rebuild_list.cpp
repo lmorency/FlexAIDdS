@@ -1,5 +1,5 @@
 #include "flexaid.h"
-#include "boinc.h"
+#include "fileio.h"
 /******************************************************************************
  * SUBROUTINE create_rebuild_list uses the map_par to create for each residue 
  * the list of atoms that will have to be reconstructed each time a ic2cf call 

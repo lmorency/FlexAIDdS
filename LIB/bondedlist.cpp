@@ -1,5 +1,5 @@
 #include "flexaid.h"
-#include "boinc.h"
+#include "fileio.h"
 
 /******************************************************************************
  * SUBROUTINE bondedlist creates the list of atoms nloops bonds away from atom

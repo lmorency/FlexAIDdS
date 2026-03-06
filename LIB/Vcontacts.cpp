@@ -1,5 +1,5 @@
 #include "Vcontacts.h"
-#include "boinc.h"
+#include "fileio.h"
 
 // Vcontacts calculates the SAS only for the residue sent in argument
 int Vcontacts(FA_Global* FA,atom* atoms,resid* residue,VC_Global* VC,

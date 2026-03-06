@@ -1,5 +1,5 @@
 #include "gaboom.h"
-#include "boinc.h"
+#include "fileio.h"
 
 /******************************************************************************
  * SUBROUTINE write_pdb writes a PDB file

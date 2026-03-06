@@ -1,6 +1,6 @@
 #include "gaboom.h"
 #include "maps.hpp"
-#include "boinc.h"
+#include "fileio.h"
 
 /**************************************************************/
 /******** THIS FUNCTION IS USED TO SELECT AREAS OF ************/

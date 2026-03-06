@@ -3,7 +3,7 @@
 #include <vector>
 
 #include "flexaid.h"
-#include "boinc.h"
+#include "fileio.h"
 
 /****************************************/
 /* assign_flexclash: assigns the flexible

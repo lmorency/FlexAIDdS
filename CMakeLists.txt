@@ -14,7 +14,7 @@ endif()
 add_executable(FlexAID "")
 target_sources(FlexAID PRIVATE
         LIB/top.cpp
-        LIB/boinc.cpp
+        LIB/fileio.cpp
         LIB/assign_shift.cpp
         LIB/buildic.cpp
         LIB/Vcontacts.cpp

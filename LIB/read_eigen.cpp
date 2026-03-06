@@ -1,5 +1,5 @@
 #include "flexaid.h"
-#include "boinc.h"
+#include "fileio.h"
 
 /***********************************************************/
 /****** This function reads the eigen vectors used   *******/

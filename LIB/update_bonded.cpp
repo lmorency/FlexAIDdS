@@ -1,5 +1,5 @@
 #include "flexaid.h"
-#include "boinc.h"
+#include "fileio.h"
 
 // the function updates the matrix of bonded atoms
 // the matrix starts at [0,0] with residue[ires].fatm

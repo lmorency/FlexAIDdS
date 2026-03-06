@@ -1,5 +1,5 @@
 #include "flexaid.h"
-#include "boinc.h"
+#include "fileio.h"
 
 void read_constraints(FA_Global* FA, atom* atoms, resid* residue, char* filename) {
   

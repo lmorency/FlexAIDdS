@@ -2,7 +2,7 @@
 #define BINDINGMODE_H
 
 #include "gaboom.h"
-#include "boinc.h"
+#include "fileio.h"
 
 //#define UNDEFINED_DIST FLT_MAX // Defined in FOPTICS as > than +INF
 #define UNDEFINED_DIST -0.1f // Defined in FOPTICS as > than +INF

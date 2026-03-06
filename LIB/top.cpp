@@ -1,5 +1,5 @@
 #include "gaboom.h"
-#include "boinc.h"
+#include "fileio.h"
 #include "Vcontacts.h"
 
 int main(int argc, char **argv){
@@ -202,9 +202,6 @@ int main(int argc, char **argv){
 	  printf("platform is little-endian\n");    
 	*/
 
-	// use boinc_init();
-	Initialize();
-  
 	wif083(FA); // initialization of FA->sphere[]
 	
 	///////////////////////////////////////////////////////////////////////////////

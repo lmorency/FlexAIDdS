@@ -1,5 +1,5 @@
 #include "flexaid.h"
-#include "boinc.h"
+#include "fileio.h"
 
 /******************************************************************************
  * SUBROUTINE residue_conect reads and creates conectivity for protein residues

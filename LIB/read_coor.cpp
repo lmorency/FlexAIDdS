@@ -1,5 +1,5 @@
 #include "flexaid.h"
-#include "boinc.h"
+#include "fileio.h"
 /***************************************************************************** 
  * SUBROUTINE read coor, gets a coordinates line from read_pdb and extracts
  * the coordinates, atom name, chain name, counts the number of ligands, 

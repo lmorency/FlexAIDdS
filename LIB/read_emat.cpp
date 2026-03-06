@@ -3,7 +3,7 @@
 #include <vector>
 
 #include "flexaid.h"
-#include "boinc.h"
+#include "fileio.h"
 
 void read_emat(FA_Global* FA, char* emat_file)
 {

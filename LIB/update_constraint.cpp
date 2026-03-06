@@ -1,5 +1,5 @@
 #include "flexaid.h"
-#include "boinc.h"
+#include "fileio.h"
 
 void update_constraint(atom* atoms, int index, constraint* cons)
 {
