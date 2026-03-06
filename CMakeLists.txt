@@ -121,9 +121,22 @@ target_sources(FlexAID PRIVATE
         # ── new C++20 modules ���─
         LIB/tencm.cpp
         LIB/statmech.cpp
+        # ── v1.5 thermodynamic + hardware acceleration modules ──
+        LIB/ShannonThermoStack/ShannonThermoStack.cpp
+        LIB/LigandRingFlex/RingConformerLibrary.cpp
+        LIB/LigandRingFlex/SugarPucker.cpp
+        LIB/LigandRingFlex/LigandRingFlex.cpp
+        LIB/NATURaL/NATURaLDualAssembly.cpp
+        LIB/ChiralCenter/ChiralCenterGene.cpp
 )
 
-target_include_directories(FlexAID PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+target_include_directories(FlexAID PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+    ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ShannonThermoStack
+    ${CMAKE_CURRENT_SOURCE_DIR}/LIB/LigandRingFlex
+    ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
+    ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ChiralCenter
+)
 
 # ─── compiler flags ──────────────────────────────────────────────────────────
 if(MSVC)
@@ -167,4 +180,27 @@ if(FLEXAIDS_USE_METAL)
         LANGUAGE OBJCXX
         COMPILE_FLAGS "-std=c++20 -fno-objc-arc"
     )
+    # Shannon Metal GPU bridge (Apple Silicon Shannon entropy histogram)
+    target_sources(FlexAID PRIVATE LIB/ShannonThermoStack/ShannonMetalBridge.mm)
+    target_compile_definitions(FlexAID PRIVATE ENABLE_METAL_CORE)
+    set_source_files_properties(LIB/ShannonThermoStack/ShannonMetalBridge.mm PROPERTIES
+        LANGUAGE OBJCXX
+        COMPILE_FLAGS "-std=c++20 -fno-objc-arc"
+    )
+endif()
+
+# ─── TeNCoM benchmark (optional standalone binary) ────────────────────────────
+option(ENABLE_TENCOM_BENCHMARK "Build the TeNCoM benchmark binary" OFF)
+if(ENABLE_TENCOM_BENCHMARK)
+    add_executable(benchmark_tencom
+        LIB/benchmark_tencom.cpp
+        LIB/tencm.cpp
+        LIB/statmech.cpp
+    )
+    target_include_directories(benchmark_tencom PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_compile_options(benchmark_tencom PRIVATE -O3 -march=native)
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(benchmark_tencom PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    message(STATUS "TeNCoM benchmark enabled — build target: benchmark_tencom")
 endif()
