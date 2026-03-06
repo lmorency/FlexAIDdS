@@ -16,6 +16,7 @@
 #endif
 
 #include "statmech.h"
+#include "NATURaL/NATURaLDualAssembly.h"
 
 // in milliseconds
 # define SLEEP 25
@@ -408,6 +409,39 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		printf("  Energy std dev        σ_E = %10.4f kcal/mol\n", td.std_energy);
 		printf("  Heat capacity         C_v = %10.4f kcal/(mol·K)\n", td.heat_capacity);
 		printf("  Entropy               S   = %10.6f kcal/(mol·K)\n", td.entropy);
+	}
+
+	// NATURaL co-translational / co-transcriptional DualAssembly analysis
+	if (FA->resligand && FA->resligand->fatm && FA->resligand->latm) {
+		int lig_start   = FA->resligand->fatm[0];
+		int lig_end     = FA->resligand->latm[0];
+		int n_lig_atoms = lig_end - lig_start + 1;
+		if (n_lig_atoms > 0 && FA->MIN_NUM_RESIDUE > 0) {
+			natural::NATURaLConfig ncfg = natural::auto_configure(
+				&atoms[lig_start], n_lig_atoms,
+				residue, FA->MIN_NUM_RESIDUE);
+			if (ncfg.enabled) {
+				ncfg.temperature_K = (FA->temperature > 0)
+				                     ? static_cast<double>(FA->temperature)
+				                     : 310.0;
+				natural::DualAssemblyEngine engine(
+					ncfg, FA, VC, atoms, residue, FA->MIN_NUM_RESIDUE);
+				auto trajectory = engine.run();
+				printf("--- NATURaL Co-translational DualAssembly (%zu growth steps) ---\n",
+				       trajectory.size());
+				if (!trajectory.empty()) {
+					printf("  Final ΔG (co-translational) = %10.4f kcal/mol\n",
+					       engine.final_deltaG());
+					int n_pause = 0, n_tm = 0;
+					for (const auto& step : trajectory) {
+						if (step.is_pause_site) ++n_pause;
+						if (step.tm_inserted)   ++n_tm;
+					}
+					printf("  Pause sites detected        = %d\n", n_pause);
+					printf("  TM insertions               = %d\n", n_tm);
+				}
+			}
+		}
 	}
 
 	return n_chrom_snapshot;
