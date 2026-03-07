@@ -7,7 +7,7 @@
 cmake_minimum_required(VERSION 3.18)
 project(FlexAID LANGUAGES CXX)
 
-# ─── C++20 ────────────────────────────────────────────────────────────────────
+# ─── C++20 ────────────────────────────────────────────────────────────────
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
@@ -15,20 +15,21 @@ if(POLICY CMP0167)
     cmake_policy(SET CMP0167 NEW)
 endif()
 
-# ─── options ──────────────────────────────────────────────────────────────────
+# ─── options ────────────────────────────────────────────────────────────────
 option(FLEXAIDS_USE_CUDA    "Enable CUDA GPU evaluation"          OFF)
 option(FLEXAIDS_USE_METAL   "Enable Metal GPU acceleration"       OFF)
 option(FLEXAIDS_USE_AVX2    "Enable AVX2 SIMD acceleration"       ON)
 option(FLEXAIDS_USE_AVX512  "Enable AVX-512 SIMD acceleration"    OFF)
 option(FLEXAIDS_USE_OPENMP  "Enable OpenMP thread parallelism"    ON)
 option(FLEXAIDS_USE_EIGEN   "Enable Eigen3 vectorised linear algebra" ON)
+option(BUILD_PYTHON_BINDINGS "Build Python bindings via pybind11" OFF)
 
-# ─── OpenMP ───────────────────────────────────────────────────────────────────
+# ─── OpenMP ───────────────────────────────────────────────────────────────
 if(FLEXAIDS_USE_OPENMP)
     find_package(OpenMP)
 endif()
 
-# ─── Eigen3 (header-only; optional but strongly recommended) ──────────────────
+# ─── Eigen3 (header-only; optional but strongly recommended) ──────────────────────
 if(FLEXAIDS_USE_EIGEN)
     find_package(Eigen3 3.4 QUIET NO_MODULE)
     if(Eigen3_FOUND)
@@ -48,13 +49,24 @@ if(FLEXAIDS_USE_EIGEN)
     endif()
 endif()
 
-# ─── CUDA (optional) ─────────────────────────────────────────────────────────
+# ─── pybind11 (for Python bindings) ────────────────────────────────────────
+if(BUILD_PYTHON_BINDINGS)
+    find_package(pybind11 CONFIG QUIET)
+    if(NOT pybind11_FOUND)
+        message(WARNING "pybind11 not found. Install with: pip install pybind11[global]")
+        set(BUILD_PYTHON_BINDINGS OFF)
+    else()
+        message(STATUS "pybind11 ${pybind11_VERSION} found — Python bindings enabled")
+    endif()
+endif()
+
+# ─── CUDA (optional) ─────────────────────────────────────────────────────
 if(FLEXAIDS_USE_CUDA)
     enable_language(CUDA)
     find_package(CUDAToolkit REQUIRED)
 endif()
 
-# ─── Metal (optional, macOS only) ────────────────────────────────────────────
+# ─── Metal (optional, macOS only) ────────────────────────────────────────
 if(FLEXAIDS_USE_METAL)
     if(NOT APPLE)
         message(FATAL_ERROR "Metal acceleration is only supported on macOS")
@@ -69,7 +81,7 @@ else()
     endif()
 endif()
 
-# ─── executable ───────────────────────────────────────────────────────────────
+# ─── executable ─────────────────────────────────────────────────────────
 add_executable(FlexAID "")
 target_sources(FlexAID PRIVATE
         LIB/top.cpp
@@ -144,9 +156,10 @@ target_sources(FlexAID PRIVATE
         LIB/partition_grid.cpp
         LIB/generate_grid.cpp
         LIB/maps.cpp
-        # ── new C++20 modules ���─
+        # ── new C++20 modules ──
         LIB/tencm.cpp
         LIB/statmech.cpp
+        LIB/encom.cpp             # ← NEW: ENCoM vibrational entropy
         # ── v1.5 thermodynamic + hardware acceleration modules ──
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         LIB/LigandRingFlex/RingConformerLibrary.cpp
@@ -166,7 +179,7 @@ target_include_directories(FlexAID PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ChiralCenter
 )
 
-# ─── compiler flags ──────────────────────────────────────────────────────────
+# ─── compiler flags ────────────────────────────────────────────────────
 if(MSVC)
     target_compile_options(FlexAID PRIVATE /W4 /O2 /MT)
     if(FLEXAIDS_USE_AVX512)
@@ -186,7 +199,7 @@ else()
     endif()
 endif()
 
-# ─── Eigen3 link + definition ─────────────────────────────────────────────────
+# ─── Eigen3 link + definition ─────────────────────────────────────────────
 if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
     target_link_libraries(FlexAID PRIVATE Eigen3::Eigen)
     target_compile_definitions(FlexAID PRIVATE FLEXAIDS_HAS_EIGEN)
@@ -195,12 +208,12 @@ elseif(FLEXAIDS_USE_EIGEN AND EIGEN3_FOUND)
     target_compile_definitions(FlexAID PRIVATE FLEXAIDS_HAS_EIGEN)
 endif()
 
-# ─── OpenMP link ──────────────────────────────────────────────────────────────
+# ─── OpenMP link ────────────────────────────────────────────────────────
 if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
     target_link_libraries(FlexAID PRIVATE OpenMP::OpenMP_CXX)
 endif()
 
-# ─── CUDA sources ─────────────────────────────────────────────────────────────
+# ─── CUDA sources ───────────────────────────────────────────────────────
 if(FLEXAIDS_USE_CUDA)
     target_sources(FlexAID PRIVATE
         LIB/cuda_eval.cu                          # existing CF batch kernel
@@ -214,7 +227,7 @@ if(FLEXAIDS_USE_CUDA)
     message(STATUS "CUDA enabled — CF batch kernel + Shannon histogram kernel")
 endif()
 
-# ─── Metal sources ────────────────────────────────────────────────────────────
+# ─── Metal sources ──────────────────────────────────────────────────────
 if(FLEXAIDS_USE_METAL)
     target_sources(FlexAID PRIVATE LIB/metal_eval.mm)
     target_compile_definitions(FlexAID PRIVATE FLEXAIDS_USE_METAL)
@@ -237,13 +250,38 @@ if(FLEXAIDS_USE_METAL)
     )
 endif()
 
-# ─── TeNCoM benchmark (optional standalone binary) ────────────────────────────
+# ─── Python bindings (pybind11 module) ─────────────────────────────────────────
+if(BUILD_PYTHON_BINDINGS AND pybind11_FOUND)
+    pybind11_add_module(_core
+        python/bindings/core_bindings.cpp
+        LIB/statmech.cpp
+        LIB/encom.cpp
+        # BindingMode requires full GA infrastructure
+        # Partial exposure for now (thermodynamics only)
+    )
+    target_include_directories(_core PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+    )
+    target_compile_definitions(_core PRIVATE VERSION_INFO=${PROJECT_VERSION})
+    
+    # Link Eigen3 if available
+    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
+        target_link_libraries(_core PRIVATE Eigen3::Eigen)
+        target_compile_definitions(_core PRIVATE FLEXAIDS_HAS_EIGEN)
+    endif()
+    
+    message(STATUS "Python bindings enabled — build target: _core.so")
+    message(STATUS "Install with: pip install -e python/")
+endif()
+
+# ─── TeNCoM benchmark (optional standalone binary) ────────────────────────────────
 option(ENABLE_TENCOM_BENCHMARK "Build the TeNCoM benchmark binary" OFF)
 if(ENABLE_TENCOM_BENCHMARK)
     add_executable(benchmark_tencom
         LIB/benchmark_tencom.cpp
         LIB/tencm.cpp
         LIB/statmech.cpp
+        LIB/encom.cpp
     )
     target_include_directories(benchmark_tencom PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
     target_compile_options(benchmark_tencom PRIVATE -O3 -march=native -ffast-math)
