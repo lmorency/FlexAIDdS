@@ -6,6 +6,7 @@
 #pragma once
 #include <vector>
 #include <string>
+#include <unordered_map>
 #include "flexaid.h"   // reuses atom_struct / resid_struct
 
 namespace cavity_detect {
@@ -63,6 +64,10 @@ private:
 
     // Helper (will be OpenMP-parallel in .cpp)
     float distance(const float* a, const float* b) const;
+
+    // Cluster a flat list of accepted probe spheres into DetectedCleft objects,
+    // compute per-cleft geometry, and finalize m_clefts.
+    void _cluster_and_finalize(std::vector<DetectedSphere> spheres);
 };
 
 } // namespace cavity_detect

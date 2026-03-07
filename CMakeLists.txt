@@ -1,8 +1,4 @@
-# On mac the easiest way to install boost is to use brew: brew install boost
-# Then you can build the project using: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release and cmake --build build
-
-# On Windows you can get boost by downloading the zip from the official website (install binaries) and running the executable
-# If it is not detected automatically you can use something like -DBoost_DIR=C:\boost_1_86_0\stage\lib\cmake\Boost-1.86.0 or C:\boost_1_82_0\lib64-msvc-14.3\cmake\Boost-1.82.0 in the cmake command
+# Build: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build
 
 cmake_minimum_required(VERSION 3.18)
 project(FlexAID LANGUAGES CXX)
@@ -169,6 +165,8 @@ target_sources(FlexAID PRIVATE
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
         LIB/ChiralCenter/ChiralCenterGene.cpp
+        # ── CavityDetect: native SURFNET cavity detection ──
+        LIB/CavityDetect/CavityDetect.cpp
 )
 
 target_include_directories(FlexAID PRIVATE
@@ -177,6 +175,7 @@ target_include_directories(FlexAID PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/LIB/LigandRingFlex
     ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
     ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ChiralCenter
+    ${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect
 )
 
 # ─── compiler flags ────────────────────────────────────────────────────
@@ -247,6 +246,35 @@ if(FLEXAIDS_USE_METAL)
     set_source_files_properties(LIB/ShannonThermoStack/ShannonMetalBridge.mm PROPERTIES
         LANGUAGE OBJCXX
         COMPILE_FLAGS "-std=c++20 -fno-objc-arc"
+    )
+    # CavityDetect Metal bridge (Task 1.4: GPU probe-sphere generation)
+    target_sources(FlexAID PRIVATE LIB/CavityDetect/CavityDetectMetalBridge.mm)
+    set_source_files_properties(LIB/CavityDetect/CavityDetectMetalBridge.mm PROPERTIES
+        LANGUAGE OBJCXX
+        COMPILE_FLAGS "-std=c++20 -fno-objc-arc"
+    )
+    # Compile CavityDetect.metal shader → .metallib
+    set(CAVITY_METAL_SRC  "${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect/CavityDetect.metal")
+    set(CAVITY_AIR        "${CMAKE_CURRENT_BINARY_DIR}/CavityDetect.air")
+    set(CAVITY_METALLIB   "${CMAKE_CURRENT_BINARY_DIR}/CavityDetect.metallib")
+    add_custom_command(
+        OUTPUT  "${CAVITY_AIR}"
+        COMMAND xcrun -sdk macosx metal -c "${CAVITY_METAL_SRC}" -o "${CAVITY_AIR}"
+        DEPENDS "${CAVITY_METAL_SRC}"
+        COMMENT "Compiling CavityDetect Metal shader"
+        VERBATIM
+    )
+    add_custom_command(
+        OUTPUT  "${CAVITY_METALLIB}"
+        COMMAND xcrun -sdk macosx metallib "${CAVITY_AIR}" -o "${CAVITY_METALLIB}"
+        DEPENDS "${CAVITY_AIR}"
+        COMMENT "Linking CavityDetect.metallib"
+        VERBATIM
+    )
+    add_custom_target(CavityDetectMetal DEPENDS "${CAVITY_METALLIB}")
+    add_dependencies(FlexAID CavityDetectMetal)
+    target_compile_definitions(FlexAID PRIVATE
+        CAVITY_METALLIB_PATH="${CAVITY_METALLIB}"
     )
 endif()
 
