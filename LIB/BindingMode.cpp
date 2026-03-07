@@ -1,4 +1,4 @@
-    #include "BindingMode.h"
+#include "BindingMode.h"
 
 /*****************************************\
 			BindingPopulation  
@@ -51,6 +51,35 @@ void BindingPopulation::output_Population(int nResults, char* end_strfile, char*
 	}
 }
 
+/// === NEW: Binding Population thermodynamic APIs ===
+double BindingPopulation::compute_delta_G(const BindingMode& mode1, const BindingMode& mode2) const
+{
+	// Get free energies from each mode
+	double F1 = mode1.get_free_energy();
+	double F2 = mode2.get_free_energy();
+	return F1 - F2;  // relative free energy
+}
+
+statmech::StatMechEngine BindingPopulation::get_global_ensemble() const
+{
+	statmech::StatMechEngine global_engine(this->Temperature);
+	
+	// Aggregate all modes into global ensemble
+	for (const auto& mode : this->BindingModes) {
+		const auto& weights = mode.get_boltzmann_weights();
+		const auto& poses = mode.Poses;
+		
+		if (weights.size() != poses.size()) {
+			continue;  // Safety check
+		}
+		
+		for (size_t i = 0; i < poses.size(); ++i) {
+			global_engine.add_sample(poses[i].CF, weights[i]);
+		}
+	}
+	
+	return global_engine;
+}
 
 
 /*****************************************\
@@ -58,7 +87,11 @@ void BindingPopulation::output_Population(int nResults, char* end_strfile, char*
 \*****************************************/
 
 // public constructor *non-overloadable*
-BindingMode::BindingMode(BindingPopulation* pop) : Population(pop), energy(0.0)
+BindingMode::BindingMode(BindingPopulation* pop) 
+	: Population(pop), 
+	  energy(0.0),
+	  engine_(pop ? pop->Temperature : 298.15),
+	  thermo_cache_valid_(false)
 {
 }
 
@@ -67,45 +100,139 @@ BindingMode::BindingMode(BindingPopulation* pop) : Population(pop), energy(0.0)
 void BindingMode::add_Pose(Pose& pose)
 {
 	this->Poses.push_back(pose);
+	this->thermo_cache_valid_ = false;  // Invalidate cache on modification
+}
+
+
+/// === NEW: Cache rebuild infrastructure (Phase 1) ===
+void BindingMode::rebuild_engine() const
+{
+	// Only rebuild if cache is dirty
+	if (thermo_cache_valid_) {
+		return;
+	}
+	
+	// Clear previous state
+	const_cast<statmech::StatMechEngine&>(engine_).clear();
+	
+	// Populate engine from all poses in this mode
+	for (const auto& pose : Poses) {
+		// Add each pose's CF energy with unit multiplicity
+		// (CF already computed via ic2cf in GA pipeline)
+		const_cast<statmech::StatMechEngine&>(engine_).add_sample(pose.CF, 1.0);
+	}
+	
+	// Mark cache as valid until next pose modification
+	const_cast<bool&>(thermo_cache_valid_) = true;
 }
 
 
 double BindingMode::compute_enthalpy() const
 {
-	double enthalpy = 0.0;
-	// compute enthalpy
-	for(std::vector<Pose>::const_iterator pose = this->Poses.begin(); pose != this->Poses.end(); ++pose)
-	{
-		double boltzmann_prob = pose->boltzmann_weight / this->Population->PartitionFunction;
-		enthalpy += boltzmann_prob * pose->CF;
-	}
-	return enthalpy;
+	// Delegate to StatMechEngine for numerically stable computation
+	rebuild_engine();
+	return engine_.compute().mean_energy;  // <E> from canonical ensemble
 }
 
 
 double BindingMode::compute_entropy() const
 { 
-	double entropy = 0.0;
-	// compute entropy
-	for(std::vector<Pose>::const_iterator pose = this->Poses.begin(); pose != this->Poses.end(); ++pose)
-	{
-		double boltzmann_prob = pose->boltzmann_weight / this->Population->PartitionFunction;
-		entropy += boltzmann_prob * log(boltzmann_prob);
-	}
-	return -entropy; // returning a S value instead of ∆S value. Rendering it negative as in Shannon Entropy (no reference state)
+	// Delegate to StatMechEngine for proper Shannon/configurational entropy
+	rebuild_engine();
+	return engine_.compute().entropy;  // S = (E - F) / T
 }
 
 
 double BindingMode::compute_energy() const
 { 
-	return ( this->compute_enthalpy() - ( this->Population->Temperature * this->compute_entropy() ) );
+	// Delegate to StatMechEngine for free energy via log-sum-exp
+	rebuild_engine();
+	return engine_.compute().free_energy;  // F = -kT ln(Z)
+}
+
+
+/// === NEW: Thermodynamic APIs (Phase 1) ===
+statmech::Thermodynamics BindingMode::get_thermodynamics() const
+{
+	rebuild_engine();
+	return engine_.compute();
+	// Returns struct with: {free_energy, mean_energy, entropy, heat_capacity, energy_std}
+}
+
+
+double BindingMode::get_free_energy() const
+{
+	return get_thermodynamics().free_energy;
+}
+
+
+double BindingMode::get_heat_capacity() const
+{
+	return get_thermodynamics().heat_capacity;
+}
+
+
+std::vector<double> BindingMode::get_boltzmann_weights() const
+{
+	rebuild_engine();
+	return engine_.boltzmann_weights();  // Returns normalized weights (sum = 1.0)
+}
+
+
+double BindingMode::delta_G_relative_to(const BindingMode& reference) const
+{
+	return this->get_free_energy() - reference.get_free_energy();
+}
+
+
+std::vector<statmech::WHAMBin> BindingMode::free_energy_profile(
+	const std::vector<double>& coordinates,
+	int nbins
+) const
+{
+	// Validate input
+	if (coordinates.size() != Poses.size()) {
+		throw std::invalid_argument(
+			"free_energy_profile: coordinate vector size (" +
+			std::to_string(coordinates.size()) +
+			") must match number of poses (" +
+			std::to_string(Poses.size()) + ")"
+		);
+	}
+	
+	if (nbins < 2 || nbins > 1000) {
+		throw std::invalid_argument(
+			"free_energy_profile: nbins must be in [2, 1000]"
+		);
+	}
+	
+	// Extract CF energies from poses
+	std::vector<double> energies;
+	energies.reserve(Poses.size());
+	for (const auto& pose : Poses) {
+		energies.push_back(pose.CF);
+	}
+	
+	// Call StatMechEngine::wham() for WHAM analysis
+	// Returns free energy profile along input coordinate
+	return statmech::StatMechEngine::wham(
+		energies,
+		coordinates,
+		Population->Temperature,
+		nbins
+	);
 }
 
 
 int BindingMode::get_BindingMode_size() const { return this->Poses.size(); }
 
 
-void BindingMode::clear_Poses() { this->Poses.clear(); }
+void BindingMode::clear_Poses() 
+{ 
+	this->Poses.clear();
+	const_cast<statmech::StatMechEngine&>(engine_).clear();
+	this->thermo_cache_valid_ = false;
+}
 
 
 void BindingMode::set_energy()
