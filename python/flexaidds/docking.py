@@ -190,10 +190,101 @@ class Docking:
         self._parse_config()
     
     def _parse_config(self) -> None:
-        """Parse FlexAID config file (stub - needs implementation)."""
-        # TODO: Implement config parser
-        # This will read INPLIG, PDBNAM, RNGOPT, OPTIMZ, etc.
-        pass
+        """Parse FlexAID config file.
+
+        The format is fixed-width: the first 6 characters are the keyword,
+        character 7 is a space delimiter, and the remainder of the line is the
+        value.  Lines that start with '#' or are blank are ignored.
+
+        Keywords that may appear multiple times (OPTIMZ, FLEXSC) are collected
+        into lists.  All other keywords map to a single string value (or a
+        boolean ``True`` for flag-only keywords such as EXCHET, ROTOBS, etc.).
+
+        After parsing, ``self._config`` is populated with keys matching the
+        6-character keyword names used by the C++ FlexAID engine.
+        """
+        # Keywords whose value is the rest of the line (path / string).
+        _string_keys = {
+            "PDBNAM", "INPLIG", "RNGOPT", "METOPT", "BPKENM", "COMPLF",
+            "VCTSCO", "IMATRX", "DEFTYP", "CONSTR", "NMAAMP", "NMAEIG",
+            "RMSDST", "DEPSPA", "STATEP", "TEMPOP", "CLUSTA",
+        }
+        # Keywords whose value is a float.
+        _float_keys = {
+            "ACSWEI", "CLRMSD", "PERMEA", "INTRAF", "VARDIS", "VARANG",
+            "VARDIH", "VARFLX", "SLVPEN", "DEECLA", "ROTPER", "SPACER",
+        }
+        # Keywords whose value is an integer.
+        _int_keys = {
+            "NMAMOD", "MAXRES", "TEMPER", "NRGOUT",
+        }
+        # Keywords that appear multiple times; values are collected into a list.
+        _list_keys = {"OPTIMZ", "FLEXSC"}
+        # Flag-only keywords: presence means True, no value expected.
+        _flag_keys = {
+            "DEEFLX", "ROTOBS", "NORMAR", "USEACS", "EXCHET", "INCHOH",
+            "NOINTR", "OMITBU", "VINDEX", "HTPMOD", "OUTRNG", "USEDEE",
+            "NRGSUI", "SCOLIG", "SCOOUT", "ROTOUT",
+        }
+
+        # Initialise list accumulators so callers can always iterate them.
+        for key in _list_keys:
+            self._config[key] = []
+
+        with open(self.config_file) as fh:
+            for raw_line in fh:
+                line = raw_line.rstrip("\n").rstrip("\r")
+
+                # Skip blank lines and comments.
+                stripped = line.strip()
+                if not stripped or stripped.startswith("#"):
+                    continue
+
+                # The keyword occupies exactly the first 6 characters.
+                if len(line) < 6:
+                    continue
+                keyword = line[:6].strip()
+                value_str = line[7:].strip() if len(line) > 7 else ""
+
+                if keyword in _flag_keys:
+                    self._config[keyword] = True
+                elif keyword in _list_keys:
+                    self._config[keyword].append(value_str)
+                elif keyword in _float_keys:
+                    try:
+                        self._config[keyword] = float(value_str.split()[0])
+                    except (ValueError, IndexError):
+                        self._config[keyword] = value_str
+                elif keyword in _int_keys:
+                    try:
+                        self._config[keyword] = int(value_str.split()[0])
+                    except (ValueError, IndexError):
+                        self._config[keyword] = value_str
+                elif keyword in _string_keys:
+                    self._config[keyword] = value_str
+                else:
+                    # Unknown keyword: store raw value string.
+                    self._config[keyword] = value_str
+
+    @property
+    def receptor(self) -> Optional[str]:
+        """Path to receptor PDB file (PDBNAM keyword)."""
+        return self._config.get("PDBNAM")
+
+    @property
+    def ligand(self) -> Optional[str]:
+        """Path to ligand input file (INPLIG keyword)."""
+        return self._config.get("INPLIG")
+
+    @property
+    def temperature(self) -> Optional[int]:
+        """Simulation temperature in Kelvin (TEMPER keyword)."""
+        return self._config.get("TEMPER")
+
+    @property
+    def optimization_method(self) -> Optional[str]:
+        """Optimization method, e.g. 'GA' (METOPT keyword)."""
+        return self._config.get("METOPT")
     
     def run(self, **kwargs) -> BindingPopulation:
         """Execute docking simulation.
