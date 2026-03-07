@@ -3,6 +3,7 @@
 
 #include "gaboom.h"
 #include "fileio.h"
+#include "statmech.h"  // ← NEW: statistical mechanics engine
 
 //#define UNDEFINED_DIST FLT_MAX // Defined in FOPTICS as > than +INF
 #define UNDEFINED_DIST -0.1f // Defined in FOPTICS as > than +INF
@@ -25,7 +26,7 @@ struct Pose
 	float reachDist;
 	chromosome* chrom;
 	double CF;
-	double boltzmann_weight;
+	double boltzmann_weight;  // ← DEPRECATED: now computed by StatMechEngine
 	std::vector<float> vPose;
 	inline bool const operator< (const Pose& rhs);
 };
@@ -59,22 +60,36 @@ class BindingMode // aggregation of poses (Cluster)
 			void						add_Pose(Pose&);
 			void						clear_Poses();
 			int							get_BindingMode_size() const;
-			double						compute_energy() const;
-			double						compute_entropy() const;
-			double						compute_enthalpy() const;
+			
+			// ═══ LEGACY INTERFACE (backward compatibility) ═══
+			double						compute_energy() const;      // returns Helmholtz free energy F = H - TS
+			double						compute_entropy() const;     // returns configurational entropy S
+			double						compute_enthalpy() const;    // returns Boltzmann-weighted ⟨E⟩
+			
+			// ═══ NEW STATMECH API ═══
+			statmech::Thermodynamics	get_thermodynamics() const;  // full thermo struct (F, S, H, Cv, σ_E)
+			double						get_free_energy() const;     // alias for compute_energy()
+			double						get_heat_capacity() const;   // heat capacity C_v
+			std::vector<double>			get_boltzmann_weights() const; // weights for all poses
+			
 			std::vector<Pose>::const_iterator elect_Representative(bool useOPTICSordering) const;
 			inline bool const 			operator<(const BindingMode&);
 
  	protected:
 		std::vector<Pose> Poses;
 		BindingPopulation* Population; // used to access the BindingPopulation
+		
+		// ═══ STATMECH ENGINE (replaces manual Boltzmann summation) ═══
+		mutable statmech::StatMechEngine engine_;  // mutable: allows lazy evaluation in const methods
+		mutable bool thermo_cache_valid_;          // track if engine_ matches current Poses
 
-		void	set_energy();
+		void	set_energy();                         // updates cached energy value
+		void	rebuild_engine() const;               // populates engine_ from Poses (called on-demand)
 
 	private:
 		void 	output_BindingMode(int num_result, char* end_strfile, char* tmp_end_strfile, char* dockinp, char* gainp, int minPoints);
 		void	output_dynamic_BindingMode(int nBindingMode, char* end_strfile, char* tmp_end_strfile, char* dockinp, char* gainp, int minPoints);
-		double energy;
+		double energy;  // cached free energy value
 };
 
 /*****************************************\
@@ -95,9 +110,15 @@ class BindingPopulation
 			int		get_Population_size();
 			// output BindingMode up to nResults results
 			void	output_Population(int nResults, char* end_strfile, char* tmp_end_strfile, char* dockinp, char* gainp, int minPoints);
+			
+			// ═══ NEW STATMECH API ═══
+			/// Compute ΔG between two binding modes (relative binding free energy)
+			double	compute_delta_G(const BindingMode& mode1, const BindingMode& mode2) const;
+			/// Get global ensemble StatMechEngine aggregating all binding modes
+			statmech::StatMechEngine get_global_ensemble() const;
 
 	protected:
-		double PartitionFunction;	// sum of all Boltzmann_weight
+		double PartitionFunction;	// sum of all Boltzmann_weight (DEPRECATED: use StatMechEngine)
 		int nChroms;				// n_chrom_snapshot input to clustergin function
 
 		// FlexAID pointer
