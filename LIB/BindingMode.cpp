@@ -1,4 +1,5 @@
     #include "BindingMode.h"
+#include "encom.h"
 
 /*****************************************\
 			BindingPopulation  
@@ -58,7 +59,9 @@ void BindingPopulation::output_Population(int nResults, char* end_strfile, char*
 \*****************************************/
 
 // public constructor *non-overloadable*
-BindingMode::BindingMode(BindingPopulation* pop) : Population(pop), energy(0.0)
+BindingMode::BindingMode(BindingPopulation* pop)
+    : Population(pop), engine_(pop ? static_cast<double>(pop->Temperature) : 300.0),
+      thermo_cache_valid_(false), energy(0.0)
 {
 }
 
@@ -67,6 +70,7 @@ BindingMode::BindingMode(BindingPopulation* pop) : Population(pop), energy(0.0)
 void BindingMode::add_Pose(Pose& pose)
 {
 	this->Poses.push_back(pose);
+	this->thermo_cache_valid_ = false;
 }
 
 
@@ -97,8 +101,11 @@ double BindingMode::compute_entropy() const
 
 
 double BindingMode::compute_energy() const
-{ 
-	return ( this->compute_enthalpy() - ( this->Population->Temperature * this->compute_entropy() ) );
+{
+	double F_conf = this->compute_enthalpy()
+	              - static_cast<double>(this->Population->Temperature) * this->compute_entropy();
+	// Phase 3: add vibrational free energy correction when ENCoM modes are available
+	return F_conf + this->compute_vibrational_correction();
 }
 
 
@@ -324,12 +331,113 @@ inline bool const Pose::operator< (const Pose& rhs)
 {
 	if(this->order < rhs.order) return true;
    	else if(this->order > rhs.order) return false;
-	
+
 	if(this->reachDist < rhs.reachDist) return true;
 	else if(this->reachDist > rhs.reachDist) return false;
-	
+
 	if(this->chrom_index < rhs.chrom_index) return true;
 	else if(this->chrom_index > rhs.chrom_index) return false;
-	
+
 	return false;
+}
+
+/*****************************************\
+         StatMech methods (Phase 1/2)
+\*****************************************/
+
+void BindingMode::rebuild_engine() const
+{
+	engine_.clear();
+	for (const auto& pose : this->Poses)
+		engine_.add_sample(pose.CF, 1);
+	thermo_cache_valid_ = true;
+}
+
+statmech::Thermodynamics BindingMode::get_thermodynamics() const
+{
+	if (!thermo_cache_valid_) rebuild_engine();
+	return engine_.compute();
+}
+
+double BindingMode::get_free_energy() const
+{
+	return compute_energy();
+}
+
+double BindingMode::get_heat_capacity() const
+{
+	if (!thermo_cache_valid_) rebuild_engine();
+	return engine_.compute().heat_capacity;
+}
+
+std::vector<double> BindingMode::get_boltzmann_weights() const
+{
+	if (!thermo_cache_valid_) rebuild_engine();
+	return engine_.boltzmann_weights();
+}
+
+/*****************************************\
+     BindingPopulation StatMech (Phase 1/2)
+\*****************************************/
+
+double BindingPopulation::compute_delta_G(
+		const BindingMode& mode1, const BindingMode& mode2) const
+{
+	// Build per-mode engines on demand
+	statmech::StatMechEngine eng1(static_cast<double>(this->Temperature));
+	statmech::StatMechEngine eng2(static_cast<double>(this->Temperature));
+	for (const auto& p : mode1.Poses) eng1.add_sample(p.CF);
+	for (const auto& p : mode2.Poses) eng2.add_sample(p.CF);
+	return eng1.delta_G(eng2);
+}
+
+statmech::StatMechEngine BindingPopulation::get_global_ensemble() const
+{
+	statmech::StatMechEngine global(static_cast<double>(this->Temperature));
+	for (const auto& mode : this->BindingModes)
+		for (const auto& pose : mode.Poses)
+			global.add_sample(pose.CF);
+	return global;
+}
+
+/*****************************************\
+     ENCoM vibrational correction (Phase 3)
+\*****************************************/
+
+// Apply vibrational entropy correction from ENCoM to compute_energy().
+// Called when FA->normal_modes > 0 and eigen/eigenvec files were loaded.
+// Returns the vibrational free energy correction: -T * S_vib.
+double BindingMode::compute_vibrational_correction() const
+{
+	if (!this->Population->FA->normal_modes) return 0.0;
+
+	// Retrieve pre-loaded eigenvectors from atom eigen field (assign_eigen() sets these).
+	// Collect non-null eigenvalues across all atoms.
+	std::vector<encom::NormalMode> modes;
+	int mode_count = this->Population->FA->normal_modes;
+	// Walk atoms and collect eigenvalues (stored as float** eigen in atom_struct).
+	// eigen[mode][0] = eigenvalue scalar per mode (convention from read_eigen/assign_eigen).
+	const atom* atoms = this->Population->atoms;
+	int n_atoms = this->Population->FA->res_cnt;  // approximate; real atom count from residue
+
+	// Gather eigenvalues from atom[0].eigen (eigenvalues shared across atoms)
+	if (atoms && atoms[0].eigen) {
+		for (int m = 0; m < mode_count; ++m) {
+			if (!atoms[0].eigen[m]) continue;
+			encom::NormalMode mode;
+			mode.index      = m + 1;
+			mode.eigenvalue = static_cast<double>(atoms[0].eigen[m][0]);
+			mode.frequency  = std::sqrt(std::abs(mode.eigenvalue));
+			modes.push_back(mode);
+		}
+	}
+
+	if (modes.empty()) return 0.0;
+
+	double T = static_cast<double>(this->Population->Temperature);
+	encom::VibrationalEntropy vs =
+		encom::ENCoMEngine::compute_vibrational_entropy(modes, T);
+
+	// Vibrational free energy correction: F_vib = -T * S_vib
+	return -T * vs.S_vib_kcal_mol_K;
 }

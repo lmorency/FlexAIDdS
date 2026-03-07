@@ -3,7 +3,8 @@
 
 #include "gaboom.h"
 #include "fileio.h"
-#include "statmech.h"  // ← NEW: statistical mechanics engine
+#include "statmech.h"  // statistical mechanics engine
+#include "encom.h"     // ENCoM vibrational entropy (Phase 3)
 
 //#define UNDEFINED_DIST FLT_MAX // Defined in FOPTICS as > than +INF
 #define UNDEFINED_DIST -0.1f // Defined in FOPTICS as > than +INF
@@ -85,6 +86,7 @@ class BindingMode // aggregation of poses (Cluster)
 
 		void	set_energy();                         // updates cached energy value
 		void	rebuild_engine() const;               // populates engine_ from Poses (called on-demand)
+		double	compute_vibrational_correction() const; // Phase 3: -T*S_vib from ENCoM modes
 
 	private:
 		void 	output_BindingMode(int num_result, char* end_strfile, char* tmp_end_strfile, char* dockinp, char* gainp, int minPoints);
