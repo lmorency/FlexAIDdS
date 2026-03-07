@@ -1,7 +1,8 @@
 #include "flexaid.h"
 #include "boinc.h"
+#include "CleftDetector.h"
 
-/***************************************************************************** 
+/*****************************************************************************
  * SUBROUTINE read_input reads input file.
  *****************************************************************************/
 void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpoint** cleftgrid,char* input_file){
@@ -433,14 +434,39 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 		calc_cleftic(FA,*cleftgrid);
         
 	}else if(!strcmp(rngopt,"LOCCLF")){
-        
+
 		//RNGOPT LOCCLF filename.pdb
 		strcpy(FA->rngopt,"locclf");
 		strcpy(clf_file,&rngoptline[14]);
-        
+
 		printf("read binding-site grid <%s>\n",clf_file);
 		spheres = read_spheres(clf_file);
-        
+
+		(*cleftgrid) = generate_grid(FA,spheres,(*atoms),(*residue));
+		calc_cleftic(FA,*cleftgrid);
+
+	}else if(!strncmp(rngopt,"AUTO  ",4)){
+
+		// RNGOPT AUTO — automatic cleft detection (SURFNET gap-sphere)
+		strcpy(FA->rngopt,"locclf");
+		printf("AUTO binding-site detection (CleftDetector) ...\n");
+
+		spheres = detect_cleft(*atoms, *residue, FA->atm_cnt_real, FA->res_cnt);
+		if(spheres == NULL){
+			fprintf(stderr,"ERROR: AUTO cleft detection found no cavities.\n");
+			Terminate(2);
+		}
+
+		// Optionally write detected spheres for inspection
+		char auto_sph[MAX_PATH__];
+		strcpy(auto_sph, FA->temp_path);
+#ifdef _WIN32
+		strcat(auto_sph, "\\auto_cleft.sph");
+#else
+		strcat(auto_sph, "/auto_cleft.sph");
+#endif
+		write_cleft_spheres(spheres, auto_sph);
+
 		(*cleftgrid) = generate_grid(FA,spheres,(*atoms),(*residue));
 		calc_cleftic(FA,*cleftgrid);
 	}

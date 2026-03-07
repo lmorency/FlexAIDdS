@@ -156,6 +156,10 @@ target_sources(FlexAID PRIVATE
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
         LIB/ChiralCenter/ChiralCenterGene.cpp
+        # ── v1.5 file readers + auto cleft detection ──
+        LIB/CleftDetector.cpp
+        LIB/Mol2Reader.cpp
+        LIB/SdfReader.cpp
 )
 
 target_include_directories(FlexAID PRIVATE
@@ -261,4 +265,42 @@ if(ENABLE_TENCOM_BENCHMARK)
         target_compile_definitions(benchmark_tencom PRIVATE FLEXAIDS_HAS_EIGEN)
     endif()
     message(STATUS "TeNCoM benchmark enabled — build target: benchmark_tencom")
+endif()
+
+# ─── Python bindings (optional, requires pybind11) ──────────────────────
+option(FLEXAIDS_PYTHON_BINDINGS "Build Python bindings (flexaidds module)" OFF)
+if(FLEXAIDS_PYTHON_BINDINGS)
+    find_package(pybind11 REQUIRED)
+
+    # Collect the C++ sources the bindings depend on (readers + cleft + PDB reader + helpers)
+    pybind11_add_module(flexaidds
+        LIB/python_bindings.cpp
+        LIB/CleftDetector.cpp
+        LIB/Mol2Reader.cpp
+        LIB/SdfReader.cpp
+        LIB/read_pdb.cpp
+        LIB/read_coor.cpp
+        LIB/read_conect.cpp
+        LIB/boinc.cpp
+        LIB/geometry.cpp
+        LIB/assign_radius.cpp
+    )
+    target_include_directories(flexaidds PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+    )
+    target_compile_features(flexaidds PRIVATE cxx_std_20)
+    if(NOT MSVC)
+        target_compile_options(flexaidds PRIVATE -O3 -ffast-math)
+        if(FLEXAIDS_USE_AVX2)
+            target_compile_options(flexaidds PRIVATE -mavx2 -mfma)
+        endif()
+    endif()
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(flexaidds PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
+        target_link_libraries(flexaidds PRIVATE Eigen3::Eigen)
+        target_compile_definitions(flexaidds PRIVATE FLEXAIDS_HAS_EIGEN)
+    endif()
+    message(STATUS "Python bindings enabled — build target: flexaidds")
 endif()

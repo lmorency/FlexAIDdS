@@ -325,9 +325,6 @@ std::vector<DualAssemblyEngine::GrowthStep> DualAssemblyEngine::run() {
 }
 
 // ─── compute_partial_cf ───────────────────────────────────────────────────────
-// Forward-declare cffunction (defined in cffunction.cpp, no header prototype).
-extern cfstr cffunction(FA_Global* FA, atom* atoms, resid* residue, int num);
-
 double DualAssemblyEngine::compute_partial_cf(int n_grown_residues) const {
     // Evaluate the Contact Function for the partial complex by summing
     // per-residue cffunction() scores for the first n_grown_residues residues.
@@ -343,9 +340,17 @@ double DualAssemblyEngine::compute_partial_cf(int n_grown_residues) const {
     // so only the emerged partial complex is scored.
     double total_cf = 0.0;
     for (int r = 1; r <= count && r <= FA_->res_cnt; ++r) {
-        cfstr cf = cffunction(FA_, atoms_, residues_, r);
-        // get_cf_evalue: com + wal + sas + con
-        total_cf += cf.com + cf.wal + cf.sas + cf.con;
+        // Score each grown residue via its optres CF if available.
+        // The full per-residue cffunction requires legacy FA fields (bondlist,
+        // energy) not yet in the current FA_Global struct. For now, accumulate
+        // from the optres CF that the GA's VCT/SPH scoring pass populates.
+        if (atoms_ && residues_[r].fatm) {
+            int fa = residues_[r].fatm[0];
+            if (atoms_[fa].optres) {
+                const cfstr& cf = atoms_[fa].optres->cf;
+                total_cf += cf.com + cf.wal + cf.sas + cf.con;
+            }
+        }
     }
 
     return total_cf;

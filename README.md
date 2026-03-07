@@ -1,17 +1,89 @@
-# FlexAID
+# FlexAID-deltaS (FlexAIDdS)
 
-Compile FlexAID using CMake:
-```
-git clone --branch flexaid-cpp https://github.com/NRGlab/FlexAID
-cd FlexAID
-mkdir build
-cd build
+Modern C++20 rewrite of **Fl**exible **A**rtificial **I**ntelligence **D**ocking.
+Fully flexible GA-based protein-ligand docking with side-chain optimisation,
+hardware acceleration, and thermodynamic ensemble support (deltaS).
+
+Official modernised fork of [NRGlab/FlexAID](https://github.com/NRGlab/FlexAID).
+
+## What's new in v1.5
+
+- **Automatic binding-site detection** (`RNGOPT AUTO`) -- SURFNET/GetCleft gap-sphere
+  algorithm ported to C++20 with OpenMP parallelism. No external cleft tool needed.
+- **Native MOL2 and SDF readers** -- read ligands directly from `.mol2` or `.sdf`
+  files via `read_mol2_ligand()` / `read_sdf_ligand()` (in addition to the existing
+  `.inp` format from ProcessLigand).
+- **Python bindings** (pybind11) -- `import flexaidds` exposes `detect_cleft()`,
+  `read_mol2()`, `read_sdf()` from Python.
+- **Shannon entropy thermodynamics** (ShannonThermoStack) with CUDA and Metal GPU kernels.
+- **Ring conformer flexibility** -- discrete sampling of 5/6-membered ring conformers
+  and furanose sugar puckers inside the GA.
+- **Chiral stereocenter detection** -- prevents GA from inverting stereocenters.
+- **Co-translational assembly** (NATURaL) -- ribosome elongation and translocon
+  insertion simulation for nascent-chain docking.
+- **Hardware acceleration** -- AVX2/AVX-512 SIMD, OpenMP threading, optional Eigen3,
+  CUDA and Metal GPU stubs.
+
+## Build
+
+```bash
+git clone https://github.com/lmorency/FlexAIDdS.git
+cd FlexAIDdS
+mkdir build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release
-cmake --build . --target FlexAID -j 4
+cmake --build . --target FlexAID -j$(nproc)
 ```
 
-FlexAID requires a config and ga file to run. These can be generated using `ProcessLigand` (installed with pypi: `pip install processligand-py`).
+### Build options
+
+| CMake flag                   | Default | Description                           |
+|:-----------------------------|:--------|:--------------------------------------|
+| `FLEXAIDS_USE_AVX2`         | ON      | AVX2 + FMA SIMD acceleration          |
+| `FLEXAIDS_USE_AVX512`       | OFF     | AVX-512 (supersedes AVX2)             |
+| `FLEXAIDS_USE_OPENMP`       | ON      | OpenMP thread parallelism             |
+| `FLEXAIDS_USE_EIGEN`        | ON      | Eigen3 vectorised linear algebra      |
+| `FLEXAIDS_USE_CUDA`         | OFF     | CUDA GPU evaluation kernels           |
+| `FLEXAIDS_USE_METAL`        | OFF     | Metal GPU (macOS Apple Silicon)       |
+| `FLEXAIDS_PYTHON_BINDINGS`  | OFF     | Build `flexaidds` Python module       |
+
+### Python bindings
+
+```bash
+pip install pybind11
+cd build
+cmake .. -DFLEXAIDS_PYTHON_BINDINGS=ON
+cmake --build . --target flexaidds -j$(nproc)
+```
+
+```python
+import flexaidds
+
+# Automatic cleft detection
+spheres = flexaidds.detect_cleft("protein.pdb")
+for x, y, z, r in spheres:
+    print(f"  sphere at ({x:.1f}, {y:.1f}, {z:.1f}), radius {r:.2f}")
+
+# Read ligand files
+atoms = flexaidds.read_mol2("ligand.mol2")
+atoms = flexaidds.read_sdf("ligand.sdf")
+```
+
+## Running FlexAID
+
+FlexAID requires a config and a GA parameter file. These can be generated using
+`ProcessLigand` (`pip install processligand-py`).
 When using ProcessLigand make sure `atom_index=90000` on the ligand.
+
+### Auto binding-site detection (new in v1.5)
+
+Set `RNGOPT AUTO` in the config file instead of providing a sphere file:
+
+```
+RNGOPT AUTO
+```
+
+FlexAID will automatically detect the largest binding cavity using the
+SURFNET gap-sphere algorithm and generate the docking grid from it.
 
 # Required Config file codes
 

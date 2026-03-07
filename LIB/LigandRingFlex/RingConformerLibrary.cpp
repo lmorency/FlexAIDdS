@@ -79,7 +79,7 @@ int RingConformerLibrary::random_five_index() const {
 // Check if a ring is likely aromatic: all ring atoms are sp2-hybridised
 // (≤ 3 bonds, element is C/N/O/S) and the ring size is 5 or 6.
 static bool is_likely_aromatic(const std::vector<int>& ring,
-                               const atom_struct* atoms) {
+                               const ::atom* atoms) {
     for (int idx : ring) {
         int nbonds = atoms[idx].bond[0];
         if (nbonds > 3) return false;
@@ -94,7 +94,7 @@ static bool is_likely_aromatic(const std::vector<int>& ring,
 
 std::vector<RingDescriptor> detect_non_aromatic_rings(
     const int* atom_indices, int n_atoms,
-    const atom_struct* atoms)
+    const ::atom* atoms)
 {
     std::vector<RingDescriptor> result;
     if (!atom_indices || n_atoms <= 0 || !atoms) return result;
