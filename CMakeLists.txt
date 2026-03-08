@@ -5,7 +5,17 @@ project(FlexAID LANGUAGES CXX)
 
 # ─── C++20 ────────────────────────────────────────────────────────────────
 set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED True)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)   # -std=c++20 not -std=gnu++20
+
+# Fail fast if compiler is too old to support C++20
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "10.0")
+        message(FATAL_ERROR
+            "FlexAIDdS requires C++20 — found ${CMAKE_CXX_COMPILER_ID} "
+            "${CMAKE_CXX_COMPILER_VERSION}. Upgrade to GCC ≥ 10 or Clang ≥ 10.")
+    endif()
+endif()
 
 if(POLICY CMP0167)
     cmake_policy(SET CMP0167 NEW)
@@ -327,4 +337,25 @@ if(ENABLE_TENCOM_BENCHMARK)
         target_compile_definitions(benchmark_tencom PRIVATE FLEXAIDS_HAS_EIGEN)
     endif()
     message(STATUS "TeNCoM benchmark enabled — build target: benchmark_tencom")
+endif()
+
+# ─── VoronoiCFBatch benchmark (Task 2.3) ───────────────────────────────────────
+# VoronoiCFBatch.h is header-only; the benchmark binary exercises the std::span
+# batch interface and prints a serial-vs-OpenMP speedup table.
+option(ENABLE_VCFBATCH_BENCHMARK "Build the VoronoiCFBatch benchmark binary" OFF)
+if(ENABLE_VCFBATCH_BENCHMARK)
+    add_executable(benchmark_vcfbatch LIB/benchmark_vcfbatch.cpp)
+    target_include_directories(benchmark_vcfbatch PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_compile_options(benchmark_vcfbatch PRIVATE -O3 -march=native -ffast-math)
+    if(FLEXAIDS_USE_AVX512)
+        target_compile_options(benchmark_vcfbatch PRIVATE -mavx512f -mavx512dq -mavx2 -mfma)
+        target_compile_definitions(benchmark_vcfbatch PRIVATE FLEXAIDS_USE_AVX512)
+    elseif(FLEXAIDS_USE_AVX2)
+        target_compile_options(benchmark_vcfbatch PRIVATE -mavx2 -mfma)
+    endif()
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(benchmark_vcfbatch PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    message(STATUS "VoronoiCFBatch benchmark enabled — build target: benchmark_vcfbatch")
 endif()

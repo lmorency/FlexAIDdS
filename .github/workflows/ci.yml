@@ -1,0 +1,62 @@
+name: FlexAIDdS CI (C++20)
+
+on:
+  push:
+    branches: ["claude/implement-todo-item-AJIMS", "main", "master"]
+  pull_request:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            compiler: g++
+            cc: gcc
+          - os: ubuntu-latest
+            compiler: clang++
+            cc: clang
+          - os: macos-latest
+            compiler: clang++
+            cc: clang
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y cmake build-essential libomp-dev
+
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: brew install cmake libomp
+
+      - name: Verify C++20 compiler support
+        run: |
+          ${{ matrix.compiler }} --version
+          echo '#include <span>
+          #include <concepts>
+          template<std::integral T> T id(T x){return x;}
+          int main(){std::span<int> s; return id(0);}' > /tmp/cxx20_check.cpp
+          ${{ matrix.compiler }} -std=c++20 /tmp/cxx20_check.cpp -o /tmp/cxx20_check
+          echo "C++20 support confirmed."
+
+      - name: Configure
+        env:
+          CXX: ${{ matrix.compiler }}
+          CC:  ${{ matrix.cc }}
+        run: |
+          cmake -B build \
+                -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_CXX_STANDARD=20 \
+                -DCMAKE_CXX_STANDARD_REQUIRED=ON \
+                -DCMAKE_CXX_EXTENSIONS=OFF \
+                -DFLEXAIDS_USE_OPENMP=ON
+
+      - name: Build
+        run: cmake --build build --verbose --parallel $(nproc 2>/dev/null || sysctl -n hw.ncpu)

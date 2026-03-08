@@ -1,11 +1,9 @@
 // core_bindings.cpp — pybind11 bindings for FlexAID∆S C++ core
 //
 // Exposes:
-//   - statmech::StatMechEngine
-//   - statmech::Thermodynamics
-//   - statmech::BoltzmannLUT
-//   - BindingMode (basic interface)
-//   - BindingPopulation (basic interface)
+//   - statmech::StatMechEngine, Thermodynamics, BoltzmannLUT
+//   - BindingMode / BindingPopulation (Phase 1/2 StatMech API)
+//   - encom::ENCoMEngine, VibrationalEntropy, NormalMode (Phase 3)
 //
 // Build: See python/setup.py and CMakeLists.txt with -DBUILD_PYTHON_BINDINGS=ON
 
@@ -14,6 +12,7 @@
 #include <pybind11/numpy.h>
 #include "../../LIB/statmech.h"
 #include "../../LIB/BindingMode.h"
+#include "../../LIB/encom.h"
 
 namespace py = pybind11;
 using namespace statmech;
@@ -199,7 +198,95 @@ PYBIND11_MODULE(_core, m) {
             return std::string(buf);
         });
     
-    // Note: BindingPopulation requires GA/docking infrastructure.
-    // Full integration deferred to Phase 2 (see python/flexaidds/docking.py
-    // for high-level wrapper when C++ FlexAID docking engine is exposed).
+    // ═══════════════════════════════════════════════════════════════════════
+    // BindingPopulation: global ensemble thermodynamics (Phase 2)
+    // ═══════════════════════════════════════════════════════════════════════
+    //
+    // Note: BindingPopulation construction requires the full GA/FlexAID
+    // runtime (FA_Global*, GB_Global*, etc.) which is not exposed to Python.
+    // We expose the analytical methods on an existing C++ population object
+    // via lambda helpers.  Instantiation from Python remains via the C++
+    // docking binary + RRD output parsers (python/flexaidds/docking.py).
+    //
+    // The methods below are bound so that BindingPopulation objects returned
+    // by a future C++ extension factory can be used in Python.
+    py::class_<BindingPopulation>(m, "BindingPopulation",
+        "Collection of binding modes from a docking run, with global ensemble analysis")
+        .def("get_population_size", &BindingPopulation::get_Population_size,
+            "Number of distinct binding modes")
+        .def("compute_delta_G",
+            [](const BindingPopulation& pop, const BindingMode& m1, const BindingMode& m2) {
+                return pop.compute_delta_G(m1, m2);
+            },
+            py::arg("mode1"), py::arg("mode2"),
+            "ΔG between two binding modes (kcal/mol); positive = mode1 less favoured")
+        .def("get_global_ensemble", &BindingPopulation::get_global_ensemble,
+            "StatMechEngine aggregating all poses across all binding modes")
+        .def("__len__", &BindingPopulation::get_Population_size)
+        .def("__repr__", [](const BindingPopulation& p) {
+            return "<BindingPopulation n_modes=" +
+                   std::to_string(const_cast<BindingPopulation&>(p).get_Population_size()) + ">";
+        });
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // ENCoM: normal mode analysis + vibrational entropy (Phase 3)
+    // ═══════════════════════════════════════════════════════════════════════
+
+    py::class_<encom::NormalMode>(m, "NormalMode",
+        "Normal mode from ENCoM elastic network calculation")
+        .def(py::init<>())
+        .def_readwrite("index",      &encom::NormalMode::index,      "1-based mode index")
+        .def_readwrite("eigenvalue", &encom::NormalMode::eigenvalue,  "λ (ENCoM arbitrary units)")
+        .def_readwrite("frequency",  &encom::NormalMode::frequency,   "ω = sqrt(λ) (rad/s in SI)")
+        .def_readwrite("eigenvector",&encom::NormalMode::eigenvector, "Displacement vector (3N)")
+        .def("__repr__", [](const encom::NormalMode& nm) {
+            return "<NormalMode " + std::to_string(nm.index) +
+                   " λ=" + std::to_string(nm.eigenvalue) + ">";
+        });
+
+    py::class_<encom::VibrationalEntropy>(m, "VibrationalEntropy",
+        "Quasi-harmonic vibrational entropy from ENCoM normal modes")
+        .def(py::init<>())
+        .def_readwrite("S_vib_kcal_mol_K", &encom::VibrationalEntropy::S_vib_kcal_mol_K,
+            "S_vib in kcal mol⁻¹ K⁻¹")
+        .def_readwrite("S_vib_J_mol_K",    &encom::VibrationalEntropy::S_vib_J_mol_K,
+            "S_vib in J mol⁻¹ K⁻¹")
+        .def_readwrite("omega_eff",        &encom::VibrationalEntropy::omega_eff,
+            "Effective frequency ω_eff (rad/s)")
+        .def_readwrite("n_modes",          &encom::VibrationalEntropy::n_modes,
+            "Number of non-trivial normal modes (3N − 6)")
+        .def_readwrite("temperature",      &encom::VibrationalEntropy::temperature, "K")
+        .def("free_energy_correction", [](const encom::VibrationalEntropy& vs) {
+            return -vs.temperature * vs.S_vib_kcal_mol_K;
+        }, "−T·S_vib vibrational free energy correction (kcal/mol)")
+        .def("__repr__", [](const encom::VibrationalEntropy& vs) {
+            char buf[256];
+            snprintf(buf, sizeof(buf),
+                "<VibrationalEntropy n_modes=%d S_vib=%.6f kcal/(mol·K) T=%.1fK>",
+                vs.n_modes, vs.S_vib_kcal_mol_K, vs.temperature);
+            return std::string(buf);
+        });
+
+    py::class_<encom::ENCoMEngine>(m, "ENCoMEngine",
+        "ENCoM quasi-harmonic entropy calculator")
+        .def_static("load_modes",
+            &encom::ENCoMEngine::load_modes,
+            py::arg("eigenvalue_file"), py::arg("eigenvector_file"),
+            "Load normal modes from ENCoM output files\n"
+            "  eigenvalue_file:  plain text, one eigenvalue per line\n"
+            "  eigenvector_file: one mode per row, space-separated components")
+        .def_static("compute_vibrational_entropy",
+            &encom::ENCoMEngine::compute_vibrational_entropy,
+            py::arg("modes"),
+            py::arg("temperature_K")     = 300.0,
+            py::arg("eigenvalue_cutoff") = 1e-6,
+            "Schlitter quasi-harmonic S_vib from a list of NormalMode objects")
+        .def_static("total_entropy",
+            &encom::ENCoMEngine::total_entropy,
+            py::arg("S_conf_kcal_mol_K"), py::arg("S_vib_kcal_mol_K"),
+            "S_total = S_conf + S_vib  (kcal mol⁻¹ K⁻¹)")
+        .def_static("free_energy_with_vibrations",
+            &encom::ENCoMEngine::free_energy_with_vibrations,
+            py::arg("F_electronic"), py::arg("S_vib_kcal_mol_K"), py::arg("temperature_K"),
+            "F_total = F_elec − T·S_vib  (kcal/mol)");
 }

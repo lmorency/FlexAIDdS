@@ -16,6 +16,7 @@ Example:
 Modules:
     thermodynamics: Statistical mechanics engine and free energy calculations
     docking: High-level docking interface
+    encom: ENCoM normal mode / vibrational entropy analysis (Phase 3)
     visualization: PyMOL integration for pose rendering
     io: File I/O utilities (PDB, MOL2, config files)
 """
@@ -45,6 +46,19 @@ from .docking import (
     BindingPopulation,
 )
 
+# ENCoM vibrational entropy — exposed directly from compiled C++ extension
+# (NormalMode, VibrationalEntropy, ENCoMEngine live in _core)
+if _core is not None:
+    from ._core import (
+        NormalMode,
+        VibrationalEntropy,
+        ENCoMEngine,
+    )
+else:
+    NormalMode = None
+    VibrationalEntropy = None
+    ENCoMEngine = None
+
 __all__ = [
     "__version__",
     # Thermodynamics
@@ -55,4 +69,8 @@ __all__ = [
     "Docking",
     "BindingMode",
     "BindingPopulation",
+    # ENCoM (Phase 3)
+    "NormalMode",
+    "VibrationalEntropy",
+    "ENCoMEngine",
 ]
