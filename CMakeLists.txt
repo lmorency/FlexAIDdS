@@ -338,3 +338,24 @@ if(ENABLE_TENCOM_BENCHMARK)
     endif()
     message(STATUS "TeNCoM benchmark enabled — build target: benchmark_tencom")
 endif()
+
+# ─── VoronoiCFBatch benchmark (Task 2.3) ───────────────────────────────────────
+# VoronoiCFBatch.h is header-only; the benchmark binary exercises the std::span
+# batch interface and prints a serial-vs-OpenMP speedup table.
+option(ENABLE_VCFBATCH_BENCHMARK "Build the VoronoiCFBatch benchmark binary" OFF)
+if(ENABLE_VCFBATCH_BENCHMARK)
+    add_executable(benchmark_vcfbatch LIB/benchmark_vcfbatch.cpp)
+    target_include_directories(benchmark_vcfbatch PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_compile_options(benchmark_vcfbatch PRIVATE -O3 -march=native -ffast-math)
+    if(FLEXAIDS_USE_AVX512)
+        target_compile_options(benchmark_vcfbatch PRIVATE -mavx512f -mavx512dq -mavx2 -mfma)
+        target_compile_definitions(benchmark_vcfbatch PRIVATE FLEXAIDS_USE_AVX512)
+    elseif(FLEXAIDS_USE_AVX2)
+        target_compile_options(benchmark_vcfbatch PRIVATE -mavx2 -mfma)
+    endif()
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(benchmark_vcfbatch PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    message(STATUS "VoronoiCFBatch benchmark enabled — build target: benchmark_vcfbatch")
+endif()
