@@ -5,7 +5,17 @@ project(FlexAID LANGUAGES CXX)
 
 # ─── C++20 ────────────────────────────────────────────────────────────────
 set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED True)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)   # -std=c++20 not -std=gnu++20
+
+# Fail fast if compiler is too old to support C++20
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "10.0")
+        message(FATAL_ERROR
+            "FlexAIDdS requires C++20 — found ${CMAKE_CXX_COMPILER_ID} "
+            "${CMAKE_CXX_COMPILER_VERSION}. Upgrade to GCC ≥ 10 or Clang ≥ 10.")
+    endif()
+endif()
 
 if(POLICY CMP0167)
     cmake_policy(SET CMP0167 NEW)
