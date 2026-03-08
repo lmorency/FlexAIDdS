@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=64", "wheel", "pybind11>=2.10"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flexaidds"
+version = "0.1.0"
+description = "Python bindings for the FlexAID∆S thermodynamic core"
+authors = [
+  { name = "Louis-Philippe Morency" },
+]
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "Apache-2.0" }
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: C++",
+  "License :: OSI Approved :: Apache Software License",
+  "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-cov"]
+
+[project.urls]
+Homepage = "https://github.com/lmorency/FlexAIDdS"
+
+[tool.setuptools]
+packages = ["flexaidds"]
+
+[tool.setuptools.package-dir]
+"" = "."
