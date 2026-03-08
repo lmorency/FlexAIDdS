@@ -1,23 +1,10 @@
-name: C/C++ CI
+name: Legacy C/C++ workflow (manual only)
 
 on:
-  push:
-    branches: [ "claude/write-implementation-MglRZ" ]
-  pull_request:
-    branches: [ "claude/write-implementation-MglRZ" ]
+  workflow_dispatch:
 
 jobs:
-  build:
-
+  deprecated:
     runs-on: ubuntu-latest
-
     steps:
-    - uses: actions/checkout@v4
-    - name: configure
-      run: ./configure
-    - name: make
-      run: make
-    - name: make check
-      run: make check
-    - name: make distcheck
-      run: make distcheck
+      - run: echo 'Deprecated workflow. Use .github/workflows/ci.yml instead.'
