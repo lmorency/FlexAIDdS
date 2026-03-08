@@ -67,11 +67,23 @@ def test_load_results_uses_filename_heuristics_when_remarks_missing(tmp_path: Pa
             "temperature = 298.15",
         ],
     )
+    _write_pdb(
+        tmp_path / "cluster-12_conformer-4.pdb",
+        [
+            "CF = -9.25",
+            "temperature = 298.15",
+        ],
+    )
 
     result = load_results(tmp_path)
-    mode = result.binding_modes[0]
-    pose = mode.poses[0]
+    first_mode = result.binding_modes[0]
+    first_pose = first_mode.poses[0]
+    second_mode = result.binding_modes[1]
+    second_pose = second_mode.poses[0]
 
-    assert mode.mode_id == 7
-    assert pose.pose_rank == 3
-    assert mode.best_cf == -11.5
+    assert first_mode.mode_id == 7
+    assert first_pose.pose_rank == 3
+    assert first_mode.best_cf == -11.5
+    assert second_mode.mode_id == 12
+    assert second_pose.pose_rank == 4
+    assert second_mode.best_cf == -9.25
