@@ -294,6 +294,112 @@ See [LICENSE](LICENSE) for full terms.
 
 ---
 
+## Python Bindings
+
+FlexAID∆S includes Python bindings via pybind11 for high-level workflows.
+
+### Install
+
+```bash
+cd python
+pip install -e .
+```
+
+### Usage
+
+```python
+import flexaidds as fds
+
+# Statistical mechanics from pose energies
+engine = fds.StatMechEngine(temperature_K=300.0)
+engine.add_samples([-10.5, -9.8, -10.2, -11.0])
+thermo = engine.compute()
+print(f"Free energy: {thermo.free_energy:.2f} kcal/mol")
+print(f"Entropy: {thermo.entropy:.5f} kcal/(mol·K)")
+
+# Parse and inspect docking configuration
+docking = fds.Docking("config.inp")
+print(docking.receptor, docking.ligand)
+```
+
+### Modules
+
+- **`flexaidds.thermodynamics`** – `StatMechEngine`, `Thermodynamics`, `BoltzmannLUT` for partition functions, free energies, and heat capacities
+- **`flexaidds.docking`** – `Docking`, `BindingMode`, `BindingPopulation` for docking workflows and pose analysis
+
+---
+
+## PyMOL Plugin
+
+A PyMOL plugin for visualizing docking results is included in `pymol_plugin/`.
+
+### Install
+
+1. PyMOL > Plugin Manager > Install New Plugin
+2. Select the `pymol_plugin/` directory
+3. Restart PyMOL
+
+### Commands
+
+```
+flexaids_load          – Load binding mode results
+flexaids_show_ensemble – Render pose ensemble
+flexaids_color_boltzmann – Color poses by Boltzmann weight
+flexaids_thermo        – Display thermodynamic properties
+```
+
+---
+
+## FreeNRG Integration
+
+The [FreeNRG](https://github.com/lmorency/FreeNRG) Python package provides a unified free energy framework that bridges FlexAID∆S with NRGRank virtual screening. See [FREENRG_INTEGRATION.md](FREENRG_INTEGRATION.md) for details.
+
+```python
+from freenrg.pipeline import FreeNRGPipeline, FreeNRGConfig, DockingMode
+
+config = FreeNRGConfig(
+    mode=DockingMode.FLEXAID,
+    flexaid_binary="/path/to/FlexAID",
+    receptor_pdb="receptor.inp.pdb",
+    ligand_inp="ligand.inp",
+    binding_site="cleft.pdb",
+)
+result = FreeNRGPipeline().run(config)
+print(f"deltaG = {result.delta_G:.2f} kcal/mol")
+```
+
+---
+
+## Project Structure
+
+```
+FlexAIDdS/
+├── LIB/                    # C++ source
+│   ├── BindingMode.*       # Binding mode clustering + StatMechEngine integration
+│   ├── ShannonThermoStack/ # Shannon entropy (CPU/CUDA/Metal)
+│   ├── CavityDetect/       # SURFNET-based cavity detection
+│   ├── NATURaL/            # NATURaL scoring potential
+│   ├── ChiralCenter/       # Chirality handling
+│   ├── LigandRingFlex/     # Ring flexibility
+│   ├── statmech.*          # Statistical mechanics engine
+│   ├── encom.*             # ENCoM vibrational entropy
+│   ├── tencm.*             # Torsional elastic network model
+│   ├── cffunction.cpp      # Complementarity function scoring
+│   ├── gaboom.*            # Genetic algorithm engine
+│   ├── cuda_eval.*         # CUDA GPU acceleration
+│   └── metal_eval.*        # Apple Metal GPU acceleration
+├── python/                 # Python package (pybind11 bindings)
+│   ├── flexaidds/          # High-level Python API
+│   └── bindings/           # pybind11 C++ ↔ Python bridge
+├── pymol_plugin/           # PyMOL visualization plugin
+├── WRK/                    # Data files (atom types, energy matrices, rotamers)
+├── BIN/                    # Legacy Makefiles
+├── cmake/                  # CMake modules
+└── CMakeLists.txt          # Build system
+```
+
+---
+
 ## Support
 
 **Issues:** https://github.com/lmorency/FlexAIDdS/issues
