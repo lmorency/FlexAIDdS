@@ -12,7 +12,7 @@
 
 class BindingPopulation; // forward-declaration in order to access BindingPopulation* Population pointer
 /*****************************************\
-				  Pose
+			  Pose
 \*****************************************/
 struct Pose
 {
@@ -56,22 +56,29 @@ class BindingMode // aggregation of poses (Cluster)
 	friend class BindingPopulation;
 	
 	public:
-		explicit 						BindingMode(BindingPopulation*); // public constructor (explicitely needs a pointer to a BindingPopulation of type BindingPopulation*)
+		explicit 	 					BindingMode(BindingPopulation*); // public constructor (explicitely needs a pointer to a BindingPopulation of type BindingPopulation*)
 
-			void						add_Pose(Pose&);
-			void						clear_Poses();
-			int							get_BindingMode_size() const;
+			void	 					add_Pose(Pose&);
+			void	 					clear_Poses();
+			int	  						get_BindingMode_size() const;
 			
 			// ═══ LEGACY INTERFACE (backward compatibility) ═══
-			double						compute_energy() const;      // returns Helmholtz free energy F = H - TS
-			double						compute_entropy() const;     // returns configurational entropy S
-			double						compute_enthalpy() const;    // returns Boltzmann-weighted ⟨E⟩
+			double	 					compute_energy() const;      // returns Helmholtz free energy F = H - TS
+			double	 					compute_entropy() const;     // returns configurational entropy S
+			double	 					compute_enthalpy() const;    // returns Boltzmann-weighted ⟨E⟩
 			
 			// ═══ NEW STATMECH API ═══
 			statmech::Thermodynamics	get_thermodynamics() const;  // full thermo struct (F, S, H, Cv, σ_E)
-			double						get_free_energy() const;     // alias for compute_energy()
-			double						get_heat_capacity() const;   // heat capacity C_v
-			std::vector<double>			get_boltzmann_weights() const; // weights for all poses
+			double	 					get_free_energy() const;     // alias for compute_energy()
+			double	 					get_heat_capacity() const;   // heat capacity C_v
+			std::vector<double>	 		get_boltzmann_weights() const; // weights for all poses
+			double	 					delta_G_relative_to(const BindingMode& reference) const;  // ΔG between modes
+			
+			// ═══ ADVANCED: WHAM FREE ENERGY PROFILES ═══
+			std::vector<statmech::WHAMBin> free_energy_profile(
+				const std::vector<double>& coordinates,
+				int nbins = 20
+			) const;  // 1D FE profile along arbitrary coordinate
 			
 			std::vector<Pose>::const_iterator elect_Representative(bool useOPTICSordering) const;
 			inline bool const 			operator<(const BindingMode&);
@@ -106,38 +113,38 @@ class BindingPopulation
 		
 		// explicit 	BindingPopulation(unsigned int);// public constructor (explicitely needs an int representative of Temperature)
 		explicit 	BindingPopulation(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, genlim* gene_lim, atom* atoms, resid* residue, gridpoint* cleftgrid, int nChrom);
-			// add new binding mode to population
-			void	add_BindingMode(BindingMode&);
-			// return the number of BindinMonde (size getter)
-			int		get_Population_size();
-			// output BindingMode up to nResults results
-			void	output_Population(int nResults, char* end_strfile, char* tmp_end_strfile, char* dockinp, char* gainp, int minPoints);
-			
-			// ═══ NEW STATMECH API ═══
-			/// Compute ΔG between two binding modes (relative binding free energy)
-			double	compute_delta_G(const BindingMode& mode1, const BindingMode& mode2) const;
-			/// Get global ensemble StatMechEngine aggregating all binding modes
-			statmech::StatMechEngine get_global_ensemble() const;
+		 	// add new binding mode to population
+		 	void	add_BindingMode(BindingMode&);
+		 	// return the number of BindinMonde (size getter)
+		 	int	 	get_Population_size();
+		 	// output BindingMode up to nResults results
+		 	void	output_Population(int nResults, char* end_strfile, char* tmp_end_strfile, char* dockinp, char* gainp, int minPoints);
+		 	
+		 	// ═══ NEW STATMECH API ═══
+		 	/// Compute ΔG between two binding modes (relative binding free energy)
+		 	double	compute_delta_G(const BindingMode& mode1, const BindingMode& mode2) const;
+		 	/// Get global ensemble StatMechEngine aggregating all binding modes
+		 	statmech::StatMechEngine get_global_ensemble() const;
 
 	protected:
 		double PartitionFunction;	// sum of all Boltzmann_weight (DEPRECATED: use StatMechEngine)
-		int nChroms;				// n_chrom_snapshot input to clustergin function
+		int nChroms;	 			// n_chrom_snapshot input to clustergin function
 
 		// FlexAID pointer
-		FA_Global* 	FA;			// pointer to FA_Global struct
-		GB_Global* 	GB;			// pointer to GB_Global struct
-		VC_Global* 	VC;			// pointer to VC_Global struct
-		chromosome* chroms;		// pointer to chromosomes' array
-		genlim* gene_lim;		// pointer to gene_lim genlim array (useful for bondaries defined for each gene)
-		atom* atoms;			// pointer to atoms' array
-		resid* residue;			// pointer to residues' array
+		FA_Global* 	FA;	 			// pointer to FA_Global struct
+		GB_Global* 	GB;	 			// pointer to GB_Global struct
+		VC_Global* 	VC;	 			// pointer to VC_Global struct
+		chromosome* chroms;	 		// pointer to chromosomes' array
+		genlim* gene_lim;	 		// pointer to gene_lim genlim array (useful for bondaries defined for each gene)
+		atom* atoms;	 			// pointer to atoms' array
+		resid* residue;	 			// pointer to residues' array
 		gridpoint* cleftgrid;	// pointer to gridpoints' array (defining the total search space of the simulation)
 	
 	private:
 
 		std::vector< BindingMode > 	BindingModes;	// BindingMode container
 		
-		void 						Entropize(); 	// Sort BindinModes according to their observation frequency
+		void 	 					Entropize(); 	// Sort BindinModes according to their observation frequency
 		
 		struct EnergyComparator
 		{

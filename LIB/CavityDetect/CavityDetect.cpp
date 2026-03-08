@@ -8,6 +8,7 @@
 #include <cassert>
 #include <cctype>
 #include <cmath>
+#include <cstddef>
 #include <cstring>
 #include <fstream>
 #include <iomanip>
@@ -360,10 +361,14 @@ void CavityDetector::detect(float min_radius, float max_radius) {
     std::vector<std::vector<DetectedSphere>> thread_spheres(
             static_cast<std::size_t>(n_threads));
 
+    // NOTE: MSVC's OpenMP 2.0 requires a *signed* integer loop variable.
+    // std::size_t (unsigned) is rejected; use int with a cast inside.
+    const int N_signed = static_cast<int>(N);
 #ifdef _OPENMP
     #pragma omp parallel for schedule(dynamic, 16)
 #endif
-    for (std::size_t i = 0; i < N; ++i) {
+    for (int _i = 0; _i < N_signed; ++_i) {
+        const std::size_t i = static_cast<std::size_t>(_i);
         const int tid =
 #ifdef _OPENMP
             omp_get_thread_num();
@@ -581,7 +586,9 @@ void CavityDetector::filter_anchor_residues(const std::string& anchor_residues) 
     for (const auto& a : m_atoms) {
         for (int rn : anchor_nums) {
             if (a.ofres == rn && std::strncmp(a.name, "CA", 2) == 0) {
-                anchor_pos.push_back({a.coor[0], a.coor[1], a.coor[2]});
+                // MSVC fix: explicit std::array<float,3> — bare braced-init-list
+                // is ambiguous to MSVC when deducing the push_back overload.
+                anchor_pos.push_back(std::array<float, 3>{a.coor[0], a.coor[1], a.coor[2]});
             }
         }
     }
