@@ -3,24 +3,15 @@
 Qt-based interface for docking result visualization and analysis.
 """
 
-import os
 from pathlib import Path
 
 try:
-    from pymol.Qt import QtWidgets, QtCore
+    from pymol.Qt import QtWidgets
     from pymol import cmd
 except ImportError:
     raise ImportError("PyMOL Qt bindings not available")
 
-from .visualization import (
-    load_binding_modes,
-    show_pose_ensemble,
-    color_by_boltzmann_weight,
-    show_thermodynamics,
-    export_to_nrgsuite,
-    _loaded_modes,
-    _temperature_K,
-)
+from . import results_adapter as ro_adapter
 
 
 class FlexAIDSPanel(QtWidgets.QDialog):
@@ -29,20 +20,18 @@ class FlexAIDSPanel(QtWidgets.QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("FlexAID∆S: Entropy-Driven Docking")
-        self.setMinimumWidth(400)
-        self.setMinimumHeight(500)
+        self.setMinimumWidth(420)
+        self.setMinimumHeight(520)
 
         self._setup_ui()
         self._connect_signals()
 
-        # Data state — mode_name strings parallel to QListWidget rows
-        self._mode_names: list = []
+        self._mode_ids: list[int] = []
 
     def _setup_ui(self):
         """Construct GUI layout."""
         layout = QtWidgets.QVBoxLayout(self)
 
-        # ─── File loading section ───
         file_group = QtWidgets.QGroupBox("Load Docking Results")
         file_layout = QtWidgets.QHBoxLayout()
 
@@ -59,7 +48,12 @@ class FlexAIDSPanel(QtWidgets.QDialog):
         file_group.setLayout(file_layout)
         layout.addWidget(file_group)
 
-        # ─── Binding mode list ───
+        adapter_info = QtWidgets.QLabel(
+            "This panel now loads result directories through the read-only flexaidds Python API."
+        )
+        adapter_info.setWordWrap(True)
+        layout.addWidget(adapter_info)
+
         mode_group = QtWidgets.QGroupBox("Binding Modes")
         mode_layout = QtWidgets.QVBoxLayout()
 
@@ -70,7 +64,6 @@ class FlexAIDSPanel(QtWidgets.QDialog):
         mode_group.setLayout(mode_layout)
         layout.addWidget(mode_group)
 
-        # ─── Thermodynamic properties display ───
         thermo_group = QtWidgets.QGroupBox("Thermodynamics")
         thermo_layout = QtWidgets.QFormLayout()
 
@@ -89,32 +82,38 @@ class FlexAIDSPanel(QtWidgets.QDialog):
         thermo_group.setLayout(thermo_layout)
         layout.addWidget(thermo_group)
 
-        # ─── Visualization controls ───
         viz_group = QtWidgets.QGroupBox("Visualization")
         viz_layout = QtWidgets.QVBoxLayout()
 
         self.show_ensemble_btn = QtWidgets.QPushButton("Show Pose Ensemble")
         self.show_ensemble_btn.setEnabled(False)
 
-        self.color_boltzmann_btn = QtWidgets.QPushButton("Color by Boltzmann Weight")
-        self.color_boltzmann_btn.setEnabled(False)
+        self.color_cf_btn = QtWidgets.QPushButton("Color by CF")
+        self.color_cf_btn.setEnabled(False)
+
+        self.color_free_energy_btn = QtWidgets.QPushButton("Color by Free Energy")
+        self.color_free_energy_btn.setEnabled(False)
 
         self.show_representative_btn = QtWidgets.QPushButton("Show Representative Only")
         self.show_representative_btn.setEnabled(False)
 
+        self.print_details_btn = QtWidgets.QPushButton("Print Mode Details")
+        self.print_details_btn.setEnabled(False)
+
         viz_layout.addWidget(self.show_ensemble_btn)
-        viz_layout.addWidget(self.color_boltzmann_btn)
+        viz_layout.addWidget(self.color_cf_btn)
+        viz_layout.addWidget(self.color_free_energy_btn)
         viz_layout.addWidget(self.show_representative_btn)
+        viz_layout.addWidget(self.print_details_btn)
 
         viz_group.setLayout(viz_layout)
         layout.addWidget(viz_group)
 
-        # ─── NRGSuite integration ───
-        nrg_group = QtWidgets.QGroupBox("NRGSuite Integration")
+        nrg_group = QtWidgets.QGroupBox("Export")
         nrg_layout = QtWidgets.QVBoxLayout()
 
         self.launch_nrgsuite_btn = QtWidgets.QPushButton("Launch NRGSuite")
-        self.export_to_nrg_btn = QtWidgets.QPushButton("Export to NRGSuite Format")
+        self.export_to_nrg_btn = QtWidgets.QPushButton("Export Mode Table")
         self.export_to_nrg_btn.setEnabled(False)
 
         nrg_layout.addWidget(self.launch_nrgsuite_btn)
@@ -123,7 +122,6 @@ class FlexAIDSPanel(QtWidgets.QDialog):
         nrg_group.setLayout(nrg_layout)
         layout.addWidget(nrg_group)
 
-        # ─── Close button ───
         close_btn = QtWidgets.QPushButton("Close")
         close_btn.clicked.connect(self.close)
         layout.addWidget(close_btn)
@@ -137,12 +135,12 @@ class FlexAIDSPanel(QtWidgets.QDialog):
         self.load_btn.clicked.connect(self._load_results)
         self.mode_list.itemSelectionChanged.connect(self._on_mode_selected)
         self.show_ensemble_btn.clicked.connect(self._show_pose_ensemble)
-        self.color_boltzmann_btn.clicked.connect(self._color_by_boltzmann)
+        self.color_cf_btn.clicked.connect(self._color_by_cf)
+        self.color_free_energy_btn.clicked.connect(self._color_by_free_energy)
         self.show_representative_btn.clicked.connect(self._show_representative)
+        self.print_details_btn.clicked.connect(self._print_mode_details)
         self.launch_nrgsuite_btn.clicked.connect(self._launch_nrgsuite)
-        self.export_to_nrg_btn.clicked.connect(self._export_to_nrgsuite)
-
-    # ── slots ────────────────────────────────────────────────────────────────
+        self.export_to_nrg_btn.clicked.connect(self._export_mode_table)
 
     def _browse_directory(self):
         """Open file dialog to select FlexAID output directory."""
@@ -161,107 +159,137 @@ class FlexAIDSPanel(QtWidgets.QDialog):
             )
             return
 
-        # Delegate to visualization module (parses PDBs, .cad, computes thermo)
-        load_binding_modes(str(output_dir), temperature=_temperature_K)
-
-        if not _loaded_modes:
+        try:
+            ro_adapter.load_docking_results(str(output_dir))
+        except Exception as exc:
             QtWidgets.QMessageBox.warning(
-                self, "No Results",
-                f"No FlexAID result files found in:\n{output_dir}\n\n"
-                "Expected: result_*.pdb files."
+                self,
+                "Load Failed",
+                f"Could not load results with the Python adapter:\n{exc}",
             )
             return
 
-        # Populate list widget with ranked modes (sort by free energy)
+        result = ro_adapter._loaded_result
+        if result is None or not result.binding_modes:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "No Results",
+                f"No docking results could be parsed in:\n{output_dir}",
+            )
+            return
+
         self.mode_list.clear()
-        self._mode_names.clear()
+        self._mode_ids.clear()
 
         sorted_modes = sorted(
-            _loaded_modes.items(),
-            key=lambda kv: (
-                kv[1].free_energy if kv[1].free_energy is not None else float("inf")
+            result.binding_modes,
+            key=lambda mode: (
+                mode.free_energy if mode.free_energy is not None else float("inf"),
+                mode.rank,
+                mode.mode_id,
             ),
         )
 
-        for mode_name, rec in sorted_modes:
+        for mode in sorted_modes:
             dg_str = (
-                f"{rec.free_energy:.2f} kcal/mol"
-                if rec.free_energy is not None
+                f"{mode.free_energy:.2f} kcal/mol"
+                if mode.free_energy is not None
                 else "N/A"
             )
-            label = f"{mode_name}: ΔG = {dg_str}  ({rec.frequency} poses)"
+            label = f"mode{mode.mode_id}: ΔG = {dg_str}  ({mode.n_poses} poses)"
             self.mode_list.addItem(label)
-            self._mode_names.append(mode_name)
+            self._mode_ids.append(mode.mode_id)
 
-        # Enable controls
         for btn in (
             self.show_ensemble_btn,
-            self.color_boltzmann_btn,
+            self.color_cf_btn,
+            self.color_free_energy_btn,
             self.show_representative_btn,
+            self.print_details_btn,
             self.export_to_nrg_btn,
         ):
             btn.setEnabled(True)
 
-        # Auto-select first mode
         if self.mode_list.count():
             self.mode_list.setCurrentRow(0)
 
         QtWidgets.QMessageBox.information(
             self,
             "Loaded",
-            f"Loaded {len(_loaded_modes)} binding modes from {output_dir.name}.",
+            f"Loaded {result.n_modes} binding modes from {output_dir.name} using the Python adapter.",
         )
 
-    def _on_mode_selected(self):
-        """Update thermodynamics panel when a binding mode is selected."""
+    def _selected_mode_id(self) -> int | None:
         row = self.mode_list.currentRow()
-        if row < 0 or row >= len(self._mode_names):
-            return
-
-        mode_name = self._mode_names[row]
-        rec = _loaded_modes.get(mode_name)
-        if rec is None:
-            return
-
-        T = _temperature_K
-        entropy_term = (rec.entropy * T) if rec.entropy is not None else None
-
-        def _fmt(val, fmt=".4f"):
-            return f"{val:{fmt}}" if val is not None else "N/A"
-
-        self.free_energy_label.setText(_fmt(rec.free_energy))
-        self.enthalpy_label.setText(_fmt(rec.enthalpy))
-        self.entropy_label.setText(_fmt(rec.entropy, ".6f"))
-        self.entropy_term_label.setText(_fmt(entropy_term))
-        self.n_poses_label.setText(str(rec.frequency))
-
-    def _selected_mode_name(self) -> str | None:
-        """Return the currently selected mode name, or None."""
-        row = self.mode_list.currentRow()
-        if row < 0 or row >= len(self._mode_names):
+        if row < 0 or row >= len(self._mode_ids):
             QtWidgets.QMessageBox.warning(
                 self, "No Mode Selected", "Please select a binding mode first."
             )
             return None
-        return self._mode_names[row]
+        return self._mode_ids[row]
+
+    def _find_mode(self, mode_id: int):
+        result = ro_adapter._loaded_result
+        if result is None:
+            return None
+        for mode in result.binding_modes:
+            if mode.mode_id == mode_id:
+                return mode
+        return None
+
+    def _on_mode_selected(self):
+        """Update thermodynamics panel when a binding mode is selected."""
+        mode_id = self._selected_mode_id()
+        if mode_id is None:
+            return
+
+        mode = self._find_mode(mode_id)
+        if mode is None:
+            return
+
+        temperature = mode.temperature
+        if temperature is None and ro_adapter._loaded_result is not None:
+            temperature = ro_adapter._loaded_result.temperature
+        entropy_term = (mode.entropy * temperature) if (mode.entropy is not None and temperature is not None) else None
+
+        def _fmt(val, fmt=".4f"):
+            return f"{val:{fmt}}" if val is not None else "N/A"
+
+        self.free_energy_label.setText(_fmt(mode.free_energy))
+        self.enthalpy_label.setText(_fmt(mode.enthalpy))
+        self.entropy_label.setText(_fmt(mode.entropy, ".6f"))
+        self.entropy_term_label.setText(_fmt(entropy_term))
+        self.n_poses_label.setText(str(mode.n_poses))
 
     def _show_pose_ensemble(self):
         """Render all poses in the selected binding mode."""
-        mode_name = self._selected_mode_name()
-        if mode_name:
-            show_pose_ensemble(mode_name, show_all=True)
+        mode_id = self._selected_mode_id()
+        if mode_id is not None:
+            ro_adapter.show_binding_mode(mode_id, show_all=1)
 
-    def _color_by_boltzmann(self):
-        """Color poses by Boltzmann weight (blue = low, red = high)."""
-        mode_name = self._selected_mode_name()
-        if mode_name:
-            color_by_boltzmann_weight(mode_name)
+    def _color_by_cf(self):
+        """Color poses by CF score."""
+        mode_id = self._selected_mode_id()
+        if mode_id is not None:
+            ro_adapter.color_mode_by_score(mode_id, metric="cf")
+
+    def _color_by_free_energy(self):
+        """Color poses by free energy."""
+        mode_id = self._selected_mode_id()
+        if mode_id is not None:
+            ro_adapter.color_mode_by_score(mode_id, metric="free_energy")
 
     def _show_representative(self):
-        """Show only the representative pose (highest Boltzmann weight)."""
-        mode_name = self._selected_mode_name()
-        if mode_name:
-            show_pose_ensemble(mode_name, show_all=False)
+        """Show only the representative pose."""
+        mode_id = self._selected_mode_id()
+        if mode_id is not None:
+            ro_adapter.show_binding_mode(mode_id, show_all=0)
+
+    def _print_mode_details(self):
+        """Print mode thermodynamic details to the PyMOL console."""
+        mode_id = self._selected_mode_id()
+        if mode_id is not None:
+            ro_adapter.show_mode_details(mode_id)
 
     def _launch_nrgsuite(self):
         """Launch NRGSuite plugin (if installed)."""
@@ -275,25 +303,37 @@ class FlexAIDSPanel(QtWidgets.QDialog):
                 "Install from: https://github.com/NRGlab/NRGsuite",
             )
 
-    def _export_to_nrgsuite(self):
-        """Export binding modes to NRGSuite-compatible TSV format."""
-        output_dir = self.file_path_edit.text().strip()
-        if not output_dir:
+    def _export_mode_table(self):
+        """Export the current read-only mode table as TSV."""
+        result = ro_adapter._loaded_result
+        if result is None:
             QtWidgets.QMessageBox.warning(
-                self, "No Directory", "Load a results directory first."
+                self, "No Results", "Load a results directory first."
             )
             return
 
-        nrg_file, _ = QtWidgets.QFileDialog.getSaveFileName(
+        output_dir = self.file_path_edit.text().strip()
+        export_file, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
-            "Save NRGSuite Export",
-            str(Path(output_dir) / "nrgsuite_export.txt"),
-            "Text Files (*.txt);;All Files (*)",
+            "Save Mode Table",
+            str(Path(output_dir) / "flexaids_mode_table.tsv"),
+            "Tab-Separated Files (*.tsv);;Text Files (*.txt);;All Files (*)",
         )
-        if not nrg_file:
+        if not export_file:
             return
 
-        export_to_nrgsuite(output_dir, nrg_file)
+        out_path = Path(export_file)
+        with open(out_path, "w", encoding="utf-8") as fh:
+            fh.write(
+                "mode_id\trank\tn_poses\tbest_cf\tfree_energy\tenthalpy\tentropy\theat_capacity\ttemperature\n"
+            )
+            for mode in sorted(result.binding_modes, key=lambda m: (m.rank, m.mode_id)):
+                fh.write(
+                    f"{mode.mode_id}\t{mode.rank}\t{mode.n_poses}\t{mode.best_cf}\t"
+                    f"{mode.free_energy}\t{mode.enthalpy}\t{mode.entropy}\t"
+                    f"{mode.heat_capacity}\t{mode.temperature or result.temperature}\n"
+                )
+
         QtWidgets.QMessageBox.information(
-            self, "Exported", f"NRGSuite file written to:\n{nrg_file}"
+            self, "Exported", f"Mode table written to:\n{out_path}"
         )

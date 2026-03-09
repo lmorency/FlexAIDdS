@@ -1,4 +1,4 @@
-name: Legacy multi-platform workflow (manual only)
+name: Legacy C/C++ workflow (manual only)
 
 on:
   workflow_dispatch:

@@ -1,89 +1,25 @@
-"""FlexAID∆S: Entropy-driven molecular docking with flexible side-chains.
+"""flexaidds: Python bindings and read-only analysis helpers for FlexAID∆S."""
 
-A modernized C++20 implementation of FlexAID with:
-- Statistical mechanics scoring (partition functions, free energies)
-- Configurational and vibrational entropy corrections
-- GPU acceleration (CUDA/Metal)
-- Python bindings for high-level workflows
-
-Example:
-    >>> import flexaidds as fds
-    >>> docking = fds.Docking("config.inp")
-    >>> results = docking.run()
-    >>> for mode in results.binding_modes:
-    ...     print(f"ΔG = {mode.free_energy:.2f} kcal/mol")
-
-Modules:
-    thermodynamics: Statistical mechanics engine and free energy calculations
-    docking: High-level docking interface
-    encom: ENCoM normal mode / vibrational entropy analysis (Phase 3)
-    visualization: PyMOL integration for pose rendering
-    io: File I/O utilities (PDB, MOL2, config files)
-"""
-
-from .__version__ import __version__
+from .models import BindingModeResult, DockingResult, PoseResult
+from .results import load_results
 
 try:
-    from . import _core  # pybind11 compiled module
-except ImportError as e:
-    import warnings
-    warnings.warn(
-        f"Could not import C++ extension module: {e}. "
-        "FlexAID∆S bindings not available. Build with 'pip install -e .'.",
-        ImportWarning
-    )
-    _core = None
-
-# High-level Python API
-from .thermodynamics import (
-    StatMechEngine,
-    Thermodynamics,
-    BoltzmannLUT,
-)
-from .docking import (
-    Docking,
-    BindingMode,
-    BindingPopulation,
-)
-
-# ENCoM vibrational entropy — Python wrapper with optional C++ acceleration
-from .encom import (
-    NormalMode,
-    VibrationalEntropy,
-    ENCoMEngine,
-)
-
-# File I/O utilities
-from .io import (
-    Atom,
-    read_pdb,
-    write_pdb,
-    RRDPose,
-    read_rrd,
-    Mol2Atom,
-    read_mol2,
-)
+    from ._core import StatMechEngine, Thermodynamics
+    HAS_CORE_BINDINGS = True
+except ImportError:
+    StatMechEngine = None
+    Thermodynamics = None
+    HAS_CORE_BINDINGS = False
 
 __all__ = [
-    "__version__",
-    # Thermodynamics
-    "StatMechEngine",
-    "Thermodynamics",
-    "BoltzmannLUT",
-    # Docking
-    "Docking",
-    "BindingMode",
-    "BindingPopulation",
-    # ENCoM
-    "NormalMode",
-    "VibrationalEntropy",
-    "ENCoMEngine",
-    # I/O
-    "Atom",
-    "read_pdb",
-    "write_pdb",
-    "RRDPose",
-    "read_rrd",
-    "Mol2Atom",
-    "read_mol2",
+    "HAS_CORE_BINDINGS",
+    "PoseResult",
+    "BindingModeResult",
+    "DockingResult",
+    "load_results",
 ]
+
+if HAS_CORE_BINDINGS:
+    __all__.extend(["StatMechEngine", "Thermodynamics"])
+
+__version__ = "0.1.0"
