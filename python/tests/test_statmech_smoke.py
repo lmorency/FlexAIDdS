@@ -14,10 +14,13 @@ def test_statmech_smoke():
     engine = fd.StatMechEngine(300.0)
     engine.add_sample(-7.0)
     engine.add_sample(-6.0)
+    engine.add_sample(-5.5, multiplicity=2.0)
+
     thermo = engine.compute()
 
-    assert hasattr(thermo, "free_energy")
-    assert hasattr(thermo, "mean_energy")
-    assert hasattr(thermo, "entropy")
-    assert hasattr(thermo, "heat_capacity")
-    assert hasattr(thermo, "std_energy")
+    assert math.isfinite(thermo.free_energy)
+    assert math.isfinite(thermo.mean_energy)
+    assert math.isfinite(thermo.entropy)
+    assert math.isfinite(thermo.heat_capacity)
+    assert math.isfinite(thermo.std_energy)
+    assert thermo.free_energy <= thermo.mean_energy
