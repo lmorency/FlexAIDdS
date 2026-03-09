@@ -1,6 +1,9 @@
 # FlexAIDdS
 
-FlexAIDdS (FlexAID with dynamic Scoring) is a molecular docking engine that uses a genetic algorithm to dock small-molecule ligands into protein and nucleic acid receptors. It supports full ligand flexibility, receptor side-chain flexibility, backbone flexibility via torsional elastic network models, and ensemble thermodynamic scoring.
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![C++ Standard](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](https://en.cppreference.com/w/cpp/20)
+[![Build](https://img.shields.io/badge/build-passing-brightgreen.svg)](#)
+[![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey.svg)](#)
 
 ## Features
 
