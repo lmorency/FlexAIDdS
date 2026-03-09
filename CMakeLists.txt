@@ -3,9 +3,21 @@
 cmake_minimum_required(VERSION 3.18)
 project(FlexAID LANGUAGES CXX)
 
+include(CheckCXXCompilerFlag)
+
 # ─── C++20 ────────────────────────────────────────────────────────────────
 set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED True)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)   # -std=c++20 not -std=gnu++20
+
+# Fail fast if compiler is too old to support C++20
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    if(CMAKE_CXX_COMPILER_VERSION VERSION_LESS "10.0")
+        message(FATAL_ERROR
+            "FlexAIDdS requires C++20 — found ${CMAKE_CXX_COMPILER_ID} "
+            "${CMAKE_CXX_COMPILER_VERSION}. Upgrade to GCC ≥ 10 or Clang ≥ 10.")
+    endif()
+endif()
 
 if(POLICY CMP0167)
     cmake_policy(SET CMP0167 NEW)
@@ -19,6 +31,78 @@ option(FLEXAIDS_USE_AVX512  "Enable AVX-512 SIMD acceleration"    OFF)
 option(FLEXAIDS_USE_OPENMP  "Enable OpenMP thread parallelism"    ON)
 option(FLEXAIDS_USE_EIGEN   "Enable Eigen3 vectorised linear algebra" ON)
 option(BUILD_PYTHON_BINDINGS "Build Python bindings via pybind11" OFF)
+
+# ─── platform / SIMD helpers ───────────────────────────────────────────────
+string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" FLEXAIDS_SYSTEM_PROCESSOR_LOWER)
+set(FLEXAIDS_IS_ARM FALSE)
+set(FLEXAIDS_IS_X86 FALSE)
+
+if(FLEXAIDS_SYSTEM_PROCESSOR_LOWER MATCHES "^(arm64|aarch64)$")
+    set(FLEXAIDS_IS_ARM TRUE)
+elseif(FLEXAIDS_SYSTEM_PROCESSOR_LOWER MATCHES "^(x86_64|amd64|x64|i[3-6]86)$")
+    set(FLEXAIDS_IS_X86 TRUE)
+endif()
+
+if(APPLE AND FLEXAIDS_IS_ARM)
+    if(FLEXAIDS_USE_AVX2 OR FLEXAIDS_USE_AVX512)
+        message(STATUS "Apple Silicon detected — disabling x86 SIMD flags (-mavx2, -mfma, -mavx512*)")
+    endif()
+    set(FLEXAIDS_USE_AVX2 OFF CACHE BOOL "Enable AVX2 SIMD acceleration" FORCE)
+    set(FLEXAIDS_USE_AVX512 OFF CACHE BOOL "Enable AVX-512 SIMD acceleration" FORCE)
+endif()
+
+function(flexaids_configure_simd target_name)
+    if(MSVC)
+        if(FLEXAIDS_IS_X86)
+            if(FLEXAIDS_USE_AVX512)
+                target_compile_options(${target_name} PRIVATE /arch:AVX512)
+                target_compile_definitions(${target_name} PRIVATE FLEXAIDS_USE_AVX512)
+                message(STATUS "${target_name}: AVX-512 enabled via /arch:AVX512")
+            elseif(FLEXAIDS_USE_AVX2)
+                target_compile_options(${target_name} PRIVATE /arch:AVX2)
+                target_compile_definitions(${target_name} PRIVATE FLEXAIDS_USE_AVX2)
+                message(STATUS "${target_name}: AVX2 enabled via /arch:AVX2")
+            endif()
+        else()
+            message(STATUS "${target_name}: non-x86 MSVC target detected — building without x86 SIMD flags")
+        endif()
+        return()
+    endif()
+
+    if(NOT FLEXAIDS_IS_X86)
+        message(STATUS "${target_name}: non-x86 target detected (${CMAKE_SYSTEM_PROCESSOR}) — building without x86 SIMD flags")
+        return()
+    endif()
+
+    if(FLEXAIDS_USE_AVX512)
+        check_cxx_compiler_flag("-mavx512f" FLEXAIDS_COMPILER_SUPPORTS_MAVX512F)
+        check_cxx_compiler_flag("-mavx512dq" FLEXAIDS_COMPILER_SUPPORTS_MAVX512DQ)
+        check_cxx_compiler_flag("-mavx512bw" FLEXAIDS_COMPILER_SUPPORTS_MAVX512BW)
+        check_cxx_compiler_flag("-mavx2" FLEXAIDS_COMPILER_SUPPORTS_MAVX2)
+        check_cxx_compiler_flag("-mfma" FLEXAIDS_COMPILER_SUPPORTS_MFMA)
+
+        if(FLEXAIDS_COMPILER_SUPPORTS_MAVX512F AND FLEXAIDS_COMPILER_SUPPORTS_MAVX512DQ AND
+           FLEXAIDS_COMPILER_SUPPORTS_MAVX512BW AND FLEXAIDS_COMPILER_SUPPORTS_MAVX2 AND
+           FLEXAIDS_COMPILER_SUPPORTS_MFMA)
+            target_compile_options(${target_name} PRIVATE -mavx512f -mavx512dq -mavx512bw -mavx2 -mfma)
+            target_compile_definitions(${target_name} PRIVATE FLEXAIDS_USE_AVX512)
+            message(STATUS "${target_name}: AVX-512 enabled")
+        else()
+            message(WARNING "${target_name}: AVX-512 requested but compiler/target does not support the required flags; building without AVX-512")
+        endif()
+    elseif(FLEXAIDS_USE_AVX2)
+        check_cxx_compiler_flag("-mavx2" FLEXAIDS_COMPILER_SUPPORTS_MAVX2)
+        check_cxx_compiler_flag("-mfma" FLEXAIDS_COMPILER_SUPPORTS_MFMA)
+
+        if(FLEXAIDS_COMPILER_SUPPORTS_MAVX2 AND FLEXAIDS_COMPILER_SUPPORTS_MFMA)
+            target_compile_options(${target_name} PRIVATE -mavx2 -mfma)
+            target_compile_definitions(${target_name} PRIVATE FLEXAIDS_USE_AVX2)
+            message(STATUS "${target_name}: AVX2/FMA enabled")
+        else()
+            message(WARNING "${target_name}: AVX2 requested but compiler/target does not support -mavx2/-mfma; building without x86 SIMD")
+        endif()
+    endif()
+endfunction()
 
 # ─── OpenMP ───────────────────────────────────────────────────────────────
 if(FLEXAIDS_USE_OPENMP)
@@ -181,22 +265,10 @@ target_include_directories(FlexAID PRIVATE
 # ─── compiler flags ────────────────────────────────────────────────────
 if(MSVC)
     target_compile_options(FlexAID PRIVATE /W4 /O2 /MT)
-    if(FLEXAIDS_USE_AVX512)
-        target_compile_options(FlexAID PRIVATE /arch:AVX512)
-    elseif(FLEXAIDS_USE_AVX2)
-        target_compile_options(FlexAID PRIVATE /arch:AVX2)
-    endif()
 else()
     target_compile_options(FlexAID PRIVATE -Wall -O3 -ffast-math)
-    if(FLEXAIDS_USE_AVX512)
-        # AVX-512 supersedes AVX2; include both for compatibility with mixed intrinsics
-        target_compile_options(FlexAID PRIVATE -mavx512f -mavx512dq -mavx512bw -mavx2 -mfma)
-        target_compile_definitions(FlexAID PRIVATE FLEXAIDS_USE_AVX512)
-        message(STATUS "AVX-512 enabled (mavx512f + mavx512dq + mavx512bw)")
-    elseif(FLEXAIDS_USE_AVX2)
-        target_compile_options(FlexAID PRIVATE -mavx2 -mfma)
-    endif()
 endif()
+flexaids_configure_simd(FlexAID)
 
 # ─── Eigen3 link + definition ─────────────────────────────────────────────
 if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
@@ -312,13 +384,8 @@ if(ENABLE_TENCOM_BENCHMARK)
         LIB/encom.cpp
     )
     target_include_directories(benchmark_tencom PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
-    target_compile_options(benchmark_tencom PRIVATE -O3 -march=native -ffast-math)
-    if(FLEXAIDS_USE_AVX512)
-        target_compile_options(benchmark_tencom PRIVATE -mavx512f -mavx512dq -mavx2 -mfma)
-        target_compile_definitions(benchmark_tencom PRIVATE FLEXAIDS_USE_AVX512)
-    elseif(FLEXAIDS_USE_AVX2)
-        target_compile_options(benchmark_tencom PRIVATE -mavx2 -mfma)
-    endif()
+    target_compile_options(benchmark_tencom PRIVATE -O3 -ffast-math)
+    flexaids_configure_simd(benchmark_tencom)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(benchmark_tencom PRIVATE OpenMP::OpenMP_CXX)
     endif()
@@ -327,4 +394,47 @@ if(ENABLE_TENCOM_BENCHMARK)
         target_compile_definitions(benchmark_tencom PRIVATE FLEXAIDS_HAS_EIGEN)
     endif()
     message(STATUS "TeNCoM benchmark enabled — build target: benchmark_tencom")
+endif()
+
+# ─── VoronoiCFBatch benchmark (Task 2.3) ───────────────────────────────────────
+# VoronoiCFBatch.h is header-only; the benchmark binary exercises the std::span
+# batch interface and prints a serial-vs-OpenMP speedup table.
+option(ENABLE_VCFBATCH_BENCHMARK "Build the VoronoiCFBatch benchmark binary" OFF)
+if(ENABLE_VCFBATCH_BENCHMARK)
+    add_executable(benchmark_vcfbatch LIB/benchmark_vcfbatch.cpp)
+    target_include_directories(benchmark_vcfbatch PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_compile_options(benchmark_vcfbatch PRIVATE -O3 -ffast-math)
+    flexaids_configure_simd(benchmark_vcfbatch)
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(benchmark_vcfbatch PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    message(STATUS "VoronoiCFBatch benchmark enabled — build target: benchmark_vcfbatch")
+endif()
+
+# ─── Unit Tests (GoogleTest) ───────────────────────────────────────────────
+option(BUILD_TESTING "Build unit tests (requires GoogleTest)" OFF)
+if(BUILD_TESTING)
+    find_package(GTest QUIET)
+    if(NOT GTest_FOUND)
+        include(FetchContent)
+        FetchContent_Declare(
+            googletest
+            GIT_REPOSITORY https://github.com/google/googletest.git
+            GIT_TAG        v1.14.0
+        )
+        set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+        FetchContent_MakeAvailable(googletest)
+    endif()
+
+    enable_testing()
+
+    # test_statmech — StatMechEngine unit tests
+    add_executable(test_statmech tests/test_statmech.cpp LIB/statmech.cpp)
+    target_include_directories(test_statmech PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_statmech PRIVATE GTest::gtest GTest::gtest_main)
+    target_compile_options(test_statmech PRIVATE -O2)
+    add_test(NAME StatMechTests COMMAND test_statmech)
+
+    message(STATUS "Unit tests enabled — build target: test_statmech")
 endif()

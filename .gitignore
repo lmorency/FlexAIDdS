@@ -10,11 +10,25 @@
 !*.c
 !*.h
 !*.hpp
+# test suite
+!tests
+!tests/**
 # build system
 !CMakeLists.txt
 !LICENSE
 !README.md
 !VERSION
+# documentation
+!CONTRIBUTING.md
+!CODE_OF_CONDUCT.md
+!THIRD_PARTY_LICENSES.md
+!docs
+!docs/**
+# python package
+!python
+!python/**
+python/**/__pycache__
+python/__pycache__
 # dependencies files
 !*.def
 !*.dat

@@ -7,6 +7,7 @@ Features:
 - Thermodynamic property display
 - Pose ensemble visualization with Boltzmann weighting
 - Integration with NRGSuite workflow
+- Read-only loading of docking result ensembles through the flexaidds Python API
 
 Installation:
     1. PyMOL > Plugin Manager > Install New Plugin
@@ -61,8 +62,18 @@ if PYMOL_AVAILABLE:
         color_by_boltzmann_weight,
         show_thermodynamics,
     )
+    from .results_adapter import (
+        load_docking_results,
+        show_binding_mode,
+        color_mode_by_score,
+        show_mode_details,
+    )
     
     cmd.extend("flexaids_load", load_binding_modes)
     cmd.extend("flexaids_show_ensemble", show_pose_ensemble)
     cmd.extend("flexaids_color_boltzmann", color_by_boltzmann_weight)
     cmd.extend("flexaids_thermo", show_thermodynamics)
+    cmd.extend("flexaids_load_results", load_docking_results)
+    cmd.extend("flexaids_show_mode", show_binding_mode)
+    cmd.extend("flexaids_color_mode", color_mode_by_score)
+    cmd.extend("flexaids_mode_details", show_mode_details)

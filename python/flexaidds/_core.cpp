@@ -1,111 +1,103 @@
-// core_bindings.cpp — pybind11 bindings for FlexAID∆S C++ core
+// _core.cpp — pybind11 bindings for FlexAID∆S C++ core
 //
-// Exposes:
+// Exposes all standalone thermodynamic modules:
 //   - statmech::StatMechEngine, Thermodynamics, BoltzmannLUT
-//   - BindingMode / BindingPopulation (Phase 1/2 StatMech API)
-//   - encom::ENCoMEngine, VibrationalEntropy, NormalMode (Phase 3)
+//   - statmech data structures: State, Replica, WHAMBin, TIPoint
+//   - encom::ENCoMEngine, VibrationalEntropy, NormalMode
+//   - Physical constants (kB_kcal, kB_SI)
 //
-// Build: See python/setup.py and CMakeLists.txt with -DBUILD_PYTHON_BINDINGS=ON
+// Note: BindingMode / BindingPopulation require the full GA infrastructure
+// (gaboom.h, fileio.h) and are not exposed here.  Use the CMake build with
+// -DBUILD_PYTHON_BINDINGS=ON for the extended module that includes them.
+//
+// Build: pip install -e python/
 
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/numpy.h>
-#include "../../LIB/statmech.h"
-#ifdef FLEXAIDS_FULL_GA
-#include "../../LIB/BindingMode.h"
-#endif
-#include "../../LIB/encom.h"
+
+#include "statmech.h"
+#include "encom.h"
 
 namespace py = pybind11;
 using namespace statmech;
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Helper: Convert C++ std::vector to NumPy array (zero-copy view when possible)
-// ──────────────────────────────────────────────────────────────────────────────
-
-template <typename T>
-py::array_t<T> to_numpy(const std::vector<T>& vec) {
-    return py::array_t<T>(vec.size(), vec.data());
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Module definition
-// ──────────────────────────────────────────────────────────────────────────────
-
 PYBIND11_MODULE(_core, m) {
-    m.doc() = "FlexAID∆S C++ core bindings: statistical mechanics and docking engine";
-    
+    m.doc() = "FlexAID\u0394S C++ core: statistical mechanics, "
+              "Boltzmann lookup tables, and ENCoM vibrational entropy";
+
     // Physical constants
     m.attr("kB_kcal") = kB_kcal;
     m.attr("kB_SI")   = kB_SI;
-    
+
     // ═══════════════════════════════════════════════════════════════════════
     // Thermodynamics data structures
     // ═══════════════════════════════════════════════════════════════════════
-    
-    py::class_<State>(m, "State", "Micr ostate with energy and degeneracy")
+
+    py::class_<State>(m, "State", "Microstate with energy and degeneracy")
         .def(py::init<>())
         .def_readwrite("energy", &State::energy, "Energy in kcal/mol")
         .def_readwrite("count",  &State::count,  "Degeneracy/multiplicity")
         .def("__repr__", [](const State& s) {
-            return "<State energy=" + std::to_string(s.energy) + 
+            return "<State energy=" + std::to_string(s.energy) +
                    " count=" + std::to_string(s.count) + ">";
         });
-    
-    py::class_<Thermodynamics>(m, "Thermodynamics", 
+
+    py::class_<Thermodynamics>(m, "Thermodynamics",
         "Complete thermodynamic properties of an ensemble")
         .def(py::init<>())
         .def_readwrite("temperature",    &Thermodynamics::temperature,    "K")
         .def_readwrite("log_Z",          &Thermodynamics::log_Z,          "ln(partition function)")
         .def_readwrite("free_energy",    &Thermodynamics::free_energy,    "Helmholtz F (kcal/mol)")
-        .def_readwrite("mean_energy",    &Thermodynamics::mean_energy,    "⟨E⟩ (kcal/mol)")
-        .def_readwrite("mean_energy_sq", &Thermodynamics::mean_energy_sq, "⟨E²⟩")
-        .def_readwrite("heat_capacity",  &Thermodynamics::heat_capacity,  "Cv (kcal mol⁻¹ K⁻²)")
-        .def_readwrite("entropy",        &Thermodynamics::entropy,        "S (kcal mol⁻¹ K⁻¹)")
-        .def_readwrite("std_energy",     &Thermodynamics::std_energy,     "σ_E (kcal/mol)")
+        .def_readwrite("mean_energy",    &Thermodynamics::mean_energy,    "<E> (kcal/mol)")
+        .def_readwrite("mean_energy_sq", &Thermodynamics::mean_energy_sq, "<E^2>")
+        .def_readwrite("heat_capacity",  &Thermodynamics::heat_capacity,  "Cv (kcal/mol/K^2)")
+        .def_readwrite("entropy",        &Thermodynamics::entropy,        "S (kcal/mol/K)")
+        .def_readwrite("std_energy",     &Thermodynamics::std_energy,     "sigma_E (kcal/mol)")
         .def("__repr__", [](const Thermodynamics& t) {
             char buf[256];
             snprintf(buf, sizeof(buf),
                 "<Thermodynamics T=%.1fK F=%.3f H=%.3f S=%.5f Cv=%.3f>",
-                t.temperature, t.free_energy, t.mean_energy, 
+                t.temperature, t.free_energy, t.mean_energy,
                 t.entropy, t.heat_capacity);
             return std::string(buf);
         });
-    
+
     py::class_<Replica>(m, "Replica", "Parallel tempering replica")
         .def(py::init<>())
         .def_readwrite("id",              &Replica::id)
         .def_readwrite("temperature",     &Replica::temperature)
         .def_readwrite("beta",            &Replica::beta)
         .def_readwrite("current_energy",  &Replica::current_energy);
-    
+
     py::class_<WHAMBin>(m, "WHAMBin", "WHAM histogram bin with free energy")
         .def(py::init<>())
         .def_readwrite("coord_center",  &WHAMBin::coord_center)
         .def_readwrite("count",         &WHAMBin::count)
         .def_readwrite("free_energy",   &WHAMBin::free_energy);
-    
+
+    // Note: TIPoint.lambda is accessed as "lambda_val" to avoid Python keyword conflict
     py::class_<TIPoint>(m, "TIPoint", "Thermodynamic integration data point")
         .def(py::init<>())
-        .def_readwrite("lambda",       &TIPoint::lambda)
-        .def_readwrite("dV_dlambda",   &TIPoint::dV_dlambda);
-    
+        .def_readwrite("lambda_val",  &TIPoint::lambda)
+        .def_readwrite("dV_dlambda",  &TIPoint::dV_dlambda);
+
     // ═══════════════════════════════════════════════════════════════════════
     // StatMechEngine: core thermodynamics calculator
     // ═══════════════════════════════════════════════════════════════════════
-    
-    py::class_<StatMechEngine>(m, "StatMechEngine", 
+
+    py::class_<StatMechEngine>(m, "StatMechEngine",
         "Statistical mechanics engine for conformational ensembles")
-        .def(py::init<double>(), 
+        .def(py::init<double>(),
             py::arg("temperature_K") = 300.0,
             "Initialize engine at given temperature (default 300K)")
-        
+
         // ─── Ensemble construction ───
         .def("add_sample", &StatMechEngine::add_sample,
             py::arg("energy"), py::arg("multiplicity") = 1,
             "Add a sampled configuration with energy (kcal/mol) and multiplicity")
         .def("clear", &StatMechEngine::clear, "Remove all samples")
-        
+
         // ─── Thermodynamic analysis ───
         .def("compute", &StatMechEngine::compute,
             "Compute full thermodynamics (F, S, H, Cv, etc.)")
@@ -113,47 +105,61 @@ PYBIND11_MODULE(_core, m) {
             "Return Boltzmann weights for all samples (same order as insertion)")
         .def("delta_G", &StatMechEngine::delta_G,
             py::arg("reference"),
-            "Compute ΔG relative to another ensemble")
-        
+            "Compute delta-G relative to another ensemble")
+
         // ─── Advanced methods ───
-        .def_static("init_replicas", &StatMechEngine::init_replicas,
+        // Note: std::span parameters require lambda wrappers for pybind11
+        .def_static("init_replicas",
+            [](const std::vector<double>& temps) {
+                return StatMechEngine::init_replicas(temps);
+            },
             py::arg("temperatures"),
             "Initialize parallel tempering replicas at given temperatures")
-        .def_static("attempt_swap", 
+        .def_static("attempt_swap",
             [](Replica& a, Replica& b) {
-                // Python RNG not compatible with std::mt19937, use C++ RNG
                 static std::mt19937 rng{std::random_device{}()};
                 return StatMechEngine::attempt_swap(a, b, rng);
             },
             py::arg("replica_a"), py::arg("replica_b"),
             "Attempt Metropolis swap between two replicas (returns True if accepted)")
-        .def_static("wham", &StatMechEngine::wham,
-            py::arg("energies"), py::arg("coordinates"), 
+        .def_static("wham",
+            [](const std::vector<double>& energies,
+               const std::vector<double>& coordinates,
+               double temperature, int n_bins, int max_iter, double tolerance) {
+                return StatMechEngine::wham(energies, coordinates,
+                    temperature, n_bins, max_iter, tolerance);
+            },
+            py::arg("energies"), py::arg("coordinates"),
             py::arg("temperature"), py::arg("n_bins"),
             py::arg("max_iter") = 1000, py::arg("tolerance") = 1e-6,
             "WHAM free energy profile along a reaction coordinate")
-        .def_static("thermodynamic_integration", 
-            &StatMechEngine::thermodynamic_integration,
+        .def_static("thermodynamic_integration",
+            [](const std::vector<TIPoint>& points) {
+                return StatMechEngine::thermodynamic_integration(points);
+            },
             py::arg("points"),
-            "Compute ΔG via thermodynamic integration (trapezoidal rule)")
-        .def_static("helmholtz", &StatMechEngine::helmholtz,
+            "Compute delta-G via thermodynamic integration (trapezoidal rule)")
+        .def_static("helmholtz",
+            [](const std::vector<double>& energies, double temperature) {
+                return StatMechEngine::helmholtz(energies, temperature);
+            },
             py::arg("energies"), py::arg("temperature"),
             "Compute Helmholtz free energy from raw energy vector")
-        
+
         // ─── Properties ───
         .def_property_readonly("temperature", &StatMechEngine::temperature)
         .def_property_readonly("beta", &StatMechEngine::beta)
         .def_property_readonly("size", &StatMechEngine::size)
         .def("__len__", &StatMechEngine::size)
         .def("__repr__", [](const StatMechEngine& e) {
-            return "<StatMechEngine T=" + std::to_string(e.temperature()) + 
+            return "<StatMechEngine T=" + std::to_string(e.temperature()) +
                    "K n_samples=" + std::to_string(e.size()) + ">";
         });
-    
+
     // ═══════════════════════════════════════════════════════════════════════
     // BoltzmannLUT: fast lookup table
     // ═══════════════════════════════════════════════════════════════════════
-    
+
     py::class_<BoltzmannLUT>(m, "BoltzmannLUT",
         "Pre-tabulated Boltzmann factors for O(1) inner-loop evaluation")
         .def(py::init<double, double, double, int>(),
@@ -162,103 +168,43 @@ PYBIND11_MODULE(_core, m) {
             "Initialize LUT for energy range [e_min, e_max]")
         .def("__call__", &BoltzmannLUT::operator(),
             py::arg("energy"),
-            "Look up exp(-β E) for given energy");
-    
-#ifdef FLEXAIDS_FULL_GA
-    // ═══════════════════════════════════════════════════════════════════════
-    // BindingMode: pose cluster with thermodynamic scoring
-    // (requires full GA infrastructure — only available in CMake build)
-    // ═══════════════════════════════════════════════════════════════════════
-
-    py::class_<BindingMode>(m, "BindingMode",
-        "Binding mode: cluster of docked poses with thermodynamic analysis")
-        // Legacy interface (backward compatibility)
-        .def("compute_energy", &BindingMode::compute_energy,
-            "Helmholtz free energy F = H - TS (kcal/mol)")
-        .def("compute_entropy", &BindingMode::compute_entropy,
-            "Configurational entropy S (kcal mol⁻¹ K⁻¹)")
-        .def("compute_enthalpy", &BindingMode::compute_enthalpy,
-            "Boltzmann-weighted average energy ⟨E⟩ (kcal/mol)")
-
-        // New StatMech API
-        .def("get_thermodynamics", &BindingMode::get_thermodynamics,
-            "Full thermodynamic properties (F, S, H, Cv, σ_E)")
-        .def("get_free_energy", &BindingMode::get_free_energy,
-            "Alias for compute_energy()")
-        .def("get_heat_capacity", &BindingMode::get_heat_capacity,
-            "Heat capacity Cv (kcal mol⁻¹ K⁻²)")
-        .def("get_boltzmann_weights", &BindingMode::get_boltzmann_weights,
-            "Boltzmann weights for all poses in this mode")
-        .def("get_BindingMode_size", &BindingMode::get_BindingMode_size,
-            "Number of poses in this binding mode")
-        .def("__len__", &BindingMode::get_BindingMode_size)
-        .def("__repr__", [](const BindingMode& m) {
-            auto thermo = m.get_thermodynamics();
-            char buf[256];
-            snprintf(buf, sizeof(buf),
-                "<BindingMode n_poses=%d F=%.3f H=%.3f S=%.5f>",
-                m.get_BindingMode_size(),
-                thermo.free_energy, thermo.mean_energy, thermo.entropy);
-            return std::string(buf);
-        });
+            "Look up exp(-beta * E) for given energy");
 
     // ═══════════════════════════════════════════════════════════════════════
-    // BindingPopulation: global ensemble thermodynamics
-    // ═══════════════════════════════════════════════════════════════════════
-    py::class_<BindingPopulation>(m, "BindingPopulation",
-        "Collection of binding modes from a docking run, with global ensemble analysis")
-        .def("get_population_size", &BindingPopulation::get_Population_size,
-            "Number of distinct binding modes")
-        .def("compute_delta_G",
-            [](const BindingPopulation& pop, const BindingMode& m1, const BindingMode& m2) {
-                return pop.compute_delta_G(m1, m2);
-            },
-            py::arg("mode1"), py::arg("mode2"),
-            "ΔG between two binding modes (kcal/mol); positive = mode1 less favoured")
-        .def("get_global_ensemble", &BindingPopulation::get_global_ensemble,
-            "StatMechEngine aggregating all poses across all binding modes")
-        .def("__len__", &BindingPopulation::get_Population_size)
-        .def("__repr__", [](const BindingPopulation& p) {
-            return "<BindingPopulation n_modes=" +
-                   std::to_string(const_cast<BindingPopulation&>(p).get_Population_size()) + ">";
-        });
-#endif  // FLEXAIDS_FULL_GA
-
-    // ═══════════════════════════════════════════════════════════════════════
-    // ENCoM: normal mode analysis + vibrational entropy (Phase 3)
+    // ENCoM: normal mode analysis + vibrational entropy
     // ═══════════════════════════════════════════════════════════════════════
 
     py::class_<encom::NormalMode>(m, "NormalMode",
         "Normal mode from ENCoM elastic network calculation")
         .def(py::init<>())
-        .def_readwrite("index",      &encom::NormalMode::index,      "1-based mode index")
-        .def_readwrite("eigenvalue", &encom::NormalMode::eigenvalue,  "λ (ENCoM arbitrary units)")
-        .def_readwrite("frequency",  &encom::NormalMode::frequency,   "ω = sqrt(λ) (rad/s in SI)")
-        .def_readwrite("eigenvector",&encom::NormalMode::eigenvector, "Displacement vector (3N)")
+        .def_readwrite("index",       &encom::NormalMode::index,       "1-based mode index")
+        .def_readwrite("eigenvalue",  &encom::NormalMode::eigenvalue,  "eigenvalue (ENCoM units)")
+        .def_readwrite("frequency",   &encom::NormalMode::frequency,   "omega = sqrt(eigenvalue)")
+        .def_readwrite("eigenvector", &encom::NormalMode::eigenvector, "Displacement vector (3N)")
         .def("__repr__", [](const encom::NormalMode& nm) {
             return "<NormalMode " + std::to_string(nm.index) +
-                   " λ=" + std::to_string(nm.eigenvalue) + ">";
+                   " eigenvalue=" + std::to_string(nm.eigenvalue) + ">";
         });
 
     py::class_<encom::VibrationalEntropy>(m, "VibrationalEntropy",
         "Quasi-harmonic vibrational entropy from ENCoM normal modes")
         .def(py::init<>())
         .def_readwrite("S_vib_kcal_mol_K", &encom::VibrationalEntropy::S_vib_kcal_mol_K,
-            "S_vib in kcal mol⁻¹ K⁻¹")
+            "S_vib in kcal/(mol*K)")
         .def_readwrite("S_vib_J_mol_K",    &encom::VibrationalEntropy::S_vib_J_mol_K,
-            "S_vib in J mol⁻¹ K⁻¹")
+            "S_vib in J/(mol*K)")
         .def_readwrite("omega_eff",        &encom::VibrationalEntropy::omega_eff,
-            "Effective frequency ω_eff (rad/s)")
+            "Effective frequency omega_eff (rad/s)")
         .def_readwrite("n_modes",          &encom::VibrationalEntropy::n_modes,
-            "Number of non-trivial normal modes (3N − 6)")
+            "Number of non-trivial normal modes (3N - 6)")
         .def_readwrite("temperature",      &encom::VibrationalEntropy::temperature, "K")
         .def("free_energy_correction", [](const encom::VibrationalEntropy& vs) {
             return -vs.temperature * vs.S_vib_kcal_mol_K;
-        }, "−T·S_vib vibrational free energy correction (kcal/mol)")
+        }, "-T*S_vib vibrational free energy correction (kcal/mol)")
         .def("__repr__", [](const encom::VibrationalEntropy& vs) {
             char buf[256];
             snprintf(buf, sizeof(buf),
-                "<VibrationalEntropy n_modes=%d S_vib=%.6f kcal/(mol·K) T=%.1fK>",
+                "<VibrationalEntropy n_modes=%d S_vib=%.6f kcal/(mol*K) T=%.1fK>",
                 vs.n_modes, vs.S_vib_kcal_mol_K, vs.temperature);
             return std::string(buf);
         });
@@ -268,9 +214,7 @@ PYBIND11_MODULE(_core, m) {
         .def_static("load_modes",
             &encom::ENCoMEngine::load_modes,
             py::arg("eigenvalue_file"), py::arg("eigenvector_file"),
-            "Load normal modes from ENCoM output files\n"
-            "  eigenvalue_file:  plain text, one eigenvalue per line\n"
-            "  eigenvector_file: one mode per row, space-separated components")
+            "Load normal modes from ENCoM output files")
         .def_static("compute_vibrational_entropy",
             &encom::ENCoMEngine::compute_vibrational_entropy,
             py::arg("modes"),
@@ -280,9 +224,9 @@ PYBIND11_MODULE(_core, m) {
         .def_static("total_entropy",
             &encom::ENCoMEngine::total_entropy,
             py::arg("S_conf_kcal_mol_K"), py::arg("S_vib_kcal_mol_K"),
-            "S_total = S_conf + S_vib  (kcal mol⁻¹ K⁻¹)")
+            "S_total = S_conf + S_vib  (kcal/(mol*K))")
         .def_static("free_energy_with_vibrations",
             &encom::ENCoMEngine::free_energy_with_vibrations,
             py::arg("F_electronic"), py::arg("S_vib_kcal_mol_K"), py::arg("temperature_K"),
-            "F_total = F_elec − T·S_vib  (kcal/mol)");
+            "F_total = F_elec - T*S_vib  (kcal/mol)");
 }
