@@ -7,16 +7,25 @@ from typing import Any, Dict, Iterable, Optional
 from .models import PoseResult
 
 _NUMERIC_RE = re.compile(r"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$")
+
+
+def _filename_token_pattern(token: str) -> re.Pattern[str]:
+    return re.compile(
+        rf"(?<![A-Za-z0-9]){token}[_-]?(\d+)(?![A-Za-z0-9])",
+        re.IGNORECASE,
+    )
+
+
 _FILE_MODE_PATTERNS = [
     re.compile(r"binding[_-]?mode[_-]?(\d+)", re.IGNORECASE),
-    re.compile(r"\bmode[_-]?(\d+)", re.IGNORECASE),
+    re.compile(r"\bmode[_-]?(\d+)(?!\d)", re.IGNORECASE),
     re.compile(r"cluster[_-]?(\d+)", re.IGNORECASE),
-    re.compile(r"\bbm[_-]?(\d+)", re.IGNORECASE),
+    re.compile(r"\bbm[_-]?(\d+)(?!\d)", re.IGNORECASE),
 ]
 _FILE_POSE_PATTERNS = [
-    re.compile(r"pose[_-]?(\d+)", re.IGNORECASE),
-    re.compile(r"conformer[_-]?(\d+)", re.IGNORECASE),
-    re.compile(r"model[_-]?(\d+)", re.IGNORECASE),
+    _filename_token_pattern("pose"),
+    _filename_token_pattern("conformer"),
+    _filename_token_pattern("model"),
 ]
 
 
