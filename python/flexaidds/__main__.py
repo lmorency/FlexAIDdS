@@ -1,3 +1,18 @@
+"""Command-line entry point for the ``flexaidds`` package.
+
+Invoked as::
+
+    python -m flexaidds <results_dir> [--json]
+
+Scans *results_dir* for FlexAID∆S docking output PDB files and prints a
+human-readable summary of the binding modes to stdout.  Pass ``--json`` to
+emit a machine-readable JSON payload instead.
+
+Exit codes:
+    0 – success
+    1 – unhandled error (propagated as an exception)
+"""
+
 from __future__ import annotations
 
 import argparse
