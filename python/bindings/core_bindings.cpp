@@ -11,7 +11,9 @@
 #include <pybind11/stl.h>
 #include <pybind11/numpy.h>
 #include "../../LIB/statmech.h"
+#ifdef FLEXAIDS_FULL_GA
 #include "../../LIB/BindingMode.h"
+#endif
 #include "../../LIB/encom.h"
 
 namespace py = pybind11;
@@ -162,10 +164,12 @@ PYBIND11_MODULE(_core, m) {
             py::arg("energy"),
             "Look up exp(-β E) for given energy");
     
+#ifdef FLEXAIDS_FULL_GA
     // ═══════════════════════════════════════════════════════════════════════
     // BindingMode: pose cluster with thermodynamic scoring
+    // (requires full GA infrastructure — only available in CMake build)
     // ═══════════════════════════════════════════════════════════════════════
-    
+
     py::class_<BindingMode>(m, "BindingMode",
         "Binding mode: cluster of docked poses with thermodynamic analysis")
         // Legacy interface (backward compatibility)
@@ -175,7 +179,7 @@ PYBIND11_MODULE(_core, m) {
             "Configurational entropy S (kcal mol⁻¹ K⁻¹)")
         .def("compute_enthalpy", &BindingMode::compute_enthalpy,
             "Boltzmann-weighted average energy ⟨E⟩ (kcal/mol)")
-        
+
         // New StatMech API
         .def("get_thermodynamics", &BindingMode::get_thermodynamics,
             "Full thermodynamic properties (F, S, H, Cv, σ_E)")
@@ -193,23 +197,14 @@ PYBIND11_MODULE(_core, m) {
             char buf[256];
             snprintf(buf, sizeof(buf),
                 "<BindingMode n_poses=%d F=%.3f H=%.3f S=%.5f>",
-                m.get_BindingMode_size(), 
+                m.get_BindingMode_size(),
                 thermo.free_energy, thermo.mean_energy, thermo.entropy);
             return std::string(buf);
         });
-    
+
     // ═══════════════════════════════════════════════════════════════════════
-    // BindingPopulation: global ensemble thermodynamics (Phase 2)
+    // BindingPopulation: global ensemble thermodynamics
     // ═══════════════════════════════════════════════════════════════════════
-    //
-    // Note: BindingPopulation construction requires the full GA/FlexAID
-    // runtime (FA_Global*, GB_Global*, etc.) which is not exposed to Python.
-    // We expose the analytical methods on an existing C++ population object
-    // via lambda helpers.  Instantiation from Python remains via the C++
-    // docking binary + RRD output parsers (python/flexaidds/docking.py).
-    //
-    // The methods below are bound so that BindingPopulation objects returned
-    // by a future C++ extension factory can be used in Python.
     py::class_<BindingPopulation>(m, "BindingPopulation",
         "Collection of binding modes from a docking run, with global ensemble analysis")
         .def("get_population_size", &BindingPopulation::get_Population_size,
@@ -227,6 +222,7 @@ PYBIND11_MODULE(_core, m) {
             return "<BindingPopulation n_modes=" +
                    std::to_string(const_cast<BindingPopulation&>(p).get_Population_size()) + ">";
         });
+#endif  // FLEXAIDS_FULL_GA
 
     // ═══════════════════════════════════════════════════════════════════════
     // ENCoM: normal mode analysis + vibrational entropy (Phase 3)

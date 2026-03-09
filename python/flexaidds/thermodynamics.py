@@ -3,16 +3,27 @@
 Provides Pythonic wrappers around C++ StatMechEngine with NumPy integration.
 """
 
-import numpy as np
+import math
 from typing import List, Optional, Tuple
 from dataclasses import dataclass
+
+try:
+    import numpy as np
+except ImportError:  # pragma: no cover
+    np = None  # type: ignore[assignment]
 
 try:
     from . import _core
 except ImportError:
     _core = None
-    import warnings
-    warnings.warn("C++ bindings not available, using Python fallback", ImportWarning)
+
+# Physical constants
+if _core is not None:
+    kB_kcal: float = _core.kB_kcal  # kcal mol⁻¹ K⁻¹
+    kB_SI: float = _core.kB_SI      # J K⁻¹
+else:
+    kB_kcal = 0.001987206
+    kB_SI = 1.380649e-23
 
 
 @dataclass
@@ -61,12 +72,98 @@ class Thermodynamics:
         }
 
 
+class _PyStatMechEngine:
+    """Pure-Python canonical-ensemble engine (fallback when C++ _core is absent).
+
+    Uses the log-sum-exp trick for numerical stability.
+    """
+
+    def __init__(self, temperature_K: float) -> None:
+        self._T = float(temperature_K)
+        self._beta = 1.0 / (kB_kcal * self._T)
+        self._energies: List[float] = []
+
+    # ------------------------------------------------------------------
+    # sample accumulation
+    # ------------------------------------------------------------------
+
+    def add_sample(self, energy: float, multiplicity: int = 1) -> None:
+        for _ in range(max(1, int(multiplicity))):
+            self._energies.append(float(energy))
+
+    def clear(self) -> None:
+        self._energies.clear()
+
+    @property
+    def size(self) -> int:
+        return len(self._energies)
+
+    @property
+    def temperature(self) -> float:
+        return self._T
+
+    @property
+    def beta(self) -> float:
+        return self._beta
+
+    # ------------------------------------------------------------------
+    # thermodynamic computation
+    # ------------------------------------------------------------------
+
+    def compute(self) -> Thermodynamics:
+        if not self._energies:
+            raise RuntimeError("No samples added to StatMechEngine before compute()")
+
+        e = self._energies
+        n = len(e)
+        e_min = min(e)
+
+        # log Z via log-sum-exp trick
+        shifted = [-self._beta * (ei - e_min) for ei in e]
+        log_sum = math.log(sum(math.exp(s) for s in shifted))
+        log_Z = -self._beta * e_min + log_sum
+
+        # Boltzmann weights
+        log_w = [-self._beta * ei - log_Z for ei in e]
+        w = [math.exp(lw) for lw in log_w]
+
+        mean_e = sum(wi * ei for wi, ei in zip(w, e))
+        mean_e2 = sum(wi * ei * ei for wi, ei in zip(w, e))
+        var_e = mean_e2 - mean_e ** 2
+        std_e = math.sqrt(max(0.0, var_e))
+
+        free_energy = -kB_kcal * self._T * log_Z
+        heat_capacity = var_e / (kB_kcal * self._T ** 2)
+        entropy = (mean_e - free_energy) / self._T
+
+        return Thermodynamics(
+            temperature=self._T,
+            log_Z=log_Z,
+            free_energy=free_energy,
+            mean_energy=mean_e,
+            mean_energy_sq=mean_e2,
+            heat_capacity=heat_capacity,
+            entropy=entropy,
+            std_energy=std_e,
+        )
+
+    def boltzmann_weights(self) -> List[float]:
+        if not self._energies:
+            return []
+        thermo = self.compute()
+        log_Z = thermo.log_Z
+        return [math.exp(-self._beta * ei - log_Z) for ei in self._energies]
+
+    def delta_G(self, other: "_PyStatMechEngine") -> float:
+        return self.compute().free_energy - other.compute().free_energy
+
+
 class StatMechEngine:
     """Statistical mechanics engine for conformational ensembles.
-    
+
     Computes partition functions, free energies, entropies, and heat capacities
     from sampled configurations using canonical ensemble formalism.
-    
+
     Example:
         >>> engine = StatMechEngine(temperature_K=300.0)
         >>> engine.add_samples([-10.5, -9.8, -10.2, -11.0])  # energies in kcal/mol
@@ -74,16 +171,17 @@ class StatMechEngine:
         >>> print(f"Free energy: {thermo.free_energy:.2f} kcal/mol")
         >>> print(f"Entropy: {thermo.entropy:.5f} kcal/(mol·K)")
     """
-    
+
     def __init__(self, temperature_K: float = 300.0):
         """Initialize engine at specified temperature.
-        
+
         Args:
             temperature_K: Simulation temperature in Kelvin (default 300K)
         """
-        if _core is None:
-            raise RuntimeError("C++ bindings not available. Build with 'pip install -e .'")
-        self._engine = _core.StatMechEngine(temperature_K)
+        if _core is not None:
+            self._engine = _core.StatMechEngine(temperature_K)
+        else:
+            self._engine = _PyStatMechEngine(temperature_K)
     
     def add_sample(self, energy: float, multiplicity: int = 1) -> None:
         """Add a single sampled configuration.
@@ -94,13 +192,14 @@ class StatMechEngine:
         """
         self._engine.add_sample(energy, multiplicity)
     
-    def add_samples(self, energies: np.ndarray) -> None:
-        """Add multiple configurations from NumPy array.
-        
+    def add_samples(self, energies) -> None:
+        """Add multiple configurations from a sequence or NumPy array.
+
         Args:
-            energies: Array of configuration energies (kcal/mol)
+            energies: Iterable of configuration energies (kcal/mol)
         """
-        energies = np.asarray(energies, dtype=np.float64)
+        if np is not None:
+            energies = np.asarray(energies, dtype=np.float64)
         for e in energies:
             self._engine.add_sample(float(e))
     
@@ -122,13 +221,17 @@ class StatMechEngine:
             std_energy=thermo_cpp.std_energy,
         )
     
-    def boltzmann_weights(self) -> np.ndarray:
+    def boltzmann_weights(self):
         """Get Boltzmann weights for all samples.
-        
+
         Returns:
-            NumPy array of normalized weights (sum to 1.0)
+            NumPy array of normalized weights (sum to 1.0), or a plain list
+            when NumPy is not available.
         """
-        return np.array(self._engine.boltzmann_weights())
+        weights = self._engine.boltzmann_weights()
+        if np is not None:
+            return np.array(weights)
+        return list(weights)
     
     def delta_G(self, reference: 'StatMechEngine') -> float:
         """Compute relative free energy to another ensemble.
@@ -202,26 +305,18 @@ class BoltzmannLUT:
         return self._lut(energy)
 
 
-# Physical constants (exposed from C++)
-if _core is not None:
-    kB_kcal = _core.kB_kcal  # kcal mol⁻¹ K⁻¹
-    kB_SI = _core.kB_SI      # J K⁻¹
-else:
-    kB_kcal = 0.001987206
-    kB_SI = 1.380649e-23
-
-
-def helmholtz_from_energies(energies: np.ndarray, temperature: float = 300.0) -> float:
+def helmholtz_from_energies(energies, temperature: float = 300.0) -> float:
     """Convenience function: Helmholtz free energy from energy array.
-    
+
+    Works with or without C++ bindings (uses pure-Python engine as fallback).
+
     Args:
-        energies: Array of configuration energies (kcal/mol)
+        energies: Iterable of configuration energies (kcal/mol)
         temperature: Temperature in Kelvin
-    
+
     Returns:
         Helmholtz free energy F (kcal/mol)
     """
-    if _core is None:
-        raise RuntimeError("C++ bindings not available")
-    energies = np.asarray(energies, dtype=np.float64)
-    return _core.StatMechEngine.helmholtz(energies.tolist(), temperature)
+    engine = StatMechEngine(temperature)
+    engine.add_samples(energies)
+    return engine.compute().free_energy

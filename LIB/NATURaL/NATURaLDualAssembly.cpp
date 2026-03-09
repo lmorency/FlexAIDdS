@@ -325,18 +325,94 @@ std::vector<DualAssemblyEngine::GrowthStep> DualAssemblyEngine::run() {
 }
 
 // ─── compute_partial_cf ───────────────────────────────────────────────────────
+// Evaluates the Contact Function for the partially-grown complex using the
+// FlexAID energy_matrix.  For each receptor atom in residues [0, n_grown)
+// that is within contact distance of a ligand atom, we accumulate the
+// complementarity energy weighted by approximate contact area (sphere-point
+// sampling) — the same physics as cffunction() but restricted to the grown
+// subset of the receptor.
 double DualAssemblyEngine::compute_partial_cf(int n_grown_residues) const {
-    // Simplified CF estimate: each grown residue contributes an attractive
-    // contact energy. Production code calls the full cffunction()/vcfunction()
-    // pipeline (ic2cf.cpp) with the current partially-grown complex.
     if (!FA_ || !atoms_ || !residues_) return 0.0;
+    if (!FA_->energy_matrix || FA_->ntypes <= 0) return 0.0;
 
-    // Scale CF by accessible surface area proxy:
-    // more residues → more surface buried → stronger (negative) CF.
-    // Using -0.1 kcal/mol/residue as a placeholder; production uses the
-    // actual FlexAID Contact Function grid evaluation.
-    double count = std::min(n_grown_residues, n_residues_);
-    return -0.1 * count; // kcal/mol (attractive)
+    const int n_grown = std::min(n_grown_residues, n_residues_);
+    if (n_grown <= 0) return 0.0;
+
+    const int n_types = FA_->ntypes;
+
+    // Identify the range of ligand atoms.  Ligand residues have type == 1.
+    int lig_first = -1, lig_last = -1;
+    for (int r = 1; r <= FA_->res_cnt; ++r) {
+        if (residues_[r].type == 1) {
+            int rot = residues_[r].rot;
+            if (lig_first < 0 || residues_[r].fatm[rot] < lig_first)
+                lig_first = residues_[r].fatm[rot];
+            if (residues_[r].latm[rot] > lig_last)
+                lig_last = residues_[r].latm[rot];
+        }
+    }
+    if (lig_first < 0 || lig_last < lig_first) return 0.0;
+
+    // Accumulate complementarity over grown receptor atoms × ligand atoms.
+    // Contact distance: (Ri + Rj + 2·Rw)  — same criterion as cffunction().
+    double com = 0.0;
+    double wall = 0.0;
+    constexpr float OVERLAP_FRAC = 0.9f;
+
+    for (int r = 1; r <= n_grown && r <= FA_->res_cnt; ++r) {
+        if (residues_[r].type != 0) continue;  // skip non-protein residues
+        int rot = residues_[r].rot;
+        for (int i = residues_[r].fatm[rot]; i <= residues_[r].latm[rot]; ++i) {
+            int t_i = atoms_[i].type;
+            if (t_i <= 0 || t_i > n_types) continue;
+            float rad_i = atoms_[i].radius;
+
+            for (int j = lig_first; j <= lig_last; ++j) {
+                int t_j = atoms_[j].type;
+                if (t_j <= 0 || t_j > n_types) continue;
+                float rad_j = atoms_[j].radius;
+
+                float rij = rad_i + rad_j;
+                float cutoff = rij + 2.0f * Rw;
+
+                // Squared distance between the two atoms
+                float dx = atoms_[i].coor[0] - atoms_[j].coor[0];
+                float dy = atoms_[i].coor[1] - atoms_[j].coor[1];
+                float dz = atoms_[i].coor[2] - atoms_[j].coor[2];
+                float d2 = dx * dx + dy * dy + dz * dz;
+
+                if (d2 > cutoff * cutoff) continue;
+
+                // Approximate contact area: cone-cap model.
+                // A_contact ≈ 2π·(Ri+Rw)·(Ri+Rw + Rj+Rw − d) capped at SAS_i.
+                float d = std::sqrt(d2);
+                float rad_oi = rad_i + Rw;
+                float overlap_depth = rad_oi + rad_j + Rw - d;
+                if (overlap_depth <= 0.0f) continue;
+                float area = 2.0f * static_cast<float>(PI) * rad_oi * overlap_depth;
+                float sas_i = 4.0f * static_cast<float>(PI) * rad_oi * rad_oi;
+                if (area > sas_i) area = sas_i;
+                float norm_area = area / sas_i;
+
+                // Energy lookup from the matrix (same as vcfunction)
+                struct energy_matrix* em =
+                    &FA_->energy_matrix[(t_i - 1) * n_types + (t_j - 1)];
+                double yval = get_yval(em, static_cast<double>(norm_area));
+                com += yval * static_cast<double>(area);
+
+                // Wall term for severe overlap (same as cffunction)
+                if (d2 <= (OVERLAP_FRAC * rij) * (OVERLAP_FRAC * rij)) {
+                    wall += static_cast<double>(KWALL)
+                            * (std::pow(static_cast<double>(d2), -3.0)
+                               - std::pow(static_cast<double>(OVERLAP_FRAC * rij), -12.0));
+                }
+            }
+        }
+    }
+
+    // Return the combined CF: complementarity minus wall penalty.
+    // Consistent with get_apparent_cf_evalue() = com + wal + sas.
+    return com + wall;
 }
 
 // ─── compute_growth_entropy ───────────────────────────────────────────────────

@@ -411,3 +411,30 @@ if(ENABLE_VCFBATCH_BENCHMARK)
     endif()
     message(STATUS "VoronoiCFBatch benchmark enabled — build target: benchmark_vcfbatch")
 endif()
+
+# ─── Unit Tests (GoogleTest) ───────────────────────────────────────────────
+option(BUILD_TESTING "Build unit tests (requires GoogleTest)" OFF)
+if(BUILD_TESTING)
+    find_package(GTest QUIET)
+    if(NOT GTest_FOUND)
+        include(FetchContent)
+        FetchContent_Declare(
+            googletest
+            GIT_REPOSITORY https://github.com/google/googletest.git
+            GIT_TAG        v1.14.0
+        )
+        set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+        FetchContent_MakeAvailable(googletest)
+    endif()
+
+    enable_testing()
+
+    # test_statmech — StatMechEngine unit tests
+    add_executable(test_statmech tests/test_statmech.cpp LIB/statmech.cpp)
+    target_include_directories(test_statmech PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_statmech PRIVATE GTest::gtest GTest::gtest_main)
+    target_compile_options(test_statmech PRIVATE -O2)
+    add_test(NAME StatMechTests COMMAND test_statmech)
+
+    message(STATUS "Unit tests enabled — build target: test_statmech")
+endif()

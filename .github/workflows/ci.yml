@@ -1,62 +1,102 @@
-name: FlexAIDdS CI (C++20)
+name: FlexAID CI
 
 on:
   push:
-    branches: ["claude/fix-ci-build-errors-FvOtk", "main", "master"]
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
+  pure_python_results:
+    name: Pure Python results tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest
+      - name: Run read-only loader tests
+        run: |
+          PYTHONPATH=python pytest -q \
+            python/tests/test_results_io.py \
+            python/tests/test_results_loader_models.py
+
+  cxx_core_build:
+    name: C++ core build (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
-            compiler: g++
+          - name: linux-gcc
+            os: ubuntu-latest
             cc: gcc
-          - os: ubuntu-latest
-            compiler: clang++
+            cxx: g++
+          - name: linux-clang
+            os: ubuntu-latest
             cc: clang
-          - os: macos-latest
-            compiler: clang++
+            cxx: clang++
+          - name: macos-clang
+            os: macos-latest
             cc: clang
-
-    runs-on: ${{ matrix.os }}
-
+            cxx: clang++
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install dependencies (Linux)
+      - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y cmake build-essential libomp-dev
-
-      - name: Install dependencies (macOS)
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build libeigen3-dev libomp-dev
+      - name: Install macOS dependencies
         if: runner.os == 'macOS'
-        run: brew install cmake libomp
-
-      - name: Verify C++20 compiler support
         run: |
-          ${{ matrix.compiler }} --version
-          echo '#include <span>
-          #include <concepts>
-          template<std::integral T> T id(T x){return x;}
-          int main(){std::span<int> s; return id(0);}' > /tmp/cxx20_check.cpp
-          ${{ matrix.compiler }} -std=c++20 /tmp/cxx20_check.cpp -o /tmp/cxx20_check
-          echo "C++20 support confirmed."
-
+          brew install cmake ninja libomp eigen
       - name: Configure
-        env:
-          CXX: ${{ matrix.compiler }}
-          CC:  ${{ matrix.cc }}
+        shell: bash
         run: |
-          cmake -B build \
-                -DCMAKE_BUILD_TYPE=Release \
-                -DCMAKE_CXX_STANDARD=20 \
-                -DCMAKE_CXX_STANDARD_REQUIRED=ON \
-                -DCMAKE_CXX_EXTENSIONS=OFF \
-                -DFLEXAIDS_USE_OPENMP=ON
-
+          export CC=${{ matrix.cc }}
+          export CXX=${{ matrix.cxx }}
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DFLEXAIDS_USE_CUDA=OFF \
+            -DFLEXAIDS_USE_METAL=OFF \
+            -DBUILD_PYTHON_BINDINGS=OFF
       - name: Build
-        run: cmake --build build --verbose --parallel $(nproc 2>/dev/null || sysctl -n hw.ncpu)
+        run: cmake --build build --parallel
+
+  python_bindings_smoke:
+    name: Python bindings smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build
+          python -m pip install --upgrade pip
+          python -m pip install 'pybind11[global]' pytest
+      - name: Configure Python bindings
+        run: |
+          cmake -S . -B build-python -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_PYTHON_BINDINGS=ON \
+            -DFLEXAIDS_USE_OPENMP=OFF \
+            -DFLEXAIDS_USE_EIGEN=OFF \
+            -DFLEXAIDS_USE_CUDA=OFF \
+            -DFLEXAIDS_USE_METAL=OFF \
+            -DCMAKE_LIBRARY_OUTPUT_DIRECTORY=${{ github.workspace }}/python/flexaidds
+      - name: Build Python extension
+        run: cmake --build build-python --parallel --target _core
+      - name: Run statmech smoke test
+        run: |
+          PYTHONPATH=python pytest -q python/tests/test_statmech_smoke.py

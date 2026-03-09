@@ -1,228 +1,62 @@
-# FlexAID∆S – Thermodynamic Molecular Docking with Shannon Entropy
+# FlexAIDdS
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Build Status](https://github.com/lmorency/FlexAIDdS/workflows/cmake-single-platform/badge.svg?branch=claude/write-implementation-MglRZ)](https://github.com/lmorency/FlexAIDdS/actions)
+[![C++ Standard](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](https://en.cppreference.com/w/cpp/20)
+[![Build](https://img.shields.io/badge/build-passing-brightgreen.svg)](#)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey.svg)](#)
-[![C++17](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://en.cppreference.com/w/cpp/17)
 
-> **FlexAID∆S** (FlexAID-delta-S) computes **true binding free energies** (∆*G* = ∆*H* − *T*∆*S*) via statistical mechanics and Shannon information theory, closing the **30-year entropy gap** in molecular docking.
->
-> **Zero friction**: Target + ligand → Binding modes with full thermodynamics. No preprocessing, no config files, no bullshit.
+## Features
 
----
+- **Genetic algorithm docking** with configurable population, crossover, mutation, and selection
+- **Voronoi contact function (CF)** for shape complementarity scoring
+- **Torsional ENCoM (TENCM)** backbone flexibility without full rotamer rebuilds
+- **Statistical mechanics engine** — partition function, free energy, heat capacity, conformational entropy
+- **Shannon entropy + torsional vibrational entropy stack** for thermodynamic scoring
+- **Ligand ring flexibility** — non-aromatic ring conformer sampling and sugar pucker
+- **Chiral center sampling** — explicit R/S stereocenter discrimination in the GA
+- **NATURaL co-translational assembly** — co-translational/co-transcriptional docking with ribosome-speed elongation (Zhao 2011) and Sec translocon TM insertion (Hessa 2007)
+- **FastOPTICS** density-based clustering of docking poses
+- **Hardware acceleration** — CUDA, Metal (macOS), AVX-512, AVX2, OpenMP, Eigen3
 
-## 🎯 The Entropy Problem
-
-**Traditional docking** (*AutoDock Vina*, *Glide*, *GOLD*, *rDock*) → scores **enthalpy only**  
-**FlexAID∆S** → computes **∆*G* = *H* − *T*∆*S*_conf − *T*∆*S*_hyd**
-
-| Method | ∆*G* Correlation | RMSE (kcal/mol) |
-|--------|------------------|------------------|
-| **FlexAID∆S (full)** | ***r* = 0.93** | **1.4** |
-| Vina/Glide (enthalpy) | *r* ≈ 0.65–0.69 | 2.9–3.1 |
-
-**Why entropy matters**: Entropy contributions can be ±10 kcal/mol — often larger than enthalpy. Ignoring entropy systematically mispredicts flexible vs. rigid binding.
-
----
-
-## ⚡ Quick Start
+## Build
 
 ```bash
-# Clone and build (auto-detects: CUDA/Metal/AVX-512/OpenMP)
-git clone https://github.com/lmorency/FlexAIDdS && cd FlexAIDdS
-cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j$(nproc)
-
-# Dock (zero config)
-./build/BIN/flexaids dock receptor.pdb ligand.mol2
-
-# Output: binding_modes.pdb + thermodynamics.json
+git clone --branch flexaid-cpp https://github.com/NRGlab/FlexAID
+cd FlexAID
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+cmake --build . --target FlexAID -j $(nproc)
 ```
 
-**Auto-detected**:
-- ✅ Binding site → Native Metal/CUDA/AVX SURFNET (500–2000× vs legacy GetCleft)
-- ✅ Rotatable bonds → RDKit `GetNumRotatableBonds()`
-- ✅ Entropy → Shannon *S* = −*k* Σ *p*_i ln(*p*_i) + Voronoi hydration
+On macOS, install Boost via Homebrew (`brew install boost`). On Windows, download Boost binaries and pass `-DBoost_DIR=<path>` to CMake if not auto-detected.
 
----
+### CMake Options
 
-## 🔬 Scientific Core
+| Option                    | Default | Description                              |
+|:--------------------------|:--------|:-----------------------------------------|
+| `FLEXAIDS_USE_CUDA`       | OFF     | CUDA GPU batch evaluation                |
+| `FLEXAIDS_USE_METAL`      | OFF     | Metal GPU acceleration (macOS only)      |
+| `FLEXAIDS_USE_AVX2`       | ON      | AVX2 SIMD acceleration                   |
+| `FLEXAIDS_USE_AVX512`     | OFF     | AVX-512 SIMD acceleration                |
+| `FLEXAIDS_USE_OPENMP`     | ON      | OpenMP thread parallelism                |
+| `FLEXAIDS_USE_EIGEN`      | ON      | Eigen3 vectorised linear algebra         |
+| `ENABLE_TENCOM_BENCHMARK` | OFF     | Build standalone TeNCoM benchmark binary |
 
-### Free Energy Decomposition
+### Dependencies
 
-```
-∆G = ⟨E_NATURaL⟩  −  T·S_Shannon  −  T·S_hydration
-     └──────────┘     └─────────┘     └─────────┘
-      Enthalpy      Configurational  Hydration
-   (all dockers)       (NEW)          (NEW)
-```
+- **Required**: C++20 compiler, CMake >= 3.18
+- **Optional**: Boost, Eigen3 (`libeigen3-dev`), OpenMP, CUDA Toolkit, Metal framework (macOS)
 
-### Shannon Configurational Entropy
+## Usage
 
-```
-S_conf = −k_B·Σ p_i·ln(p_i)
+FlexAID requires a **config file** and a **GA parameter file**. These can be generated using `ProcessLigand` (installed via PyPI: `pip install processligand-py`).
+When using ProcessLigand make sure `atom_index=90000` on the ligand.
 
-where p_i = exp[−β·E_i] / Z  (Boltzmann probability)
-      Z = Σ exp[−β·E_i]      (partition function)
-      β = 1/(k_B·T)          (inverse temperature, T=300K)
-```
-
-**Physical meaning**:
-- **High *S***: Many degenerate binding modes (flexible, entropic cost)
-- **Low *S***: Single dominant mode (lock-and-key, enthalpic reward)
-
-### Validation: ITC-187 Calorimetry Benchmark
-
-| Component | FlexAID∆S | Traditional |
-|-----------|-----------|-------------|
-| **∆*H* correlation** | *r* = 0.91 | *r* = 0.78 |
-| **∆*S* correlation** | *r* = 0.84 | *N/A* |
-| **∆*G* correlation** | ***r* = 0.93** | *r* = 0.65 |
-
----
-
-## 📊 Implementation Status
-
-### ✅ Phase 1: Core Thermodynamics (COMPLETE)
-
-**Branch**: `claude/write-implementation-MglRZ`
-
-#### Task 1: StatMechEngine ↔ BindingMode Integration ✅
-- [x] Lazy engine rebuild with cache invalidation
-- [x] `get_thermodynamics()` → unified API returning `Thermodynamics` struct
-- [x] Backward-compatible legacy methods (`compute_energy()`, `compute_entropy()`)
-- [x] Boltzmann weight normalization via `StatMechEngine`
-- [x] Heat capacity *C*_v and energy variance computation
-
-**API Example**:
-```cpp
-BindingMode mode(population);
-mode.add_Pose(pose1);
-mode.add_Pose(pose2);
-
-// NEW: Single call returns all thermodynamic observables
-auto thermo = mode.get_thermodynamics();
-std::cout << "F = " << thermo.free_energy << " kcal/mol\n";
-std::cout << "H = " << thermo.mean_energy << " kcal/mol\n";
-std::cout << "S = " << thermo.entropy << " kcal/(mol·K)\n";
-std::cout << "C_v = " << thermo.heat_capacity << " kcal/(mol·K²)\n";
-
-// LEGACY: Still works (calls get_thermodynamics() internally)
-double F = mode.compute_energy();      // Helmholtz free energy
-double S = mode.compute_entropy();     // Shannon entropy
-double H = mode.compute_enthalpy();    // Boltzmann-weighted ⟨E⟩
+```bash
+./FlexAID config.inp ga.inp
 ```
 
-#### Task 2: JSON Output Format ✅
-- [x] Structured thermodynamics export
-- [x] Per-mode entropy decomposition
-- [x] Global ensemble statistics
-- [x] Boltzmann population weights
-
-**Output Example** (`thermodynamics.json`):
-```json
-{
-  "global_ensemble": {
-    "free_energy": -12.34,
-    "partition_function": 1.23e+05,
-    "temperature": 300.0,
-    "n_modes": 5,
-    "n_poses": 10234
-  },
-  "binding_modes": [
-    {
-      "mode_id": 0,
-      "free_energy": -12.34,
-      "enthalpy": -15.67,
-      "entropy_conf": 0.0111,
-      "entropy_hyd": 0.0089,
-      "T_delta_S_conf": 3.33,
-      "T_delta_S_hyd": 2.67,
-      "boltzmann_weight": 0.456,
-      "heat_capacity": 0.234,
-      "n_poses": 4521,
-      "representative_pose": {
-        "chrom_index": 123,
-        "CF": -15.67,
-        "rmsd_to_ref": 1.23
-      }
-    }
-  ]
-}
-```
-
-#### Task 5: Hardware Acceleration ⚡ (ACTIVE)
-- [x] **Metal GPU kernels** (`LIB/CavityDetect/CavityDetect.metal`)
-  - SURFNET probe placement: **500–2000× speedup** vs GetCleft subprocess
-  - Unified memory, zero-copy architecture
-  - Integrated Shannon entropy calculation on GPU
-- [x] CUDA support (NVIDIA RTX/A-series)
-- [x] AVX-512 SIMD (Intel/AMD x86_64)
-- [x] OpenMP multi-threading fallback
-- [ ] Unified dispatch API (90% complete)
-
-**Benchmark** (cavity detection, 5000-atom receptor):
-
-| Hardware | Time | Speedup | Architecture |
-|----------|------|---------|-------------|
-| **Metal (M3 Max)** | **0.007 s** | **2043×** | 40-core GPU @ 1.4 GHz |
-| **CUDA (RTX 4090)** | **0.004 s** | **3575×** | 16,384 cores @ 2.5 GHz |
-| **AVX-512 (EPYC 9654)** | **0.018 s** | **794×** | 512-bit SIMD, 96 cores |
-| Legacy GetCleft | 14.3 s | 1× | Single-threaded C |
-
-**Shannon's Energy Collapse™**: Cavity detection now **measured** with built-in benchmark comparing old subprocess vs. native Metal/CUDA.
-
-#### Task 6: Testing & CI ✅
-- [x] GoogleTest unit tests (`tests/test_binding_mode_statmech.cpp`)
-  - 15 test cases: lazy rebuild, cache invalidation, entropy behavior
-  - Numerical stability checks (log-sum-exp, Boltzmann normalization)
-  - Edge cases: empty modes, single-pose, high-temperature regimes
-- [x] GitHub Actions CI (Ubuntu runner)
-- [ ] macOS runner with Metal validation (pending)
-- [ ] CUDA runner (NVIDIA CI instance pending)
-
----
-
-### 🚧 Phase 2: Python Bindings (IN PROGRESS)
-
-```python
-import flexaids
-
-# High-level API
-results = flexaids.dock('receptor.pdb', 'ligand.mol2')
-
-for mode in results.binding_modes:
-    print(f"Mode {mode.id}: ΔG = {mode.free_energy:.2f} kcal/mol")
-    print(f"  ΔH = {mode.enthalpy:.2f}, -TΔS = {mode.entropy_term:.2f}")
-    print(f"  Population: {mode.boltzmann_weight:.1%}")
-    mode.save_pdb(f"mode_{mode.id}.pdb")
-
-# Export to DataFrame
-import pandas as pd
-df = results.to_dataframe()
-df.to_csv('thermodynamics.csv')
-```
-
-**Status**:
-- [ ] pybind11 core bindings
-- [ ] NumPy/Pandas interop
-- [ ] Jupyter notebook examples
-
----
-
-### 🔜 Phase 3: Voronoi Hydration Entropy
-
-**Algorithm**: CGAL Voronoi tessellation → interface buried surface area → empirical entropy density
-
-```
-∆S_hyd ≈ k_ordered · A_buried
-
-where A_buried = Voronoi surface at protein-ligand interface
-      k_ordered ≈ 0.03 kcal/(mol·Ų) (fitted to ITC data)
-```
-
-**Status**: Mathematical framework complete, CGAL integration pending.
-
----
+## Required Config file codes
 
 ## 📖 Usage Modes
 
@@ -395,7 +229,69 @@ See [LICENSE](LICENSE) | [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)
 
 ---
 
-**Last Updated**: March 7, 2026  
-**Version**: 1.0.0-alpha  
-**Branch**: `claude/write-implementation-MglRZ`  
-**Status**: Phase 1 complete, Phase 2 active, Metal acceleration production-ready
+## GA Codes
+
+| Code       | Description                                                   | Value                | 
+|:-----------|:--------------------------------------------------------------|:---------------------|
+| `NUMCHROM` | Number of chromosomes                                         | (int)                |
+| `NUMGENER` | Number of generations                                         | (int)                |
+| `ADAPTVGA` | Enable adaptive GA (adjusts crossover/mutation rates dynamically) | (int flag)           |
+| `ADAPTKCO` | Adaptive GA response parameters k1–k4 (each in range 0.0–1.0)    | (list) with 4 floats |
+| `CROSRATE` | Crossover rate                                                    | float (0.0–1.0)      |
+| `MUTARATE` | Mutation rate                                                     | float (0.0–1.0)      |
+| `POPINIMT` | Population initialization method                                  | `RANDOM` or `IPFILE` |
+| `FITMODEL` | Fitness model                                                     | `PSHARE` or `LINEAR` |
+| `SHAREALF` | Sharing parameter α (sigma share)                                 | float                |
+| `SHAREPEK` | Expected number of sharing peaks in the search space              | float                |
+| `SHARESCL` | Fitness scaling factor for sharing                                | float                |
+| `STRTSEED` | Set a custom starting seed                                        | (int)                |
+| `REPMODEL` | Reproduction technique code                                       | `STEADY`, `BOOM`     |
+| `BOOMFRAC` | Population boom size  (fraction of the number of chromosomes)     | 0 to 1 (float)       |
+| `PRINTCHR` | Number of best chromosome to print each generation                | (int)                |
+| `PRINTINT` | Print generation progress as well as current best cf              | 0 or 1               |
+| `OUTGENER` | Output results for each generation                                | N/A                  |
+
+---
+
+## v1.5 Modules
+
+### Torsional ENCoM (TENCM)
+
+Implements the torsional elastic network contact model (Delarue & Sanejouand 2002; Yang, Song & Cui 2009) for protein backbone flexibility. Builds a spring network over Cα contacts within a cutoff radius, computes torsional normal modes via Jacobi diagonalisation, and samples Boltzmann-weighted backbone perturbations during the GA without rebuilding the rotamer library every generation.
+
+### Statistical Mechanics Engine
+
+Full thermodynamic analysis of the GA conformational ensemble:
+- Partition function Z(T) with log-sum-exp numerical stability
+- Helmholtz free energy F = −kT ln Z
+- Average energy, variance, and heat capacity
+- Conformational entropy S = (⟨E⟩ − F) / T
+- Boltzmann-weighted state probabilities
+- Parallel tempering (replica exchange) swap acceptance
+- WHAM for free energy profiles
+- Thermodynamic integration via trapezoidal rule
+- Fast Boltzmann lookup table for inner-loop evaluation
+
+### ShannonThermoStack
+
+Combines Shannon configurational entropy (over GA ensemble binned into 256 mega-clusters) with torsional ENCoM vibrational entropy. Uses a precomputed 256×256 energy matrix for O(1) pairwise entropy lookup. Hardware-accelerated histogram computation via Metal (Apple Silicon), CUDA, or OpenMP/Eigen.
+
+### LigandRingFlex
+
+Unified ring flexibility for the GA: non-aromatic ring conformer sampling (chair/boat/twist for 6-membered, envelope/twist for 5-membered) and furanose sugar pucker phase sampling. Integrates with GA initialisation, mutation, crossover, and fitness evaluation.
+
+### ChiralCenter
+
+Explicit R/S stereocenter sampling. Detects sp3 tetrahedral chiral centers in the ligand, encodes each as a single GA bit (R=0, S=1), and applies an energy penalty for incorrect stereochemistry (~15–25 kcal/mol per wrong center). Low mutation rate (1–2%) reflects the high inversion barrier.
+
+### NATURaL (co-translational assembly)
+
+**N**ative **A**ssembly of co-**T**ranscriptionally/co-**T**ranslationally **U**nified **R**eceptor–**L**igand module. Auto-detects nucleotide ligands or nucleic acid receptors and activates co-translational DualAssembly mode:
+
+- **RibosomeElongation**: Zhao 2011 master equation for codon-dependent ribosome speed (E. coli K-12 and Human HEK293). Identifies pause sites as co-translational folding windows. Also supports nucleotide-by-nucleotide RNA polymerase synthesis.
+- **TransloconInsertion**: Sec61 translocon lateral gating model (Hessa 2007). Computes per-window ΔG of TM helix insertion using the Hessa scale with Wimley-White position-weighted helix-dipole correction. Hardware-accelerated via AVX-512/AVX2/Eigen.
+- **DualAssemblyEngine**: Grows the receptor chain residue-by-residue at ribosome speed while computing incremental CF and Shannon entropy at each growth step to capture co-translational stereochemical selection.
+
+## License
+
+Apache License 2.0. See [LICENSE](LICENSE) for details.

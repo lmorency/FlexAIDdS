@@ -1,22 +1,10 @@
-name: C/C++ CI
+name: Legacy C/C++ workflow (manual only)
 
 on:
-  push:
-    branches: [ "claude/fix-ci-build-errors-FvOtk", "main", "master" ]
-  pull_request:
+  workflow_dispatch:
 
 jobs:
-  build:
-
+  deprecated:
     runs-on: ubuntu-latest
-
     steps:
-    - uses: actions/checkout@v4
-    - name: Install dependencies
-      run: |
-        sudo apt-get update -qq
-        sudo apt-get install -y cmake build-essential libomp-dev
-    - name: Configure
-      run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=20 -DCMAKE_CXX_STANDARD_REQUIRED=ON -DCMAKE_CXX_EXTENSIONS=OFF -DFLEXAIDS_USE_OPENMP=ON
-    - name: Build
-      run: cmake --build build --parallel $(nproc)
+      - run: echo 'Deprecated workflow. Use .github/workflows/ci.yml instead.'
