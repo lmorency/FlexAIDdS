@@ -108,15 +108,40 @@ def main() -> int:
     if result.temperature is not None:
         print(f"Temperature: {result.temperature} K")
     print()
+
+    if not result.binding_modes:
+        return 0
+
+    # Table header
+    header = (
+        f"{'mode':>5}  {'rank':>4}  {'poses':>5}  "
+        f"{'best_cf':>10}  {'free_energy':>12}  "
+        f"{'enthalpy':>10}  {'entropy':>12}"
+    )
+    print(header)
+    print("-" * len(header))
+
+    # Sort by rank for display
     _print_table(result, args.top)
 
     top = result.top_mode()
-    if top is not None:
+    for mode in sorted(result.binding_modes, key=lambda m: m.rank):
+        cf_str = f"{mode.best_cf:10.4f}" if mode.best_cf is not None else f"{'N/A':>10}"
+        fe_str = f"{mode.free_energy:12.4f}" if mode.free_energy is not None else f"{'N/A':>12}"
+        h_str = f"{mode.enthalpy:10.4f}" if mode.enthalpy is not None else f"{'N/A':>10}"
+        s_str = f"{mode.entropy:12.6f}" if mode.entropy is not None else f"{'N/A':>12}"
+        marker = " *" if top is not None and mode.mode_id == top.mode_id else ""
         print(
+            f"{mode.mode_id:>5}  {mode.rank:>4}  {mode.n_poses:>5}  "
+            f"{cf_str}  {fe_str}  {h_str}  {s_str}{marker}"
             f"\nTop mode: mode_id={top.mode_id}, rank={top.rank}, "
             f"n_poses={top.n_poses}, free_energy={top.free_energy}, "
             f"best_cf={top.best_cf}"
         )
+
+    if top is not None:
+        print(f"\n* = top-ranked mode (mode_id={top.mode_id})")
+
     return 0
 
 

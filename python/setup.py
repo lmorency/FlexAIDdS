@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 from setuptools import Extension, setup
@@ -12,6 +13,13 @@ except ImportError as exc:
 
 ROOT = Path(__file__).resolve().parent
 LIB_DIR = ROOT.parent / "LIB"
+
+# Read version from __version__.py without importing the package (which
+# would require _core to be built already).
+_version_file = ROOT / "flexaidds" / "__version__.py"
+_version_match = re.search(r'^__version__\s*=\s*["\']([^"\']+)["\']',
+                           _version_file.read_text(), re.MULTILINE)
+_version = _version_match.group(1) if _version_match else "0.0.0"
 
 ext_modules = [
     Extension(
@@ -31,7 +39,7 @@ ext_modules = [
 
 setup(
     name="flexaidds",
-    version="0.1.0",
+    version=_version,
     description="Python bindings for the FlexAID∆S thermodynamic core",
     author="Louis-Philippe Morency",
     packages=["flexaidds"],
