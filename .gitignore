@@ -10,6 +10,9 @@
 !*.c
 !*.h
 !*.hpp
+# test suite
+!tests
+!tests/**
 # build system
 !CMakeLists.txt
 !LICENSE
