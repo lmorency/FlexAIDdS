@@ -1,7 +1,7 @@
 # FlexAID∆S – Thermodynamic Molecular Docking with Shannon Entropy
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Build Status](https://github.com/lmorency/FlexAIDdS/workflows/cmake-single-platform/badge.svg?branch=claude/write-implementation-MglRZ)](https://github.com/lmorency/FlexAIDdS/actions)
+[![Build Status](https://github.com/lmorency/FlexAIDdS/workflows/cmake-single-platform/badge.svg?branch=master)](https://github.com/lmorency/FlexAIDdS/actions)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey.svg)](#)
 [![C++17](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://en.cppreference.com/w/cpp/17)
 
@@ -84,7 +84,7 @@ where p_i = exp[−β·E_i] / Z  (Boltzmann probability)
 
 ### ✅ Phase 1: Core Thermodynamics (COMPLETE)
 
-**Branch**: `claude/write-implementation-MglRZ`
+**Branch**: `master`
 
 #### Task 1: StatMechEngine ↔ BindingMode Integration ✅
 - [x] Lazy engine rebuild with cache invalidation
@@ -395,7 +395,7 @@ See [LICENSE](LICENSE) | [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)
 
 ---
 
-**Last Updated**: March 7, 2026  
-**Version**: 1.0.0-alpha  
-**Branch**: `claude/write-implementation-MglRZ`  
+**Last Updated**: March 9, 2026
+**Version**: 1.0.0-alpha
+**Branch**: `master`
 **Status**: Phase 1 complete, Phase 2 active, Metal acceleration production-ready

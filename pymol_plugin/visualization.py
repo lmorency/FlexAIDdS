@@ -25,13 +25,11 @@ except ImportError as exc:
 
 try:
     from flexaidds import BindingModeResult, DockingResult, PoseResult, load_results
+    from flexaidds.thermodynamics import kB_kcal as _kB_kcal
 except ImportError as exc:
     raise ImportError(
         "flexaidds Python package is required for PyMOL result loading"
     ) from exc
-
-
-_kB_kcal: float = 0.001987206
 
 
 @dataclass

@@ -1,4 +1,3 @@
-import csv
 from pathlib import Path
 
 from flexaidds.results import load_results
@@ -12,12 +11,13 @@ def _write_pdb(path: Path, remarks: list[str]) -> None:
             "END\n",
         ]
     )
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("".join(lines), encoding="utf-8")
 
 
-def test_load_results_groups_poses_by_mode(tmp_path: Path) -> None:
+def test_load_results_records_top_mode_and_recursive_count(tmp_path: Path) -> None:
     _write_pdb(
-        tmp_path / "binding_mode_1_pose_1.pdb",
+        tmp_path / "nested" / "binding_mode_1_pose_1.pdb",
         [
             "binding_mode = 1",
             "pose_rank = 1",
@@ -29,7 +29,7 @@ def test_load_results_groups_poses_by_mode(tmp_path: Path) -> None:
         ],
     )
     _write_pdb(
-        tmp_path / "binding_mode_1_pose_2.pdb",
+        tmp_path / "nested" / "binding_mode_1_pose_2.pdb",
         [
             "binding_mode = 1",
             "pose_rank = 2",
@@ -49,42 +49,43 @@ def test_load_results_groups_poses_by_mode(tmp_path: Path) -> None:
     )
 
     result = load_results(tmp_path)
+    records = result.to_records()
 
-    assert result.n_modes == 2
-    assert result.temperature == 300.0
-    assert result.binding_modes[0].mode_id == 1
-    assert result.binding_modes[0].n_poses == 2
-    assert result.binding_modes[0].best_cf == -42.5
-    assert result.binding_modes[0].free_energy == -41.0
-    assert result.binding_modes[1].mode_id == 2
-    assert result.binding_modes[1].best_cf == -35.0
+    assert result.metadata["n_pose_files"] == 3
+    assert result.top_mode().mode_id == 1
+    assert len(records) == 2
+    assert records[0]["mode_id"] == 1
+    assert records[0]["n_poses"] == 2
+    assert records[0]["best_cf"] == -42.5
+    assert records[0]["best_pose_path"].endswith("binding_mode_1_pose_1.pdb")
 
 
-def test_load_results_uses_filename_heuristics_when_remarks_missing(tmp_path: Path) -> None:
+def test_load_results_promotes_frequency_metadata_to_mode_level(tmp_path: Path) -> None:
     _write_pdb(
-        tmp_path / "mode_7_pose_3.pdb",
+        tmp_path / "binding_mode_3_pose_1.pdb",
         [
-            "CF = -11.5",
+            "binding_mode = 3",
+            "pose_rank = 1",
+            "CF = -20.0",
+            "frequency = 7",
             "temperature = 298.15",
         ],
     )
     _write_pdb(
-        tmp_path / "cluster-12_conformer-4.pdb",
+        tmp_path / "binding_mode_3_pose_2.pdb",
         [
-            "CF = -9.25",
+            "binding_mode = 3",
+            "pose_rank = 2",
+            "CF = -18.0",
+            "frequency = 7",
             "temperature = 298.15",
         ],
     )
 
     result = load_results(tmp_path)
-    first_mode = result.binding_modes[0]
-    first_pose = first_mode.poses[0]
-    second_mode = result.binding_modes[1]
-    second_pose = second_mode.poses[0]
+    mode = result.binding_modes[0]
 
-    assert first_mode.mode_id == 7
-    assert first_pose.pose_rank == 3
-    assert first_mode.best_cf == -11.5
-    assert second_mode.mode_id == 12
-    assert second_pose.pose_rank == 4
-    assert second_mode.best_cf == -9.25
+    assert mode.mode_id == 3
+    assert mode.n_poses == 2
+    assert mode.frequency == 7
+    assert mode.metadata["frequency"] == 7
