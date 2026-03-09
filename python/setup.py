@@ -25,15 +25,16 @@ ext_modules = [
     Extension(
         "flexaidds._core",
         sources=[
-            str(ROOT / "flexaidds" / "_core.cpp"),
-            str(LIB_DIR / "statmech.cpp"),
+            "flexaidds/_core.cpp",
+            f"{_rel_lib}/statmech.cpp",
+            f"{_rel_lib}/encom.cpp",
         ],
         include_dirs=[
             str(LIB_DIR),
             pybind11.get_include(),
         ],
         language="c++",
-        extra_compile_args=["-std=c++17", "-O3"],
+        extra_compile_args=["-std=c++20", "-O3"],
     ),
 ]
 
