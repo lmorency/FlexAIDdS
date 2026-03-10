@@ -279,7 +279,7 @@ int main(int argc, char **argv){
 
 		if(FA->omit_buried){
 			printf("calcuting SAS of non-scorable atoms...\n");
-			int rv = Vcontacts(FA,atoms,residue,VC,NULL,true);
+			Vcontacts(FA,atoms,residue,VC,NULL,true);
 			
 			//FILE* surffile = fopen("surfpdb.pdb", "w");
 

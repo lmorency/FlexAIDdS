@@ -192,9 +192,9 @@ cfstr ic2cf(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue,
 					}
 										
 					struct deelig_node_struct* node = FA->deelig_root_node;
+				bool add = false;
 					
-					bool add = false;
-					for(k=1; k<=res->fdih; k++){
+						for(k=1; k<=res->fdih; k++){
 						std::map<int, struct deelig_node_struct*>::iterator it;
 						it = node->childs.find(deelig_list[k]);
 						

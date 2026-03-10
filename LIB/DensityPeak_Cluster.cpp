@@ -238,8 +238,8 @@ void DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome
 	pChrom = NULL;
 	nClusters = 0;
 	stddev = calculate_stddev(Chrom, num_chrom);
-	mean = calculate_mean(Chrom, num_chrom);
 	for(i = 1; i < num_chrom; ++i)
+	mean = calculate_mean(Chrom, num_chrom);
 	{
 		iChrom = &Chrom[i];
 		iiChrom = &Chrom[i-1];
