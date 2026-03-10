@@ -182,7 +182,7 @@ static float max_free_radius_avx2(
             if (idx == skip_i || idx == skip_j) {
                 alignas(32) float tmp[8];
                 _mm256_store_ps(tmp, gap);
-                tmp[lane] = std::numeric_limits<float>::infinity();
+                tmp[lane] = 1e38f;  // Use large value instead of infinity for -ffast-math safety
                 gap = _mm256_load_ps(tmp);
             }
         }
@@ -547,7 +547,7 @@ void CavityDetector::assign_atoms_to_clefts(float contact_threshold) {
     // Assign each protein atom to the cleft (if any) whose nearest sphere
     // surface is within contact_threshold Å.
     for (auto& a : m_atoms) {
-        float best_dist = std::numeric_limits<float>::infinity();
+        float best_dist = 1e38f;  // Use large value instead of infinity for -ffast-math safety
         int   best_cid  = 0;
         for (const auto& cleft : m_clefts) {
             for (const auto& s : cleft.spheres) {

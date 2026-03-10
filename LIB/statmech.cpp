@@ -40,9 +40,12 @@ void StatMechEngine::add_sample(double energy, int multiplicity) {
 // ─── log_sum_exp ─────────────────────────────────────────────────────────────
 
 double StatMechEngine::log_sum_exp(std::span<const double> x) {
-    if (x.empty()) return -std::numeric_limits<double>::infinity();
+    // Handle empty array: return a value indicating "no valid data"
+    if (x.empty()) return -1e308;  // Use large negative instead of -infinity for -ffast-math safety
     double x_max = *std::max_element(x.begin(), x.end());
-    if (x_max == -std::numeric_limits<double>::infinity()) return x_max;
+    // If all values are -infinity or very small, return the max value
+    // (This shouldn't happen in normal usage, but guard against it)
+    if (x_max <= -1e308) return x_max;
     double sum = 0.0;
     for (double v : x)
         sum += std::exp(v - x_max);

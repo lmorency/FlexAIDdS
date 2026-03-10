@@ -63,13 +63,13 @@ inline bool const ClusterOrdering::operator> (const ClusterOrdering& rhs)
 	if(this->reachability > rhs.reachability || isUndefinedDist(this->reachability))
 		return true;
 	else if(this->reachability < rhs.reachability)
-			return false;
+		return false;
 	if(this->objectID > rhs.objectID)
 		return false;
 	else if(this->objectID < rhs.objectID)
 		return true;
-		// if nothing else is true, return 0
-		return 0;
+	// if nothing else is true, return 0
+	return 0;
 }
 /*****************************************\
 				FastOPTICS
