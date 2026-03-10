@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from flexaidds.__main__ import build_parser, main
+from flexaidds.__version__ import __version__
 
 
 # ---------------------------------------------------------------------------
@@ -196,3 +197,28 @@ class TestMainJsonOutput:
         main()
         parsed = json.loads(capsys.readouterr().out)
         assert isinstance(parsed["source_dir"], str)
+
+
+# ===========================================================================
+# --version flag
+# ===========================================================================
+
+class TestVersionFlag:
+    def test_version_flag_exits_zero(self, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["flexaidds", "--version"])
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 0
+
+    def test_version_flag_prints_version(self, monkeypatch, capsys):
+        monkeypatch.setattr(sys, "argv", ["flexaidds", "--version"])
+        with pytest.raises(SystemExit):
+            main()
+        out = capsys.readouterr().out
+        assert __version__ in out
+
+    def test_parser_accepts_version(self):
+        parser = build_parser()
+        with pytest.raises(SystemExit) as exc_info:
+            parser.parse_args(["--version"])
+        assert exc_info.value.code == 0
