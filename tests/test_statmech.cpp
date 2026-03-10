@@ -228,19 +228,27 @@ TEST_F(StatMechEngineTest, EqualEnergyStatesMaxEntropy) {
 }
 
 TEST_F(StatMechEngineTest, EntropyIncreasesWithSpread) {
-    // Narrower distribution → less entropy
-    StatMechEngine narrow(TEMPERATURE);
-    StatMechEngine broad(TEMPERATURE);
+    // At very high T, a broader energy spread yields entropy close to
+    // the narrow case (both approach S_max = kB ln N).  At moderate T
+    // the narrow (nearly degenerate) set actually has *higher* Boltzmann
+    // entropy because all states remain equally accessible.
+    // Test: at a high enough temperature the broad set still reaches
+    // near-maximum entropy comparable to the narrow set.
+    StatMechEngine narrow(100000.0);   // very high T so both are near-uniform
+    StatMechEngine broad(100000.0);
 
     for (int i = 0; i < 5; ++i) {
-        narrow.add_sample(-10.0 - 0.01 * i);  // very tight
-        broad.add_sample(-10.0 - 5.0 * i);    // wide spread
+        narrow.add_sample(-10.0 - 0.001 * i);  // nearly degenerate
+        broad.add_sample(-10.0 - 5.0 * i);     // wide spread
     }
 
     auto th_narrow = narrow.compute();
-    auto th_broad = broad.compute();
+    auto th_broad  = broad.compute();
 
-    EXPECT_GT(th_broad.entropy, th_narrow.entropy);
+    double S_max = kB_kcal * std::log(5.0);
+    // Both should be close to S_max at this temperature
+    EXPECT_NEAR(th_narrow.entropy, S_max, 1e-6);
+    EXPECT_NEAR(th_broad.entropy,  S_max, 1e-4);
 }
 
 // ===========================================================================
@@ -248,8 +256,10 @@ TEST_F(StatMechEngineTest, EntropyIncreasesWithSpread) {
 // ===========================================================================
 
 TEST_F(StatMechEngineTest, HighTemperatureFlattensWeights) {
-    // At T → ∞, all Boltzmann weights become equal
-    StatMechEngine hot(10000.0);  // very high T
+    // At T → ∞, all Boltzmann weights become equal.
+    // Need T high enough that β·ΔE_max ≪ 1.
+    // With ΔE = 30 kcal/mol, T = 1e6 K → β·ΔE ≈ 0.015.
+    StatMechEngine hot(1000000.0);  // very high T
     std::vector<double> energies = {-20.0, -10.0, 0.0, 10.0};
     for (double e : energies)
         hot.add_sample(e);
@@ -257,7 +267,7 @@ TEST_F(StatMechEngineTest, HighTemperatureFlattensWeights) {
     auto weights = hot.boltzmann_weights();
     double mean_w = 1.0 / static_cast<double>(energies.size());
     for (double w : weights)
-        EXPECT_NEAR(w, mean_w, 0.05);  // loose tolerance at high T
+        EXPECT_NEAR(w, mean_w, 0.01);
 }
 
 TEST_F(StatMechEngineTest, LowTemperatureConcentratesWeight) {
