@@ -1,29 +1,37 @@
 """flexaidds: Python bindings and read-only analysis helpers for FlexAID∆S."""
 
-from ._core import (
-    BoltzmannLUT,
-    ENCoMEngine,
-    NormalMode,
-    Replica,
-    State,
-    StatMechEngine,
-    Thermodynamics,
-    TIPoint,
-    VibrationalEntropy,
-    WHAMBin,
-    kB_kcal,
-    kB_SI,
-)
 from .models import BindingModeResult, DockingResult, PoseResult
 from .results import load_results
+from .__version__ import __version__
 
 try:
-    from ._core import StatMechEngine, Thermodynamics
+    from ._core import (
+        BoltzmannLUT,
+        ENCoMEngine,
+        NormalMode,
+        Replica,
+        State,
+        StatMechEngine,
+        Thermodynamics,
+        TIPoint,
+        VibrationalEntropy,
+        WHAMBin,
+        kB_kcal,
+        kB_SI,
+    )
     HAS_CORE_BINDINGS = True
 except ImportError:
-    StatMechEngine = None
-    Thermodynamics = None
     HAS_CORE_BINDINGS = False
+    # Fall back to pure-Python implementations where available
+    from .thermodynamics import StatMechEngine, Thermodynamics, kB_kcal, kB_SI
+    BoltzmannLUT = None
+    ENCoMEngine = None
+    NormalMode = None
+    Replica = None
+    State = None
+    TIPoint = None
+    VibrationalEntropy = None
+    WHAMBin = None
 
 __all__ = [
     # C++ core: statistical mechanics
@@ -47,9 +55,6 @@ __all__ = [
     "BindingModeResult",
     "DockingResult",
     "load_results",
+    # Metadata
+    "HAS_CORE_BINDINGS",
 ]
-
-if HAS_CORE_BINDINGS:
-    __all__.extend(["StatMechEngine", "Thermodynamics"])
-
-__version__ = "0.1.0"
