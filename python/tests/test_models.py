@@ -334,6 +334,132 @@ class TestDockingResultToJson:
         assert any("    " in line for line in lines)
 
 
+
+# ===========================================================================
+# DockingResult.from_json
+# ===========================================================================
+
+class TestDockingResultFromJson:
+    def _make_result(self) -> DockingResult:
+        poses = [_pose(path="p1.pdb", cf=-10.0), _pose(path="p2.pdb", cf=-9.0)]
+        modes = [
+            BindingModeResult(
+                mode_id=1, rank=1, poses=poses,
+                free_energy=-9.8, enthalpy=-9.5, entropy=0.001,
+                heat_capacity=0.05, std_energy=0.3,
+                best_cf=-10.0, temperature=300.0,
+            ),
+            BindingModeResult(
+                mode_id=2, rank=2, poses=[],
+                free_energy=None, best_cf=None, temperature=None,
+            ),
+        ]
+        return DockingResult(
+            source_dir=Path("/tmp"),
+            binding_modes=modes,
+            temperature=300.0,
+            metadata={"n_pose_files": 2},
+        )
+
+    def test_roundtrip_from_string(self):
+        original = self._make_result()
+        json_text = original.to_json()
+        restored = DockingResult.from_json(json_text)
+        assert restored.n_modes == 2
+        assert restored.temperature == pytest.approx(300.0)
+        assert restored.binding_modes[0].free_energy == pytest.approx(-9.8)
+        assert restored.binding_modes[0].mode_id == 1
+        assert restored.binding_modes[1].free_energy is None
+
+    def test_roundtrip_from_file(self, tmp_path):
+        original = self._make_result()
+        out = tmp_path / "result.json"
+        original.to_json(path=out)
+        restored = DockingResult.from_json(out)
+        assert restored.n_modes == 2
+        assert restored.binding_modes[0].best_cf == pytest.approx(-10.0)
+
+    def test_metadata_preserved(self):
+        original = self._make_result()
+        json_text = original.to_json()
+        restored = DockingResult.from_json(json_text)
+        assert restored.metadata["n_pose_files"] == 2
+
+    def test_poses_list_is_empty(self):
+        original = self._make_result()
+        json_text = original.to_json()
+        restored = DockingResult.from_json(json_text)
+        assert restored.binding_modes[0].poses == []
+
+    def test_source_dir_restored(self):
+        original = self._make_result()
+        json_text = original.to_json()
+        restored = DockingResult.from_json(json_text)
+        assert str(restored.source_dir) == "/tmp"
+
+
+# ===========================================================================
+# DockingResult.from_csv
+# ===========================================================================
+
+class TestDockingResultFromCsv:
+    def _make_result(self) -> DockingResult:
+        poses = [_pose(path="p1.pdb", cf=-10.0)]
+        modes = [
+            BindingModeResult(
+                mode_id=1, rank=1, poses=poses,
+                free_energy=-9.8, enthalpy=-9.5, entropy=0.001,
+                heat_capacity=0.05, std_energy=0.3,
+                best_cf=-10.0, temperature=300.0,
+            ),
+            BindingModeResult(
+                mode_id=2, rank=2, poses=[],
+                free_energy=-7.2, best_cf=-8.0, temperature=300.0,
+            ),
+        ]
+        return DockingResult(source_dir=Path("/tmp"), binding_modes=modes)
+
+    def test_roundtrip_from_string(self):
+        original = self._make_result()
+        csv_text = original.to_csv()
+        restored = DockingResult.from_csv(csv_text)
+        assert restored.n_modes == 2
+        assert restored.binding_modes[0].free_energy == pytest.approx(-9.8)
+        assert restored.binding_modes[0].mode_id == 1
+
+    def test_roundtrip_from_file(self, tmp_path):
+        original = self._make_result()
+        out = tmp_path / "result.csv"
+        original.to_csv(path=out)
+        restored = DockingResult.from_csv(out)
+        assert restored.n_modes == 2
+        assert restored.binding_modes[1].best_cf == pytest.approx(-8.0)
+
+    def test_none_values_preserved(self):
+        modes = [
+            BindingModeResult(
+                mode_id=1, rank=1, poses=[],
+                free_energy=None, enthalpy=None, entropy=None,
+            ),
+        ]
+        original = DockingResult(source_dir=Path("/tmp"), binding_modes=modes)
+        csv_text = original.to_csv()
+        restored = DockingResult.from_csv(csv_text)
+        assert restored.binding_modes[0].free_energy is None
+        assert restored.binding_modes[0].enthalpy is None
+
+    def test_poses_list_is_empty(self):
+        original = self._make_result()
+        csv_text = original.to_csv()
+        restored = DockingResult.from_csv(csv_text)
+        assert restored.binding_modes[0].poses == []
+
+
+# ===========================================================================
+# DockingResult.to_dataframe – success path
+# ===========================================================================
+
+class TestDockingResultToDataframeSuccess:
     def test_to_dataframe_success(self):
         pytest.importorskip("pandas")
         poses = [_pose(path="p1.pdb", cf=-10.0)]
