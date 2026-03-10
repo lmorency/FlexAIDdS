@@ -333,7 +333,6 @@ void FastOPTICS::output_3d_OPTICS_ordering(char* end_strfile, char* tmp_end_strf
 
 std::vector<float> FastOPTICS::Vectorized_Chromosome(chromosome* chrom)
 {
-    float norm = 0.0f;
 	std::vector<float> vChrom(this->nDimensions, 0.0f);
 	// getting nDim-2 because the Dim=0 fills 3 memory cases
 	for(int j = 0; j < this->nDimensions-2; ++j)
@@ -363,7 +362,6 @@ std::vector<float> FastOPTICS::Vectorized_Chromosome(chromosome* chrom)
 					// vChrom[i] = static_cast<float>( genetoic(&this->gene_lim[i],(*chrom).genes[j].to_int32) );
 					// vChrom[i] *= vChrom[i];
 				}
-                norm += vChrom[i]*vChrom[i];
 			}
 		}
 		else
@@ -372,7 +370,6 @@ std::vector<float> FastOPTICS::Vectorized_Chromosome(chromosome* chrom)
 			// vChrom[j+2] = static_cast<float>(genetoic(&gene_lim[j], (*chrom).genes[j].to_int32));
 			vChrom[j+2] = static_cast<float>((*chrom).genes[j].to_ic);
 			// vChrom[j+2] = static_cast<float>( RandomDouble( (*chrom).genes[j].to_int32) );
-            norm += vChrom[j+2]*vChrom[j+2];
 		}
 	}
 
@@ -944,8 +941,7 @@ std::vector<float> RandomProjectedNeighborsAndDensities::Randomized_CartesianCoo
 		for(j=0;j<3;j++)
 		{
 			vChrom[m*3+j] = this->top->atoms[i].coor[j];
-			norm += vChrom[m*3+j]*vChrom[m*3+j];
-		}
+			}
         ++m;
 	}
 	norm = sqrtf(norm);

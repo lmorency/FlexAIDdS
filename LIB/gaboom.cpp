@@ -892,9 +892,7 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
                        cfstr (*target)(FA_Global*,VC_Global*,atom*,resid*,gridpoint*,int,double*)){
 
 	static int gen_id = 0;
-	int i,j;
-	//float tot=0.0;
-	double share,rmsp;
+	int i;
 
 	// ── Chromosome evaluation ────────────────────────────────────────────────
 	// Priority order: CUDA GPU → Metal GPU → OpenMP CPU (thread-safe).
