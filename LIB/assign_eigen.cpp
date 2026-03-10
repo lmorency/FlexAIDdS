@@ -17,7 +17,7 @@ void assign_eigen(FA_Global *FA,atom* atoms,resid* residue, int res_cnt, int nmo
                 fprintf(stderr,"ERROR: memory allocation error for eigen\n");
                 Terminate(2);
             }      
-            memset(atoms[j].eigen,NULL,nmodes*sizeof(float*));
+            memset(atoms[j].eigen,0,nmodes*sizeof(float*));
             
             for(k=0;k<nmodes;k++){
                 atoms[j].eigen[k] = (float*)malloc(3*sizeof(float));

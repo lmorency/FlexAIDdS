@@ -27,7 +27,7 @@ void read_normalgrid(FA_Global* FA,char filename[]) {
 	  fprintf(stderr,"ERROR: memory allocation error for normal_grid\n");
 	  Terminate(2);
   }
-  memset(FA->normal_grid,NULL,FA->MIN_NORMAL_GRID_POINTS*sizeof(float*));
+  memset(FA->normal_grid,0,FA->MIN_NORMAL_GRID_POINTS*sizeof(float*));
 
   for(i=0;i<FA->MIN_NORMAL_GRID_POINTS;i++){
 	  FA->normal_grid[i] = (float*)malloc(FA->normal_modes*sizeof(float));
@@ -52,7 +52,7 @@ void read_normalgrid(FA_Global* FA,char filename[]) {
 			  fprintf(stderr,"ERROR: memory re-allocation error for normal_grid\n");
 			  Terminate(2);
 		  }
-		  memset(&FA->normal_grid[FA->MIN_NORMAL_GRID_POINTS/2],NULL,FA->MIN_NORMAL_GRID_POINTS/2*sizeof(float*));
+		  memset(&FA->normal_grid[FA->MIN_NORMAL_GRID_POINTS/2],0,FA->MIN_NORMAL_GRID_POINTS/2*sizeof(float*));
 		  
 		  for(i=FA->MIN_NORMAL_GRID_POINTS/2;i<FA->MIN_NORMAL_GRID_POINTS;i++){
 			  FA->normal_grid[i] = (float*)malloc(FA->normal_modes*sizeof(float));

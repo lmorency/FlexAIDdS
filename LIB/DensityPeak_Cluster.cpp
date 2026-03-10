@@ -68,7 +68,7 @@ void DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome
 			pChrom->CF = 0.0;
 			pChrom->DP = NULL;
 			pChrom->Distance = 0.0;
-			memset(pChrom->Coord, 0.0, 3*MAX_ATM_HET);
+			memset(pChrom->Coord, 0, 3*MAX_ATM_HET);
 			if(Entropic) { partition_function += pow( E, ((-1.0) * FA->beta * pChrom->Chromosome->app_evalue) ); }
 		}
 	}
@@ -88,7 +88,7 @@ void DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome
 		fprintf(stderr,"ERROR: memory allocation error for RMSD matrix.\n");
 		Terminate(2);
 	}
-	memset(RMSD, 0.0, sizeChrom);
+	memset(RMSD, 0, sizeChrom);
 	// (1) Build Chromosome Cartesian Coordinates
 	for(i = 0; i < num_chrom; ++i)
 	{

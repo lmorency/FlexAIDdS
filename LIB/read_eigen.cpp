@@ -30,7 +30,7 @@ void read_eigen(FA_Global *FA,char filename[]){
     fprintf(stderr,"ERROR: memory allocation error for eigenvector\n");
     Terminate(2);
   }
-  memset(FA->eigenvector,NULL,eigensize*sizeof(float*));
+  memset(FA->eigenvector,0,eigensize*sizeof(float*));
 
   for(i=0;i<eigensize;i++){
     FA->eigenvector[i] = (float*)malloc(FA->normal_modes*sizeof(float));

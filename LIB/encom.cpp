@@ -1,5 +1,8 @@
 // encom.cpp — ENCoM vibrational entropy implementation
 
+#define _USE_MATH_DEFINES
+#include <cmath>
+
 #include "encom.h"
 #include <algorithm>
 #include <sstream>

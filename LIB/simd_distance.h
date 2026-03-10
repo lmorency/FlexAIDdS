@@ -6,6 +6,12 @@
 #include <cstdint>
 #include <array>
 
+#ifdef _MSC_VER
+#  define FLEXAIDS_RESTRICT __restrict
+#else
+#  define FLEXAIDS_RESTRICT __restrict__
+#endif
+
 #if defined(__AVX2__)
 #  include <immintrin.h>
 #  define FLEXAIDS_HAS_AVX2 1
@@ -19,8 +25,8 @@ namespace simd {
 
 inline float sq(float x) noexcept { return x * x; }
 
-inline float distance2_scalar(const float* __restrict__ a,
-                               const float* __restrict__ b) noexcept {
+inline float distance2_scalar(const float* FLEXAIDS_RESTRICT a,
+                               const float* FLEXAIDS_RESTRICT b) noexcept {
     return sq(a[0]-b[0]) + sq(a[1]-b[1]) + sq(a[2]-b[2]);
 }
 
@@ -62,11 +68,11 @@ inline float hsum256_ps(__m256 v) noexcept {
 //   ax[8], ay[8], az[8] – x/y/z of 8 A atoms
 //   bx, by, bz           – coordinates of atom B
 //   out[8]               – results
-inline void distance2_1x8(const float* __restrict__ ax,
-                           const float* __restrict__ ay,
-                           const float* __restrict__ az,
+inline void distance2_1x8(const float* FLEXAIDS_RESTRICT ax,
+                           const float* FLEXAIDS_RESTRICT ay,
+                           const float* FLEXAIDS_RESTRICT az,
                            float bx, float by, float bz,
-                           float* __restrict__ out) noexcept {
+                           float* FLEXAIDS_RESTRICT out) noexcept {
     __m256 vbx = _mm256_set1_ps(bx);
     __m256 vby = _mm256_set1_ps(by);
     __m256 vbz = _mm256_set1_ps(bz);
@@ -82,8 +88,8 @@ inline void distance2_1x8(const float* __restrict__ ax,
 // Sum of squared distances (for RMSD pre-accumulation) over N atoms.
 // a_xyz: N×3 interleaved, b_xyz: N×3 interleaved
 // Returns Σ |a_i - b_i|²
-inline float sum_sq_distances(const float* __restrict__ a_xyz,
-                               const float* __restrict__ b_xyz,
+inline float sum_sq_distances(const float* FLEXAIDS_RESTRICT a_xyz,
+                               const float* FLEXAIDS_RESTRICT b_xyz,
                                int N) noexcept {
     __m256 acc = _mm256_setzero_ps();
     int i = 0;
@@ -116,10 +122,10 @@ inline float sum_sq_distances(const float* __restrict__ a_xyz,
 //   rAB12  – (permeability * r_AB)^12 precomputed
 //   k_wall – wall constant
 // Writes Ewall[8]; caller is responsible for masking < clash_distance.
-inline void lj_wall_8x(const float* __restrict__ r2,
+inline void lj_wall_8x(const float* FLEXAIDS_RESTRICT r2,
                         float inv_rAB12,
                         float k_wall,
-                        float* __restrict__ Ewall) noexcept {
+                        float* FLEXAIDS_RESTRICT Ewall) noexcept {
     __m256 vr2    = _mm256_loadu_ps(r2);
     // Approximate inv_r2 via Newton step on _mm256_rcp_ps
     __m256 inv_r2 = _mm256_rcp_ps(vr2);
@@ -138,9 +144,9 @@ inline void lj_wall_8x(const float* __restrict__ r2,
 
 // Batched dot products: result[i] = dot(a[i], b[i]) for i in [0,N)
 // a, b are Nx3 in interleaved layout. N must be multiple of 8 or padded.
-inline void dot3_batch(const float* __restrict__ a,
-                       const float* __restrict__ b,
-                       float* __restrict__ out, int N) noexcept {
+inline void dot3_batch(const float* FLEXAIDS_RESTRICT a,
+                       const float* FLEXAIDS_RESTRICT b,
+                       float* FLEXAIDS_RESTRICT out, int N) noexcept {
     __m256 acc = _mm256_setzero_ps();
     // Separate into SOA on-the-fly (each component processed independently)
     int i = 0;

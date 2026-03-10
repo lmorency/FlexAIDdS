@@ -9,7 +9,7 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 	
 	// reset all values pointed
 	memset(FA->contacts,0,100000*sizeof(int));
-	memset(FA->contributions,0.0f,FA->ntypes*FA->ntypes*sizeof(float));
+	memset(FA->contributions,0,FA->ntypes*FA->ntypes*sizeof(float));
 	
 	// reset CF values
 	for(int j=0; j<FA->num_optres; ++j){

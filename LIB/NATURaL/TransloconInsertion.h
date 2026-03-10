@@ -23,10 +23,12 @@
 //   – OpenMP: parallel window scanning for long sequences
 #pragma once
 
+#define _USE_MATH_DEFINES
+#include <cmath>
+
 #include <vector>
 #include <string>
 #include <array>
-#include <cmath>
 
 #ifdef FLEXAIDS_HAS_EIGEN
 #  include <Eigen/Dense>

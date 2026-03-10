@@ -15,9 +15,11 @@
 
 #pragma once
 
+#define _USE_MATH_DEFINES
+#include <cmath>
+
 #include <vector>
 #include <string>
-#include <cmath>
 #include <fstream>
 #include <stdexcept>
 #include <numeric>

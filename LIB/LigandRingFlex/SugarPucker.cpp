@@ -1,6 +1,9 @@
 // SugarPucker.cpp — Cremer-Pople pseudorotation implementation
 // Eigen is used for 3D vector arithmetic in apply_sugar_puckers().
 // AVX-512 is used for batch phase-to-torsion computation in the population path.
+#define _USE_MATH_DEFINES
+#include <cmath>
+
 #include "SugarPucker.h"
 
 #ifdef FLEXAIDS_HAS_EIGEN
@@ -9,8 +12,6 @@
 #ifdef __AVX512F__
 #  include <immintrin.h>
 #endif
-
-#include <cmath>
 #include <cstring>
 #include <random>
 #include <algorithm>
