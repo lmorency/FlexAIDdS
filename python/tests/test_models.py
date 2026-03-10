@@ -334,6 +334,128 @@ class TestDockingResultToJson:
         assert any("    " in line for line in lines)
 
 
+
+# ===========================================================================
+# DockingResult.to_csv
+# ===========================================================================
+
+class TestDockingResultToCsv:
+    def _make_result(self) -> DockingResult:
+        poses = [_pose(path="p1.pdb", cf=-10.0), _pose(path="p2.pdb", cf=-9.0)]
+        modes = [
+            BindingModeResult(
+                mode_id=1, rank=1, poses=poses,
+                free_energy=-9.8, enthalpy=-9.5, entropy=0.001,
+                heat_capacity=0.05, std_energy=0.3,
+                best_cf=-10.0, temperature=300.0,
+            ),
+            BindingModeResult(
+                mode_id=2, rank=2, poses=[],
+                free_energy=None, best_cf=None, temperature=None,
+            ),
+        ]
+        return DockingResult(source_dir=Path("/tmp"), binding_modes=modes)
+
+    def test_returns_csv_string_when_no_path(self):
+        text = self._make_result().to_csv()
+        assert isinstance(text, str)
+        assert "mode_id" in text  # header row
+
+    def test_csv_has_header_and_data_rows(self):
+        text = self._make_result().to_csv()
+        lines = text.strip().splitlines()
+        assert len(lines) == 3  # 1 header + 2 data rows
+
+    def test_csv_header_columns(self):
+        text = self._make_result().to_csv()
+        header = text.strip().splitlines()[0]
+        for col in ("mode_id", "rank", "n_poses", "free_energy",
+                     "enthalpy", "entropy", "best_cf", "best_pose_path"):
+            assert col in header
+
+    def test_csv_data_values(self):
+        text = self._make_result().to_csv()
+        lines = text.strip().splitlines()
+        # First data row should contain mode_id=1 values
+        assert "-9.8" in lines[1]
+        assert "-10.0" in lines[1]
+
+    def test_csv_writes_file(self, tmp_path):
+        out = tmp_path / "result.csv"
+        ret = self._make_result().to_csv(path=out)
+        assert ret is None
+        content = out.read_text(encoding="utf-8")
+        assert "mode_id" in content
+        lines = content.strip().splitlines()
+        assert len(lines) == 3
+
+    def test_csv_empty_result(self):
+        result = DockingResult(source_dir=Path("/tmp"), binding_modes=[])
+        text = result.to_csv()
+        assert isinstance(text, str)
+        # Should have empty header or just a newline
+        assert len(text.strip().splitlines()) <= 1
+
+
+# ===========================================================================
+# __repr__ methods
+# ===========================================================================
+
+class TestModelRepr:
+    def test_pose_result_repr_with_cf(self):
+        p = _pose(path="ligand.pdb", mode_id=2, pose_rank=3, cf=-12.5)
+        r = repr(p)
+        assert "PoseResult" in r
+        assert "mode=2" in r
+        assert "rank=3" in r
+        assert "cf=-12.500" in r
+        assert "ligand.pdb" in r
+
+    def test_pose_result_repr_without_cf(self):
+        p = _pose(path="ligand.pdb", mode_id=1, pose_rank=1)
+        r = repr(p)
+        assert "PoseResult" in r
+        assert "cf=" not in r
+
+    def test_binding_mode_result_repr(self):
+        poses = [_pose(), _pose()]
+        mode = _mode(mode_id=3, poses=poses, free_energy=-8.5, best_cf=-10.0, rank=2)
+        r = repr(mode)
+        assert "BindingModeResult" in r
+        assert "id=3" in r
+        assert "rank=2" in r
+        assert "n_poses=2" in r
+        assert "F=-8.500" in r
+        assert "best_cf=-10.000" in r
+
+    def test_binding_mode_result_repr_no_energy(self):
+        mode = _mode(mode_id=1, poses=[], rank=1)
+        r = repr(mode)
+        assert "n_poses=0" in r
+        assert "F=" not in r
+
+    def test_docking_result_repr(self):
+        result = DockingResult(
+            source_dir=Path("/data/run1"),
+            binding_modes=[_mode(), _mode(mode_id=2)],
+            temperature=300.0,
+        )
+        r = repr(result)
+        assert "DockingResult" in r
+        assert "n_modes=2" in r
+        assert "T=300.0K" in r
+        assert "run1" in r
+
+    def test_docking_result_repr_no_temperature(self):
+        result = DockingResult(
+            source_dir=Path("/data/output"),
+            binding_modes=[],
+        )
+        r = repr(result)
+        assert "n_modes=0" in r
+        assert "T=" not in r
+
+
     def test_to_dataframe_success(self):
         pytest.importorskip("pandas")
         poses = [_pose(path="p1.pdb", cf=-10.0)]
