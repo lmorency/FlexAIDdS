@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
@@ -226,6 +227,39 @@ class DockingResult:
                 "pandas is required for DockingResult.to_dataframe(); use to_records() instead."
             ) from exc
         return pd.DataFrame(self.to_records())
+
+    def to_json(self, path: Union[str, Path, None] = None, **kwargs) -> Optional[str]:
+        """Serialise docking results to JSON.
+
+        The output includes the source directory, temperature, metadata, and
+        a ``binding_modes`` array produced by :meth:`to_records`.
+
+        Args:
+            path: Destination file path.  When *None* the JSON text is returned
+                  as a string instead of being written to disk.
+            **kwargs: Extra keyword arguments forwarded to :func:`json.dumps`
+                (e.g. ``indent``, ``sort_keys``).
+
+        Returns:
+            JSON text when *path* is ``None``, otherwise ``None``.
+        """
+        payload = {
+            "source_dir": str(self.source_dir),
+            "temperature": self.temperature,
+            "n_modes": self.n_modes,
+            "metadata": self.metadata,
+            "binding_modes": self.to_records(),
+        }
+        kwargs.setdefault("indent", 2)
+        text = json.dumps(payload, **kwargs)
+
+        if path is None:
+            return text
+
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(text)
+            fh.write("\n")
+        return None
 
     def to_csv(self, path: Union[str, Path, None] = None) -> Optional[str]:
         """Write binding mode summary to CSV.

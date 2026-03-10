@@ -260,6 +260,80 @@ class TestDockingResultToDataframe:
         with pytest.raises(ImportError, match="pandas"):
             result.to_dataframe()
 
+
+# ===========================================================================
+# DockingResult.to_json
+# ===========================================================================
+
+class TestDockingResultToJson:
+    def _make_result(self) -> DockingResult:
+        poses = [_pose(path="p1.pdb", cf=-10.0), _pose(path="p2.pdb", cf=-9.0)]
+        modes = [
+            BindingModeResult(
+                mode_id=1, rank=1, poses=poses,
+                free_energy=-9.8, enthalpy=-9.5, entropy=0.001,
+                heat_capacity=0.05, std_energy=0.3,
+                best_cf=-10.0, temperature=300.0,
+            ),
+            BindingModeResult(
+                mode_id=2, rank=2, poses=[],
+                free_energy=None, best_cf=None, temperature=None,
+            ),
+        ]
+        return DockingResult(source_dir=Path("/tmp"), binding_modes=modes)
+
+    def test_returns_valid_json_string(self):
+        import json
+        text = self._make_result().to_json()
+        parsed = json.loads(text)
+        assert isinstance(parsed, dict)
+
+    def test_json_has_required_keys(self):
+        import json
+        parsed = json.loads(self._make_result().to_json())
+        assert set(parsed.keys()) >= {
+            "source_dir", "temperature", "n_modes", "metadata", "binding_modes",
+        }
+
+    def test_json_n_modes(self):
+        import json
+        parsed = json.loads(self._make_result().to_json())
+        assert parsed["n_modes"] == 2
+
+    def test_json_binding_modes_length(self):
+        import json
+        parsed = json.loads(self._make_result().to_json())
+        assert len(parsed["binding_modes"]) == 2
+
+    def test_json_free_energy_value(self):
+        import json
+        parsed = json.loads(self._make_result().to_json())
+        assert parsed["binding_modes"][0]["free_energy"] == pytest.approx(-9.8)
+
+    def test_json_none_free_energy(self):
+        import json
+        parsed = json.loads(self._make_result().to_json())
+        assert parsed["binding_modes"][1]["free_energy"] is None
+
+    def test_to_json_writes_file(self, tmp_path):
+        import json
+        out = tmp_path / "result.json"
+        ret = self._make_result().to_json(path=out)
+        assert ret is None
+        parsed = json.loads(out.read_text(encoding="utf-8"))
+        assert parsed["n_modes"] == 2
+
+    def test_to_json_kwargs_forwarded(self):
+        import json
+        text = self._make_result().to_json(sort_keys=True, indent=4)
+        parsed = json.loads(text)
+        assert isinstance(parsed, dict)
+        # Verify sort_keys was applied: keys should be alphabetical
+        lines = text.strip().splitlines()
+        # indent=4 means 4-space indentation
+        assert any("    " in line for line in lines)
+
+
     def test_to_dataframe_success(self):
         pytest.importorskip("pandas")
         poses = [_pose(path="p1.pdb", cf=-10.0)]

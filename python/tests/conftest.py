@@ -34,6 +34,13 @@ def _make_core_stub() -> types.ModuleType:
     stub.StatMechEngine = _NeedsRealCore
     stub.BoltzmannLUT = _NeedsRealCore
     stub.Thermodynamics = _NeedsRealCore
+    stub.ENCoMEngine = _NeedsRealCore
+    stub.NormalMode = _NeedsRealCore
+    stub.Replica = _NeedsRealCore
+    stub.State = _NeedsRealCore
+    stub.TIPoint = _NeedsRealCore
+    stub.VibrationalEntropy = _NeedsRealCore
+    stub.WHAMBin = _NeedsRealCore
     return stub
 
 
