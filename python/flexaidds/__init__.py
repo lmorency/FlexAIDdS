@@ -1,28 +1,37 @@
 """flexaidds: Python bindings and read-only analysis helpers for FlexAID∆S."""
 
-from ._core import (
-    BoltzmannLUT,
-    ENCoMEngine,
-    NormalMode,
-    Replica,
-    State,
-    StatMechEngine,
-    Thermodynamics,
-    TIPoint,
-    VibrationalEntropy,
-    WHAMBin,
-    kB_kcal,
-    kB_SI,
-)
 from .models import BindingModeResult, DockingResult, PoseResult
 from .results import load_results
 
 try:
-    from ._core import StatMechEngine, Thermodynamics
+    from ._core import (
+        BoltzmannLUT,
+        ENCoMEngine,
+        NormalMode,
+        Replica,
+        State,
+        StatMechEngine,
+        Thermodynamics,
+        TIPoint,
+        VibrationalEntropy,
+        WHAMBin,
+        kB_kcal,
+        kB_SI,
+    )
     HAS_CORE_BINDINGS = True
 except ImportError:
+    BoltzmannLUT = None
+    ENCoMEngine = None
+    NormalMode = None
+    Replica = None
+    State = None
     StatMechEngine = None
     Thermodynamics = None
+    TIPoint = None
+    VibrationalEntropy = None
+    WHAMBin = None
+    kB_kcal = 0.0019872041
+    kB_SI = 1.380649e-23
     HAS_CORE_BINDINGS = False
 
 __all__ = [

@@ -228,19 +228,21 @@ TEST_F(StatMechEngineTest, EqualEnergyStatesMaxEntropy) {
 }
 
 TEST_F(StatMechEngineTest, EntropyIncreasesWithSpread) {
-    // Narrower distribution → less entropy
+    // In the canonical ensemble at finite T, tighter energy clustering
+    // means more uniform Boltzmann weights → HIGHER entropy.
+    // Wide energy spread → weight concentrates on lowest state → LOWER entropy.
     StatMechEngine narrow(TEMPERATURE);
     StatMechEngine broad(TEMPERATURE);
 
     for (int i = 0; i < 5; ++i) {
-        narrow.add_sample(-10.0 - 0.01 * i);  // very tight
-        broad.add_sample(-10.0 - 5.0 * i);    // wide spread
+        narrow.add_sample(-10.0 - 0.01 * i);  // very tight → near-uniform weights
+        broad.add_sample(-10.0 - 5.0 * i);    // wide spread → concentrated on lowest
     }
 
     auto th_narrow = narrow.compute();
     auto th_broad = broad.compute();
 
-    EXPECT_GT(th_broad.entropy, th_narrow.entropy);
+    EXPECT_GT(th_narrow.entropy, th_broad.entropy);
 }
 
 // ===========================================================================
@@ -249,7 +251,8 @@ TEST_F(StatMechEngineTest, EntropyIncreasesWithSpread) {
 
 TEST_F(StatMechEngineTest, HighTemperatureFlattensWeights) {
     // At T → ∞, all Boltzmann weights become equal
-    StatMechEngine hot(10000.0);  // very high T
+    // Need T high enough so β·ΔE ≪ 1 (ΔE=30 kcal/mol → need kT ≫ 30)
+    StatMechEngine hot(100000.0);  // very high T
     std::vector<double> energies = {-20.0, -10.0, 0.0, 10.0};
     for (double e : energies)
         hot.add_sample(e);
