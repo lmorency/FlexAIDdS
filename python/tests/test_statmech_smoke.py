@@ -1,3 +1,5 @@
+import math
+
 import pytest
 import flexaidds as fd
 
@@ -14,7 +16,7 @@ def test_statmech_smoke():
     engine = fd.StatMechEngine(300.0)
     engine.add_sample(-7.0)
     engine.add_sample(-6.0)
-    engine.add_sample(-5.5, multiplicity=2.0)
+    engine.add_sample(-5.5, multiplicity=2)
 
     thermo = engine.compute()
 
