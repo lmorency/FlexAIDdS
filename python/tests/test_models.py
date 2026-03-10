@@ -351,3 +351,89 @@ class TestDockingResultToJson:
         assert "mode_id" in df.columns
         assert df.iloc[0]["mode_id"] == 1
         assert df.iloc[0]["free_energy"] == pytest.approx(-9.8)
+
+
+# ===========================================================================
+# __repr__ methods
+# ===========================================================================
+
+class TestPoseResultRepr:
+    def test_includes_mode_and_rank(self):
+        p = _pose(path="ligand.pdb", mode_id=2, pose_rank=3, cf=-8.5)
+        r = repr(p)
+        assert "PoseResult" in r
+        assert "mode=2" in r
+        assert "rank=3" in r
+
+    def test_includes_cf_when_present(self):
+        p = _pose(cf=-8.5)
+        assert "cf=-8.50" in repr(p)
+
+    def test_uses_cf_app_when_no_cf(self):
+        p = _pose(cf_app=-7.0)
+        assert "cf=-7.00" in repr(p)
+
+    def test_omits_score_when_none(self):
+        p = _pose()
+        assert "cf=" not in repr(p)
+
+    def test_includes_filename(self):
+        p = _pose(path="ligand_mode1_pose2.pdb")
+        assert "ligand_mode1_pose2.pdb" in repr(p)
+
+
+class TestBindingModeResultRepr:
+    def test_includes_mode_id_and_n_poses(self):
+        poses = [_pose(), _pose()]
+        mode = _mode(mode_id=3, poses=poses)
+        r = repr(mode)
+        assert "BindingModeResult" in r
+        assert "mode_id=3" in r
+        assert "n_poses=2" in r
+
+    def test_includes_free_energy_when_present(self):
+        mode = _mode(free_energy=-9.5)
+        assert "F=-9.50" in repr(mode)
+
+    def test_includes_best_cf_when_present(self):
+        mode = _mode(best_cf=-12.0)
+        assert "best_cf=-12.00" in repr(mode)
+
+    def test_omits_optional_fields_when_none(self):
+        mode = _mode()
+        r = repr(mode)
+        assert "F=" not in r
+        assert "best_cf=" not in r
+
+
+class TestDockingResultRepr:
+    def test_includes_n_modes(self):
+        result = DockingResult(
+            source_dir=Path("/data/run1"),
+            binding_modes=[_mode(mode_id=1), _mode(mode_id=2)],
+        )
+        r = repr(result)
+        assert "DockingResult" in r
+        assert "n_modes=2" in r
+
+    def test_includes_temperature_when_present(self):
+        result = DockingResult(
+            source_dir=Path("/data/run1"),
+            binding_modes=[],
+            temperature=300.0,
+        )
+        assert "T=300K" in repr(result)
+
+    def test_omits_temperature_when_none(self):
+        result = DockingResult(
+            source_dir=Path("/data/run1"),
+            binding_modes=[],
+        )
+        assert "T=" not in repr(result)
+
+    def test_includes_source_dir_name(self):
+        result = DockingResult(
+            source_dir=Path("/data/my_run"),
+            binding_modes=[],
+        )
+        assert "my_run" in repr(result)
