@@ -249,6 +249,9 @@ target_sources(FlexAID PRIVATE
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
         LIB/ChiralCenter/ChiralCenterGene.cpp
+        # ── CleftDetector + Mol2Reader ──
+        LIB/CleftDetector.cpp
+        LIB/Mol2Reader.cpp
         # ── CavityDetect: native SURFNET cavity detection ──
         LIB/CavityDetect/CavityDetect.cpp
 )

@@ -1,6 +1,7 @@
 #include "flexaid.h"
 #include "fileio.h"
 #include "CavityDetect/CavityDetect.h"
+#include "CleftDetector.h"
 
 /*****************************************************************************
  * SUBROUTINE read_input reads input file.

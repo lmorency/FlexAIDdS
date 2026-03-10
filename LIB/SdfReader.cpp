@@ -1,5 +1,4 @@
 #include "SdfReader.h"
-#include "boinc.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
