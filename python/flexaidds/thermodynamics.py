@@ -71,6 +71,44 @@ class Thermodynamics:
             'std_energy_kcal_mol': self.std_energy,
         }
 
+    @classmethod
+    def from_dict(cls, data: dict) -> "Thermodynamics":
+        """Construct a Thermodynamics instance from a dictionary.
+
+        Accepts the key format produced by :meth:`to_dict` (suffixed keys such
+        as ``temperature_K``, ``free_energy_kcal_mol``, …) as well as the raw
+        attribute names (``temperature``, ``free_energy``, …).  Suffixed keys
+        take priority when both forms are present.
+
+        Args:
+            data: Dictionary with thermodynamic quantities.
+
+        Returns:
+            A new :class:`Thermodynamics` instance.
+
+        Raises:
+            KeyError: If a required field is missing under both key forms.
+        """
+        def _get(suffixed: str, raw: str) -> float:
+            if suffixed in data:
+                return float(data[suffixed])
+            if raw in data:
+                return float(data[raw])
+            raise KeyError(
+                f"Missing required key: expected '{suffixed}' or '{raw}'"
+            )
+
+        return cls(
+            temperature=_get("temperature_K", "temperature"),
+            log_Z=_get("log_Z", "log_Z"),
+            free_energy=_get("free_energy_kcal_mol", "free_energy"),
+            mean_energy=_get("enthalpy_kcal_mol", "mean_energy"),
+            mean_energy_sq=_get("mean_energy_sq", "mean_energy_sq"),
+            heat_capacity=_get("heat_capacity_kcal_mol_K2", "heat_capacity"),
+            entropy=_get("entropy_kcal_mol_K", "entropy"),
+            std_energy=_get("std_energy_kcal_mol", "std_energy"),
+        )
+
 
 class _PyStatMechEngine:
     """Pure-Python canonical-ensemble engine (fallback when C++ _core is absent).
