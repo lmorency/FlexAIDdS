@@ -19,6 +19,7 @@ import argparse
 from pathlib import Path
 from typing import Optional
 
+from .__version__ import __version__
 from .results import load_results
 
 
@@ -26,6 +27,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m flexaidds",
         description="Inspect FlexAID∆S docking result directories from Python.",
+    )
+    parser.add_argument(
+        "-V", "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
     )
     parser.add_argument("results_dir", type=Path, help="Directory containing docking result PDB files")
     parser.add_argument(
