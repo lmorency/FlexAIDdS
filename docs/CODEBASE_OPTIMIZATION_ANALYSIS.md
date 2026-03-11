@@ -302,19 +302,48 @@ With 50+ source files, cross-translation-unit inlining would benefit:
 
 **Recommendation**: Add CMake option:
 ```cmake
+include(CheckIPOSupported)
+check_ipo_supported(RESULT ipo_supported)
 option(FLEXAIDS_USE_LTO "Enable link-time optimization" OFF)
-if(FLEXAIDS_USE_LTO)
+if(FLEXAIDS_USE_LTO AND ipo_supported)
     set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
 endif()
 ```
 
-### 8.3 Missing: Runtime CPU Dispatch
+### 8.3 Missing: Precompiled Headers
+
+`flexaid.h` (601 lines) includes 16 standard library headers and is included by virtually all 50+ source files. No PCH is configured. Estimated compile time savings: 20-40%.
+
+**Recommendation**:
+```cmake
+target_precompile_headers(FlexAID PRIVATE
+    LIB/flexaid.h
+    <vector> <iostream> <cmath> <algorithm>
+)
+```
+
+### 8.4 Test Targets Recompile Shared Sources
+
+Three test executables independently recompile shared source files (`statmech.cpp`, `tencm.cpp`, `ShannonThermoStack.cpp`, etc.) at `-O2` instead of `-O3`. This adds 5-10 minutes of redundant CI build time.
+
+**Recommendation**: Create a shared static library:
+```cmake
+add_library(flexaid_core STATIC LIB/statmech.cpp LIB/encom.cpp LIB/tencm.cpp)
+target_compile_options(flexaid_core PRIVATE -O3 -ffast-math)
+# Link tests against flexaid_core instead of recompiling
+```
+
+### 8.5 Python Extension Missing Optimization Flags
+
+`python/setup.py` line 40 uses only `-std=c++20 -O3`, missing `-ffast-math`, SIMD flags (`-mavx2 -mfma`), and LTO. Python bindings for `StatMechEngine` and `ENCoMEngine` run 10-15% slower than equivalent C++ code.
+
+### 8.6 Missing: Runtime CPU Dispatch
 
 All SIMD selection is compile-time (`#ifdef __AVX512F__`). No `cpuid` check for runtime fallback. This means binaries compiled with AVX-512 will crash on AVX2-only hardware.
 
 **Recommendation**: Add runtime dispatch via `__builtin_cpu_supports("avx512f")` or equivalent.
 
-### 8.4 CUDA Architecture Targets
+### 8.7 CUDA Architecture Targets
 
 ```cmake
 set(CMAKE_CUDA_ARCHITECTURES "70;75;80;86;89;90")
