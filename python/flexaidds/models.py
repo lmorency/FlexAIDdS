@@ -70,6 +70,38 @@ class PoseResult:
             parts.append(f"F={self.free_energy:.2f}")
         return f"<PoseResult {' '.join(parts)}>"
 
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "PoseResult":
+        """Reconstruct a PoseResult from a dictionary.
+
+        Accepts both the internal field names (``cf``, ``rmsd_raw``) and the
+        serialised names produced by :meth:`to_records`-style output
+        (``best_pose_path``).  Unknown keys are silently ignored.
+
+        Args:
+            data: Dictionary with PoseResult field values.
+
+        Returns:
+            A new :class:`PoseResult` instance.
+        """
+        path = data.get("path", data.get("best_pose_path", ""))
+        return cls(
+            path=Path(path) if not isinstance(path, Path) else path,
+            mode_id=data.get("mode_id", 0),
+            pose_rank=data.get("pose_rank", 0),
+            cf=data.get("cf"),
+            cf_app=data.get("cf_app"),
+            rmsd_raw=data.get("rmsd_raw"),
+            rmsd_sym=data.get("rmsd_sym"),
+            free_energy=data.get("free_energy"),
+            enthalpy=data.get("enthalpy"),
+            entropy=data.get("entropy"),
+            heat_capacity=data.get("heat_capacity"),
+            std_energy=data.get("std_energy"),
+            temperature=data.get("temperature"),
+            remarks=data.get("remarks", {}),
+        )
+
 
 @dataclass(frozen=True)
 class BindingModeResult:
@@ -145,6 +177,36 @@ class BindingModeResult:
             return min(scored, key=lambda p: p.cf_app)
         return self.poses[0] if self.poses else None
 
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "BindingModeResult":
+        """Reconstruct a BindingModeResult from a dictionary.
+
+        Pose entries under the ``"poses"`` key are deserialised via
+        :meth:`PoseResult.from_dict`.  If ``"poses"`` is absent an empty list
+        is used.
+
+        Args:
+            data: Dictionary with BindingModeResult field values.
+
+        Returns:
+            A new :class:`BindingModeResult` instance.
+        """
+        poses = [PoseResult.from_dict(p) for p in data.get("poses", [])]
+        return cls(
+            mode_id=data.get("mode_id", 0),
+            rank=data.get("rank", 0),
+            poses=poses,
+            free_energy=data.get("free_energy"),
+            enthalpy=data.get("enthalpy"),
+            entropy=data.get("entropy"),
+            heat_capacity=data.get("heat_capacity"),
+            std_energy=data.get("std_energy"),
+            best_cf=data.get("best_cf"),
+            frequency=data.get("frequency"),
+            temperature=data.get("temperature"),
+            metadata=data.get("metadata", {}),
+        )
+
 
 @dataclass(frozen=True)
 class DockingResult:
@@ -171,6 +233,67 @@ class DockingResult:
 
     def __repr__(self) -> str:
         return f"<DockingResult modes={len(self.binding_modes)} source={self.source_dir.name!r}>"
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "DockingResult":
+        """Reconstruct a DockingResult from a dictionary.
+
+        Accepts the format produced by :meth:`to_json` (flat
+        ``binding_modes`` records from :meth:`to_records`) as well as
+        nested structures where each mode contains a ``"poses"`` list.
+
+        Args:
+            data: Dictionary with DockingResult field values.
+
+        Returns:
+            A new :class:`DockingResult` instance.
+        """
+        raw_modes = data.get("binding_modes", [])
+        modes: List[BindingModeResult] = []
+        for i, m in enumerate(raw_modes):
+            if "poses" in m:
+                modes.append(BindingModeResult.from_dict(m))
+            else:
+                # Flat record from to_records(): wrap into a BindingModeResult
+                modes.append(BindingModeResult(
+                    mode_id=m.get("mode_id", i),
+                    rank=m.get("rank", i + 1),
+                    poses=[],
+                    free_energy=m.get("free_energy"),
+                    enthalpy=m.get("enthalpy"),
+                    entropy=m.get("entropy"),
+                    heat_capacity=m.get("heat_capacity"),
+                    std_energy=m.get("std_energy"),
+                    best_cf=m.get("best_cf"),
+                    temperature=m.get("temperature"),
+                ))
+        return cls(
+            source_dir=Path(data.get("source_dir", ".")),
+            binding_modes=modes,
+            temperature=data.get("temperature"),
+            metadata=data.get("metadata", {}),
+        )
+
+    @classmethod
+    def from_json(cls, source: Union[str, Path]) -> "DockingResult":
+        """Load a DockingResult from a JSON file or string.
+
+        Accepts either a file path or a raw JSON string.  The JSON format
+        is the one produced by :meth:`to_json`.
+
+        Args:
+            source: Path to a ``.json`` file, or a JSON-encoded string.
+
+        Returns:
+            A new :class:`DockingResult` instance.
+        """
+        path = Path(source) if not isinstance(source, Path) else source
+        if path.exists():
+            with open(path, encoding="utf-8") as fh:
+                data = json.load(fh)
+        else:
+            data = json.loads(str(source))
+        return cls.from_dict(data)
 
     @property
     def n_modes(self) -> int:
