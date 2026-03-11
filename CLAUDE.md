@@ -38,7 +38,7 @@ FlexAIDdS/
 ├── python/                 # Python package & bindings
 │   ├── flexaidds/           # Python package (API, models, CLI)
 │   ├── bindings/            # pybind11 C++ bridge (core_bindings.cpp)
-│   ├── tests/               # Pytest test suite (16 test files)
+│   ├── tests/               # Pytest test suite (15 test files)
 │   ├── conftest.py          # Pytest fixtures & markers
 │   ├── setup.py             # setuptools + pybind11 (builds statmech & encom only)
 │   └── pyproject.toml       # Python project metadata (setuptools backend)
