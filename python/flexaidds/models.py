@@ -261,6 +261,69 @@ class DockingResult:
             fh.write("\n")
         return None
 
+    @classmethod
+    def from_json(cls, path_or_text: Union[str, Path]) -> "DockingResult":
+        """Reconstruct a :class:`DockingResult` from JSON produced by :meth:`to_json`.
+
+        Accepts either a file path or a JSON string.  Binding-mode records are
+        converted back into :class:`BindingModeResult` objects (each with a
+        single synthetic :class:`PoseResult` derived from ``best_pose_path``).
+
+        Args:
+            path_or_text: Path to a JSON file, or a raw JSON string.
+
+        Returns:
+            Reconstructed :class:`DockingResult`.
+
+        Raises:
+            json.JSONDecodeError: If the input is not valid JSON.
+            FileNotFoundError: If *path_or_text* looks like a file path but does
+                not exist.
+        """
+        p = Path(path_or_text)
+        if p.suffix == ".json" or p.is_file():
+            text = p.read_text(encoding="utf-8")
+        else:
+            text = str(path_or_text)
+
+        payload = json.loads(text)
+
+        modes: List[BindingModeResult] = []
+        for rank, rec in enumerate(payload.get("binding_modes", []), start=1):
+            best_path = rec.get("best_pose_path")
+            pose = PoseResult(
+                path=Path(best_path) if best_path else Path("."),
+                mode_id=rec.get("mode_id", rank),
+                pose_rank=1,
+                cf=rec.get("best_cf"),
+                free_energy=rec.get("free_energy"),
+                enthalpy=rec.get("enthalpy"),
+                entropy=rec.get("entropy"),
+                heat_capacity=rec.get("heat_capacity"),
+                std_energy=rec.get("std_energy"),
+                temperature=rec.get("temperature"),
+            )
+            mode = BindingModeResult(
+                mode_id=rec.get("mode_id", rank),
+                rank=rec.get("rank", rank),
+                poses=[pose],
+                free_energy=rec.get("free_energy"),
+                enthalpy=rec.get("enthalpy"),
+                entropy=rec.get("entropy"),
+                heat_capacity=rec.get("heat_capacity"),
+                std_energy=rec.get("std_energy"),
+                best_cf=rec.get("best_cf"),
+                temperature=rec.get("temperature"),
+            )
+            modes.append(mode)
+
+        return cls(
+            source_dir=Path(payload.get("source_dir", ".")),
+            binding_modes=modes,
+            temperature=payload.get("temperature"),
+            metadata=payload.get("metadata", {}),
+        )
+
     def to_csv(self, path: Union[str, Path, None] = None) -> Optional[str]:
         """Write binding mode summary to CSV.
 

@@ -45,9 +45,6 @@ except ImportError:
     VibrationalEntropy = None
     WHAMBin = None
 
-from .models import BindingModeResult, DockingResult, PoseResult
-from .results import load_results
-
 __all__ = [
     # Python models & I/O (always available)
     "PoseResult",
@@ -57,6 +54,9 @@ __all__ = [
     # Physical constants (always available)
     "kB_kcal",
     "kB_SI",
+    # Pure-Python engines (always available)
+    "StatMechEngine",
+    "Thermodynamics",
     # Availability flag
     "HAS_CORE_BINDINGS",
 ]
@@ -64,8 +64,6 @@ __all__ = [
 # C++ core modules (only available when compiled)
 if HAS_CORE_BINDINGS:
     __all__.extend([
-        "StatMechEngine",
-        "Thermodynamics",
         "State",
         "BoltzmannLUT",
         "Replica",
