@@ -20,6 +20,11 @@
 //    δθ   = Σ_{m≥6} σ_m * z_m * v_m,   z_m ~ N(0,1)
 //
 //  Perturbed Cα: r_i' = r_i + Σ_k J_k(i) δθ_k
+//
+// Hardware acceleration:
+//   - OpenMP: parallel contact search, B-factor computation, Cα update
+//   - Eigen:  Hessian eigendecomposition, strain energy GEMV
+
 #include "tencm.h"
 #include "simd_distance.h"
 
@@ -32,6 +37,14 @@
 #include <stdexcept>
 #include <numbers>
 #include <random>
+
+#ifdef _OPENMP
+#  include <omp.h>
+#endif
+
+#ifdef FLEXAIDS_HAS_EIGEN
+#  include <Eigen/Dense>
+#endif
 
 namespace tencm {
 
@@ -106,6 +119,36 @@ void TorsionalENM::build_contacts()
     const int N   = static_cast<int>(ca_.size());
     const float rc2 = cutoff_ * cutoff_;
 
+#ifdef _OPENMP
+    // OpenMP: each thread builds a private contact list, then merge
+    int n_threads = omp_get_max_threads();
+    std::vector<std::vector<Contact>> thread_contacts(n_threads);
+
+    #pragma omp parallel
+    {
+        int tid = omp_get_thread_num();
+        auto& local = thread_contacts[tid];
+
+        #pragma omp for schedule(dynamic, 4)
+        for (int i = 0; i < N - 1; ++i) {
+            for (int j = i + 2; j < N; ++j) {
+                float dx = ca_[i][0] - ca_[j][0];
+                float dy = ca_[i][1] - ca_[j][1];
+                float dz = ca_[i][2] - ca_[j][2];
+                float r2 = dx*dx + dy*dy + dz*dz;
+                if (r2 <= rc2) {
+                    float r0    = std::sqrt(r2);
+                    float ratio = cutoff_ / r0;
+                    float k = k0_ * (ratio*ratio*ratio*ratio*ratio*ratio);
+                    local.push_back({i, j, k, r0});
+                }
+            }
+        }
+    }
+    // Merge thread-private contact lists
+    for (auto& tc : thread_contacts)
+        contacts_.insert(contacts_.end(), tc.begin(), tc.end());
+#else
     for (int i = 0; i < N - 1; ++i) {
         for (int j = i + 2; j < N; ++j) {   // skip direct bonded neighbour (i+1)
             float dx = ca_[i][0] - ca_[j][0];
@@ -121,6 +164,7 @@ void TorsionalENM::build_contacts()
             }
         }
     }
+#endif
 }
 
 // ─── build_bonds ─────────────────────────────────────────────────────────────
@@ -171,14 +215,19 @@ void TorsionalENM::assemble_hessian()
     const int M = static_cast<int>(bonds_.size());
     H_.assign(static_cast<std::size_t>(M * M), 0.0);
 
-    // Pre-compute Jacobians for all (bond, atom) pairs to avoid re-computation
-    // J[k * N_ca + i] = Jacobian of atom i w.r.t. bond k
+    // Pre-compute Jacobians for all (bond, atom) pairs
     const int N = static_cast<int>(ca_.size());
     std::vector<std::array<float,3>> J(static_cast<std::size_t>(M * N));
+
+#ifdef _OPENMP
+    // Jacobian precomputation is embarrassingly parallel over bonds
+    #pragma omp parallel for schedule(static)
+#endif
     for (int k = 0; k < M; ++k)
         for (int i = 0; i < N; ++i)
             J[static_cast<std::size_t>(k * N + i)] = jac(k, i);
 
+    // Hessian assembly: accumulate contact contributions
     for (const auto& c : contacts_) {
         const int  ci  = c.i;
         const int  cj  = c.j;
@@ -254,16 +303,35 @@ void TorsionalENM::diagonalize()
     const int M = static_cast<int>(bonds_.size());
     if (M == 0) return;
 
-    // Work copy of Hessian
+#ifdef FLEXAIDS_HAS_EIGEN
+    // Eigen: use SelfAdjointEigenSolver for robust, optimized eigendecomposition
+    {
+        Eigen::Map<const Eigen::MatrixXd> Hmap(H_.data(), M, M);
+        Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> solver(Hmap);
+
+        const auto& eigenvalues  = solver.eigenvalues();   // ascending order
+        const auto& eigenvectors = solver.eigenvectors();
+
+        modes_.clear();
+        modes_.reserve(static_cast<std::size_t>(M));
+        for (int i = 0; i < M; ++i) {
+            NormalMode nm;
+            nm.eigenvalue = eigenvalues(i);
+            nm.eigenvector.resize(static_cast<std::size_t>(M));
+            for (int j = 0; j < M; ++j)
+                nm.eigenvector[static_cast<std::size_t>(j)] = eigenvectors(j, i);
+            modes_.push_back(std::move(nm));
+        }
+    }
+#else
+    // Manual Jacobi iteration fallback
     std::vector<double> A = H_;
-    // Eigenvector matrix initialised to identity
     std::vector<double> V(static_cast<std::size_t>(M * M), 0.0);
     for (int i = 0; i < M; ++i)
         V[static_cast<std::size_t>(i*M+i)] = 1.0;
 
     const int MAX_SWEEPS = 50;
     for (int sweep = 0; sweep < MAX_SWEEPS; ++sweep) {
-        // Find off-diagonal element with largest absolute value
         double max_off = 0.0;
         int pp = 0, qq = 1;
         for (int p = 0; p < M - 1; ++p)
@@ -275,7 +343,6 @@ void TorsionalENM::diagonalize()
         jacobi_rotate(A, V, M, pp, qq);
     }
 
-    // Collect modes
     modes_.clear();
     modes_.reserve(static_cast<std::size_t>(M));
     for (int i = 0; i < M; ++i) {
@@ -291,6 +358,7 @@ void TorsionalENM::diagonalize()
     std::sort(modes_.begin(), modes_.end(),
               [](const NormalMode& a, const NormalMode& b){
                   return a.eigenvalue < b.eigenvalue; });
+#endif
 }
 
 // ─── sample ──────────────────────────────────────────────────────────────────
@@ -324,6 +392,11 @@ Conformer TorsionalENM::sample(float temperature, std::mt19937& rng) const
 
     // Build perturbed Cα coordinates:  r_i' = r_i + Σ_k J_k(i) δθ_k
     conf.ca.resize(static_cast<std::size_t>(N));
+
+#ifdef _OPENMP
+    // Each atom's displacement is independent — parallelize over atoms
+    #pragma omp parallel for schedule(static)
+#endif
     for (int i = 0; i < N; ++i) {
         float disp[3] = {0.0f, 0.0f, 0.0f};
         for (int k = 0; k < M; ++k) {
@@ -342,6 +415,18 @@ Conformer TorsionalENM::sample(float temperature, std::mt19937& rng) const
     }
 
     // Elastic strain energy: ½ δθᵀ H δθ
+#ifdef FLEXAIDS_HAS_EIGEN
+    {
+        Eigen::Map<const Eigen::VectorXd> dth(
+            reinterpret_cast<const double*>(nullptr), 0);  // placeholder
+        // Convert float delta_theta to double for Eigen GEMV
+        Eigen::VectorXd dth_d(M);
+        for (int k = 0; k < M; ++k)
+            dth_d(k) = static_cast<double>(conf.delta_theta[static_cast<std::size_t>(k)]);
+        Eigen::Map<const Eigen::MatrixXd> Hmap(H_.data(), M, M);
+        conf.strain_energy = static_cast<float>(0.5 * dth_d.dot(Hmap * dth_d));
+    }
+#else
     conf.strain_energy = 0.0f;
     for (int k = 0; k < M; ++k) {
         double row = 0.0;
@@ -351,6 +436,7 @@ Conformer TorsionalENM::sample(float temperature, std::mt19937& rng) const
         conf.strain_energy += static_cast<float>(
             0.5 * static_cast<double>(conf.delta_theta[static_cast<std::size_t>(k)]) * row);
     }
+#endif
 
     return conf;
 }
@@ -396,6 +482,10 @@ std::vector<float> TorsionalENM::bfactors(float temperature) const
 
     std::vector<float> bf(static_cast<std::size_t>(N), 0.0f);
 
+#ifdef _OPENMP
+    // B-factor for each atom is completely independent — parallelize
+    #pragma omp parallel for schedule(static)
+#endif
     for (int i = 0; i < N; ++i) {
         double msf = 0.0;  // mean-square fluctuation
         for (int m = SKIP; m < M && m < SKIP + N_MODES; ++m) {
