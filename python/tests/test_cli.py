@@ -1,12 +1,14 @@
 """Tests for flexaidds.__main__ – CLI entry point.
 
-Covers build_parser() and the two output branches of main():
+Covers build_parser() and the three output branches of main():
   - human-readable summary (default)
   - machine-readable JSON (--json flag)
+  - CSV export (--csv flag)
 """
 
 from __future__ import annotations
 
+import csv
 import json
 import sys
 from pathlib import Path
@@ -15,6 +17,7 @@ import pytest
 
 from flexaidds.__main__ import build_parser, main
 from flexaidds.__version__ import __version__
+from flexaidds.models import DockingResult
 
 
 # ---------------------------------------------------------------------------
@@ -230,3 +233,67 @@ class TestVersionFlag:
         with pytest.raises(SystemExit) as exc_info:
             parser.parse_args(["--version"])
         assert exc_info.value.code == 0
+
+
+# ===========================================================================
+# main() – CSV output
+# ===========================================================================
+
+class TestMainCsvOutput:
+    def _make_dir(self, tmp_path: Path) -> Path:
+        _write_pdb(
+            tmp_path / "mode_1_pose_1.pdb",
+            ["binding_mode = 1", "pose_rank = 1", "CF = -42.5",
+             "free_energy = -41.0", "temperature = 300.0"],
+        )
+        _write_pdb(
+            tmp_path / "mode_2_pose_1.pdb",
+            ["binding_mode = 2", "pose_rank = 1", "CF = -35.0",
+             "temperature = 300.0"],
+        )
+        return tmp_path
+
+    def test_returns_zero(self, tmp_path, monkeypatch):
+        d = self._make_dir(tmp_path)
+        csv_path = tmp_path / "out.csv"
+        monkeypatch.setattr(sys, "argv", ["flexaidds", str(d), "--csv", str(csv_path)])
+        assert main() == 0
+
+    def test_writes_csv_file(self, tmp_path, monkeypatch):
+        d = self._make_dir(tmp_path)
+        csv_path = tmp_path / "out.csv"
+        monkeypatch.setattr(sys, "argv", ["flexaidds", str(d), "--csv", str(csv_path)])
+        main()
+        assert csv_path.exists()
+
+    def test_csv_has_header_and_rows(self, tmp_path, monkeypatch):
+        d = self._make_dir(tmp_path)
+        csv_path = tmp_path / "out.csv"
+        monkeypatch.setattr(sys, "argv", ["flexaidds", str(d), "--csv", str(csv_path)])
+        main()
+        with open(csv_path) as fh:
+            reader = csv.DictReader(fh)
+            rows = list(reader)
+        assert len(rows) == 2
+        assert "mode_id" in rows[0]
+        assert "free_energy" in rows[0]
+
+    def test_csv_round_trips_via_from_csv(self, tmp_path, monkeypatch):
+        d = self._make_dir(tmp_path)
+        csv_path = tmp_path / "out.csv"
+        monkeypatch.setattr(sys, "argv", ["flexaidds", str(d), "--csv", str(csv_path)])
+        main()
+
+        restored = DockingResult.from_csv(csv_path)
+        assert restored.n_modes == 2
+        assert restored.binding_modes[0].mode_id == 1
+        assert restored.binding_modes[0].free_energy == pytest.approx(-41.0)
+
+    def test_prints_confirmation(self, tmp_path, monkeypatch, capsys):
+        d = self._make_dir(tmp_path)
+        csv_path = tmp_path / "out.csv"
+        monkeypatch.setattr(sys, "argv", ["flexaidds", str(d), "--csv", str(csv_path)])
+        main()
+        out = capsys.readouterr().out
+        assert "2" in out
+        assert str(csv_path) in out

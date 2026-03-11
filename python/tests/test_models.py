@@ -54,6 +54,55 @@ def _mode(
 # PoseResult
 # ===========================================================================
 
+class TestPoseResultRepr:
+    def test_repr_basic(self):
+        p = _pose(mode_id=2, pose_rank=3)
+        r = repr(p)
+        assert "PoseResult" in r
+        assert "mode=2" in r
+        assert "rank=3" in r
+
+    def test_repr_with_cf(self):
+        p = _pose(cf=-10.5)
+        assert "cf=-10.50" in repr(p)
+
+    def test_repr_with_free_energy(self):
+        p = PoseResult(path=Path("x.pdb"), mode_id=1, pose_rank=1, free_energy=-8.3)
+        assert "F=-8.30" in repr(p)
+
+    def test_repr_without_optional_fields(self):
+        p = _pose()
+        r = repr(p)
+        assert "cf=" not in r
+        assert "F=" not in r
+
+
+class TestBindingModeResultRepr:
+    def test_repr_basic(self):
+        mode = _mode(mode_id=2, poses=[_pose(), _pose()], rank=1)
+        r = repr(mode)
+        assert "BindingModeResult" in r
+        assert "id=2" in r
+        assert "rank=1" in r
+        assert "poses=2" in r
+
+    def test_repr_with_free_energy(self):
+        mode = _mode(free_energy=-9.5)
+        assert "F=-9.50" in repr(mode)
+
+
+class TestDockingResultRepr:
+    def test_repr(self):
+        result = DockingResult(
+            source_dir=Path("/tmp/docking_out"),
+            binding_modes=[_mode()],
+        )
+        r = repr(result)
+        assert "DockingResult" in r
+        assert "modes=1" in r
+        assert "docking_out" in r
+
+
 class TestPoseResult:
     def test_is_frozen(self):
         p = _pose(cf=-5.0)
