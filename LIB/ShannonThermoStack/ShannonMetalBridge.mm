@@ -1,6 +1,6 @@
 // ShannonMetalBridge.mm — Objective-C++ bridge to Metal GPU Shannon kernel
 //
-// Compiled only on APPLE targets with ENABLE_METAL_CORE defined.
+// Compiled only on APPLE targets with FLEXAIDS_HAS_METAL_SHANNON defined.
 // Dispatches a parallel histogram kernel on the GPU, then computes Shannon
 // entropy on the CPU from the resulting bin counts.
 #import <Metal/Metal.h>

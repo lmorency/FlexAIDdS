@@ -240,7 +240,7 @@ TEST_F(StatMechEngineTest, EntropyIncreasesWithSpread) {
     }
 
     auto th_narrow = narrow.compute();
-    auto th_broad = broad.compute();
+    auto th_broad  = broad.compute();
 
     EXPECT_GT(th_narrow.entropy, th_broad.entropy);
 }
@@ -260,7 +260,7 @@ TEST_F(StatMechEngineTest, HighTemperatureFlattensWeights) {
     auto weights = hot.boltzmann_weights();
     double mean_w = 1.0 / static_cast<double>(energies.size());
     for (double w : weights)
-        EXPECT_NEAR(w, mean_w, 0.05);  // loose tolerance at high T
+        EXPECT_NEAR(w, mean_w, 0.01);
 }
 
 TEST_F(StatMechEngineTest, LowTemperatureConcentratesWeight) {

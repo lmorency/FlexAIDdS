@@ -42,7 +42,7 @@ int Vcontacts(FA_Global* FA,atom* atoms,resid* residue,VC_Global* VC,
 		
 			float rado = VC->Calc[atomzero].atom->radius + Rw;
 		
-			int NC = get_contlist4(atoms,atomzero, VC->contlist, FA->atm_cnt_real, rado, VC->dim,
+			get_contlist4(atoms,atomzero, VC->contlist, FA->atm_cnt_real, rado, VC->dim,
 					       VC->Calc, VC->Calclist, VC->box,VC->ca_rec, VC->ca_index,
 					       clash_value, (double)FA->permeability, residue, FA->num_atm);
 		}
@@ -170,7 +170,6 @@ int voronoi_poly2(VC_Global *VC,int atomzero, plane cont[], float rado,
 	double arcpt0[3], arcpt1[3];
 	int    testpA, testpB;
 	double testvalA, testvalB;
-	char   arcflag = 'N';
     
 	// failsafe variables:
 	char   recalc;       // flag if hull is being recalculated (orig. unbounded)
@@ -415,8 +414,7 @@ RESTART:
 	for(edgei=0; edgei<edgenum; ++edgei) {
 		if((rado < VC->poly[VC->vedge[edgei].startpt].dist) || (rado < VC->poly[VC->vedge[edgei].endpt].dist)) {
 			// one or both vertices fall outside of sphere
-			arcflag = 'Y';
-			VC->vedge[edgei].arc = '?';
+				VC->vedge[edgei].arc = '?';
 		} else {
 			VC->vedge[edgei].arc = 'X';
 		}
@@ -1735,8 +1733,7 @@ int get_contlist4(atom* atoms,int atomzero, contactlist contlist[],
 	int boxzero;                // box atomzero is in
 	int i;                      // dummy counter for surrounding boxes
 	int currindex;
-	char recalc;                // recalculate neglecting done atoms
-	
+
 	int dim2,dim3;
 
 	/*
@@ -1746,7 +1743,6 @@ int get_contlist4(atom* atoms,int atomzero, contactlist contlist[],
 	*/
 
 	NC = 0;
-	recalc = 'N';
     
 	dim2 = dim*dim;
 	dim3 = dim*dim*dim;

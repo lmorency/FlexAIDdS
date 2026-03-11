@@ -892,9 +892,7 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
                        cfstr (*target)(FA_Global*,VC_Global*,atom*,resid*,gridpoint*,int,double*)){
 
 	static int gen_id = 0;
-	int i,j;
-	//float tot=0.0;
-	double share,rmsp;
+	int i;
 
 	// ── Chromosome evaluation ────────────────────────────────────────────────
 	// Priority order: CUDA GPU → Metal GPU → OpenMP CPU (thread-safe).
@@ -971,7 +969,8 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 			                    ? FA->resligand->latm[0] : 0;
 
 			s_cuda_ctx    = cuda_eval_init(n_atoms, n_types, MAX_NUM_CHROM,
-			                               lig_first, lig_last, FA->permeability,
+			                               n_genes, lig_first, lig_last,
+			                               FA->permeability,
 			                               h_xyz.data(), h_type.data(),
 			                               h_radius.data(), h_emat.data());
 			s_cuda_natom  = n_atoms;

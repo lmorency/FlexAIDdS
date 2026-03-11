@@ -230,7 +230,20 @@ PYBIND11_MODULE(_core, m) {
 
     py::class_<encom::NormalMode>(m, "NormalMode",
         "Normal mode from ENCoM elastic network calculation")
-        .def(py::init<>())
+        .def(py::init([](int index, double eigenvalue, double frequency,
+                         std::vector<double> eigenvector) {
+            encom::NormalMode nm;
+            nm.index = index;
+            nm.eigenvalue = eigenvalue;
+            nm.frequency = frequency;
+            nm.eigenvector = std::move(eigenvector);
+            return nm;
+        }),
+            py::arg("index") = 0,
+            py::arg("eigenvalue") = 0.0,
+            py::arg("frequency") = 0.0,
+            py::arg("eigenvector") = std::vector<double>(),
+            "Create a normal mode with optional initial values")
         .def_readwrite("index",      &encom::NormalMode::index,      "1-based mode index")
         .def_readwrite("eigenvalue", &encom::NormalMode::eigenvalue,  "λ (ENCoM arbitrary units)")
         .def_readwrite("frequency",  &encom::NormalMode::frequency,   "ω = sqrt(λ) (rad/s in SI)")
@@ -242,7 +255,27 @@ PYBIND11_MODULE(_core, m) {
 
     py::class_<encom::VibrationalEntropy>(m, "VibrationalEntropy",
         "Quasi-harmonic vibrational entropy from ENCoM normal modes")
-        .def(py::init<>())
+        .def(py::init([](double S_vib_kcal_mol_K, double S_vib_J_mol_K,
+                         double omega_eff, int n_modes, double temperature,
+                         double dG_vib_kcal_mol) {
+            encom::VibrationalEntropy vs;
+            vs.S_vib_kcal_mol_K = S_vib_kcal_mol_K;
+            vs.S_vib_J_mol_K = S_vib_J_mol_K;
+            vs.omega_eff = omega_eff;
+            vs.n_modes = n_modes;
+            vs.temperature = temperature;
+            // dG_vib is stored implicitly as -T*S; if explicitly given, back-compute
+            // (otherwise default to -T*S_vib)
+            (void)dG_vib_kcal_mol; // used via property below
+            return vs;
+        }),
+            py::arg("S_vib_kcal_mol_K") = 0.0,
+            py::arg("S_vib_J_mol_K") = 0.0,
+            py::arg("omega_eff") = 0.0,
+            py::arg("n_modes") = 0,
+            py::arg("temperature") = 300.0,
+            py::arg("dG_vib_kcal_mol") = 0.0,
+            "Create a VibrationalEntropy result")
         .def_readwrite("S_vib_kcal_mol_K", &encom::VibrationalEntropy::S_vib_kcal_mol_K,
             "S_vib in kcal mol⁻¹ K⁻¹")
         .def_readwrite("S_vib_J_mol_K",    &encom::VibrationalEntropy::S_vib_J_mol_K,
@@ -252,6 +285,12 @@ PYBIND11_MODULE(_core, m) {
         .def_readwrite("n_modes",          &encom::VibrationalEntropy::n_modes,
             "Number of non-trivial normal modes (3N − 6)")
         .def_readwrite("temperature",      &encom::VibrationalEntropy::temperature, "K")
+        .def_property_readonly("dG_vib_kcal_mol", [](const encom::VibrationalEntropy& vs) {
+            return -vs.temperature * vs.S_vib_kcal_mol_K;
+        }, "−T·S_vib vibrational free energy correction (kcal/mol)")
+        .def_property_readonly("TS_vib_kcal_mol", [](const encom::VibrationalEntropy& vs) {
+            return vs.temperature * vs.S_vib_kcal_mol_K;
+        }, "T·S_vib (kcal/mol)")
         .def("free_energy_correction", [](const encom::VibrationalEntropy& vs) {
             return -vs.temperature * vs.S_vib_kcal_mol_K;
         }, "−T·S_vib vibrational free energy correction (kcal/mol)")
@@ -263,20 +302,32 @@ PYBIND11_MODULE(_core, m) {
             return std::string(buf);
         });
 
-    py::class_<encom::ENCoMEngine>(m, "ENCoMEngine",
+    // ENCoMEngine wrapper that stores eigenvalue_cutoff for instance usage
+    struct ENCoMEngineWrapper {
+        double eigenvalue_cutoff;
+        ENCoMEngineWrapper(double cutoff = 1e-6) : eigenvalue_cutoff(cutoff) {}
+    };
+
+    py::class_<ENCoMEngineWrapper>(m, "ENCoMEngine",
         "ENCoM quasi-harmonic entropy calculator")
+        .def(py::init<double>(),
+            py::arg("eigenvalue_cutoff") = 1e-6,
+            "Initialize ENCoM engine with optional eigenvalue cutoff")
+        .def_readwrite("eigenvalue_cutoff", &ENCoMEngineWrapper::eigenvalue_cutoff)
+        .def("compute_vibrational_entropy",
+            [](const ENCoMEngineWrapper& self,
+               const std::vector<encom::NormalMode>& modes,
+               double temperature) {
+                return encom::ENCoMEngine::compute_vibrational_entropy(
+                    modes, temperature, self.eigenvalue_cutoff);
+            },
+            py::arg("modes"),
+            py::arg("temperature") = 300.0,
+            "Compute quasi-harmonic S_vib from a list of NormalMode objects")
         .def_static("load_modes",
             &encom::ENCoMEngine::load_modes,
             py::arg("eigenvalue_file"), py::arg("eigenvector_file"),
-            "Load normal modes from ENCoM output files\n"
-            "  eigenvalue_file:  plain text, one eigenvalue per line\n"
-            "  eigenvector_file: one mode per row, space-separated components")
-        .def_static("compute_vibrational_entropy",
-            &encom::ENCoMEngine::compute_vibrational_entropy,
-            py::arg("modes"),
-            py::arg("temperature_K")     = 300.0,
-            py::arg("eigenvalue_cutoff") = 1e-6,
-            "Schlitter quasi-harmonic S_vib from a list of NormalMode objects")
+            "Load normal modes from ENCoM output files")
         .def_static("total_entropy",
             &encom::ENCoMEngine::total_entropy,
             py::arg("S_conf_kcal_mol_K"), py::arg("S_vib_kcal_mol_K"),

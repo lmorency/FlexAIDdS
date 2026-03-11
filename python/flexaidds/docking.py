@@ -3,6 +3,9 @@
 Provides Pythonic API for molecular docking workflows.
 """
 
+import subprocess
+import shutil
+import re
 import numpy as np
 from pathlib import Path
 from typing import List, Optional, Dict, Any
@@ -85,6 +88,9 @@ class BindingMode:
         """Helmholtz free energy F = H - TS (kcal/mol)."""
         if self._cpp_mode:
             return self._cpp_mode.get_free_energy()
+        # Python-only path: use best pose energy as proxy
+        if self._poses:
+            return min(p.energy for p in self._poses)
         return float('inf')
     
     @property
@@ -123,9 +129,10 @@ class BindingPopulation:
     Provides ensemble-level analysis and ranking of binding modes.
     """
     
-    def __init__(self):
-        self._modes: List[BindingMode] = []
-        self._temperature: float = 300.0
+    def __init__(self, modes: Optional[List[BindingMode]] = None,
+                 temperature: float = 300.0):
+        self._modes: List[BindingMode] = list(modes) if modes else []
+        self._temperature: float = temperature
     
     def add_mode(self, mode: BindingMode) -> None:
         """Add a binding mode to the population."""
@@ -286,21 +293,166 @@ class Docking:
         """Optimization method, e.g. 'GA' (METOPT keyword)."""
         return self._config.get("METOPT")
     
-    def run(self, **kwargs) -> BindingPopulation:
-        """Execute docking simulation.
-        
+    def run(self, binary: Optional[str] = None,
+            timeout: int = 3600, **kwargs) -> BindingPopulation:
+        """Execute docking via the FlexAID C++ binary and parse results.
+
+        Locates the ``FlexAID`` binary (in PATH, project build/, or explicit
+        *binary* argument), invokes it with this config file, waits for
+        completion, then parses all ``*_N_M.pdb`` output files written by
+        ``output_Population()`` to reconstruct a ``BindingPopulation``.
+
+        Args:
+            binary:  Path to FlexAID executable.  If *None*, searches PATH and
+                     common build locations (``build/FlexAID``,
+                     ``../build/FlexAID``).
+            timeout: Wall-clock timeout in seconds (default 3600).
+            **kwargs: Ignored; reserved for future keyword overrides.
+
         Returns:
-            BindingPopulation with ranked binding modes
-        
-        Note:
-            Full implementation requires integration with C++ FlexAID GA engine.
-            This is a stub for Phase 2 development.
+            BindingPopulation populated from the PDB REMARK lines written by
+            ``output_BindingMode()`` / ``output_Population()``.
+
+        Raises:
+            FileNotFoundError: binary not found.
+            RuntimeError:      FlexAID exited non-zero or produced no output.
         """
-        raise NotImplementedError(
-            "Full docking pipeline integration in progress. "
-            "For now, use C++ FlexAID binary directly and parse output with "
-            "BindingMode/BindingPopulation wrappers."
+        # ── 1. Locate binary ─────────────────────────────────────────────────
+        exe = self._find_binary(binary)
+
+        # ── 2. Invoke FlexAID ────────────────────────────────────────────────
+        cmd = [str(exe), str(self.config_file)]
+        try:
+            result = subprocess.run(
+                cmd,
+                cwd=self.config_file.parent,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(
+                f"FlexAID timed out after {timeout}s"
+            ) from exc
+
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"FlexAID exited with code {result.returncode}.\n"
+                f"stdout: {result.stdout[-2000:]}\n"
+                f"stderr: {result.stderr[-2000:]}"
+            )
+
+        # ── 3. Discover output PDBs ──────────────────────────────────────────
+        # output_BindingMode writes files named <prefix>_<minPoints>_<mode>.pdb
+        # Collect all candidate PDB files in the working directory.
+        work_dir = self.config_file.parent
+        pdb_files = sorted(work_dir.glob("*_*.pdb"),
+                           key=lambda p: p.stat().st_mtime)
+
+        if not pdb_files:
+            raise RuntimeError(
+                "FlexAID completed but no PDB output files were found in "
+                f"{work_dir}. Check the config file NRGOUT / output settings."
+            )
+
+        # ── 4. Parse PDB REMARK lines into BindingModes ──────────────────────
+        temperature = self._config.get("TEMPER", 300) or 300
+        modes: List[BindingMode] = []
+        seen_modes: Dict[int, BindingMode] = {}
+
+        for pdb_path in pdb_files:
+            mode_info = self._parse_remark_pdb(pdb_path, temperature)
+            if mode_info is None:
+                continue
+            mode_idx, pose = mode_info
+            if mode_idx not in seen_modes:
+                seen_modes[mode_idx] = BindingMode()
+            seen_modes[mode_idx]._poses.append(pose)
+
+        # Sort modes by free energy (ascending → most favourable first)
+        modes = sorted(seen_modes.values(),
+                       key=lambda m: m.free_energy)
+
+        return BindingPopulation(modes, temperature=float(temperature))
+
+    # ── helpers ───────────────────────────────────────────────────────────────
+
+    def _find_binary(self, binary: Optional[str]) -> Path:
+        """Locate the FlexAID executable."""
+        if binary is not None:
+            p = Path(binary)
+            if not p.is_file():
+                raise FileNotFoundError(f"Specified FlexAID binary not found: {binary}")
+            return p
+
+        # Search order: PATH → project-relative build dirs
+        in_path = shutil.which("FlexAID")
+        if in_path:
+            return Path(in_path)
+
+        candidates = [
+            self.config_file.parent / "FlexAID",
+            self.config_file.parent / "build" / "FlexAID",
+            Path(__file__).parents[3] / "build" / "FlexAID",
+        ]
+        for c in candidates:
+            if c.is_file():
+                return c
+
+        raise FileNotFoundError(
+            "FlexAID binary not found in PATH or build/. "
+            "Build with 'cmake --build build' or pass binary= argument."
         )
+
+    @staticmethod
+    def _parse_remark_pdb(
+            pdb_path: Path, temperature: float) -> Optional[tuple]:
+        """Parse a single output PDB written by output_BindingMode().
+
+        Extracts mode index, CF, RMSD, and per-pose energy from REMARK lines.
+        Returns (mode_index, Pose) or None if the file lacks FlexAID remarks.
+        """
+        mode_idx   = None
+        cf_val     = None
+        rmsd_val   = None
+        freq       = 1
+
+        try:
+            text = pdb_path.read_text(errors="replace")
+        except OSError:
+            return None
+
+        for line in text.splitlines():
+            if not line.startswith("REMARK"):
+                continue
+            # "REMARK Binding Mode:N Best CF in Binding Mode:X …"
+            m = re.search(
+                r"Binding Mode:(\d+).*?Best CF in Binding Mode:\s*([-\d.]+)"
+                r".*?Binding Mode Frequency:(\d+)",
+                line)
+            if m:
+                mode_idx = int(m.group(1))
+                cf_val   = float(m.group(2))
+                freq     = int(m.group(3))
+            # "REMARK 0.12345 RMSD to ref. structure …"
+            m2 = re.search(r"REMARK\s+([\d.]+)\s+RMSD to ref\.", line)
+            if m2 and rmsd_val is None:
+                rmsd_val = float(m2.group(1))
+
+        if mode_idx is None or cf_val is None:
+            return None
+
+        import math
+        beta = 1.0 / (0.001987206 * float(temperature))
+        bw   = math.exp(-beta * cf_val)
+
+        pose = Pose(
+            index=mode_idx,
+            energy=cf_val,
+            rmsd=rmsd_val,
+            boltzmann_weight=bw,
+        )
+        return mode_idx, pose
     
     def __repr__(self) -> str:
         return f"<Docking config={self.config_file.name}>"

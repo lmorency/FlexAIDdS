@@ -59,7 +59,7 @@ bool cavity_detect_metal_dispatch(
         return false;  // CPU path will handle it
     }
 
-    id<MTLFunction> fn = [lib newFunctionWithName:@"generate_probes"];
+    id<MTLFunction> fn = [lib newFunctionWithName:@"generate_cleft_spheres"];
     if (!fn) return false;
 
     id<MTLComputePipelineState> pipeline =

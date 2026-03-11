@@ -59,6 +59,7 @@ struct CudaEvalCtx {
     int   n_atoms;
     int   n_types;
     int   max_pop;
+    int   max_genes;
     int   lig_first;
     int   lig_last;
     float perm;
@@ -222,6 +223,7 @@ __global__ void kernel_eval_cf_full(
 CudaEvalCtx* cuda_eval_init(int   n_atoms,
                              int   n_types,
                              int   max_pop,
+                             int   max_genes,
                              int   lig_first,
                              int   lig_last,
                              float perm,
@@ -234,6 +236,7 @@ CudaEvalCtx* cuda_eval_init(int   n_atoms,
     ctx->n_atoms   = n_atoms;
     ctx->n_types   = n_types;
     ctx->max_pop   = max_pop;
+    ctx->max_genes = max_genes;
     ctx->lig_first = lig_first;
     ctx->lig_last  = lig_last;
     ctx->perm      = perm;
@@ -242,7 +245,7 @@ CudaEvalCtx* cuda_eval_init(int   n_atoms,
     const size_t type_bytes = (size_t)n_atoms               * sizeof(int);
     const size_t rad_bytes  = (size_t)n_atoms               * sizeof(float);
     const size_t em_bytes   = (size_t)n_types * n_types * N_EMAT_SAMPLES * sizeof(float);
-    const size_t gene_bytes = (size_t)max_pop * 256          * sizeof(double);
+    const size_t gene_bytes = (size_t)max_pop * max_genes   * sizeof(double);
     const size_t cf_bytes   = (size_t)max_pop               * sizeof(double);
 
     CUDA_CHECK(cudaMalloc(&ctx->d_atom_xyz,     xyz_bytes));

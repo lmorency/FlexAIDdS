@@ -46,6 +46,7 @@ struct CudaEvalCtx;
 CudaEvalCtx* cuda_eval_init(int   n_atoms,
                              int   n_types,
                              int   max_pop,
+                             int   max_genes,
                              int   lig_first,
                              int   lig_last,
                              float perm,

@@ -3,7 +3,7 @@
 // Provides a C++ header-only interface. The implementation is in
 // ShannonMetalBridge.mm (Objective-C++) and compiled only on APPLE targets.
 // On non-Apple platforms this header is included but the implementation is
-// never compiled; callers guard behind #ifdef ENABLE_METAL_CORE.
+// never compiled; callers guard behind #ifdef FLEXAIDS_HAS_METAL_SHANNON.
 #pragma once
 
 #include <vector>

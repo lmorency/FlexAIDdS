@@ -3,6 +3,7 @@
 
 #include "../flexaid.h"
 #include <cstdlib>
+#include <cstring>
 #include <algorithm>
 #include <numeric>
 #include <cmath>
@@ -16,16 +17,61 @@ static std::mt19937& get_rng() {
 }
 
 // ─── detect_rings ────────────────────────────────────────────────────────────
+// Check if a 5-membered ring is a furanose sugar by looking for an O4' atom.
+static bool is_furanose_ring(const atom* atoms, const std::vector<int>& ring_indices) {
+    for (int idx : ring_indices) {
+        const char* name = atoms[idx].name;
+        if (!name) continue;
+        // Furanose rings contain an oxygen named O4' (or O4*)
+        if (strstr(name, "O4'") || strstr(name, "O4*"))
+            return true;
+        // Also check element: exactly one ring oxygen in a 5-ring sugar
+        if (atoms[idx].element[0] == 'O')
+            return true;
+    }
+    return false;
+}
+
 RingFlexGenes detect_rings(const atom* atoms, int n_lig_atoms,
-                            const int*  /*lig_atom_offset*/)
+                            const int*  lig_atom_offset)
 {
     RingFlexGenes genes;
     if (!atoms || n_lig_atoms <= 0) return genes;
 
-    // In production: walk the bond graph to find SSSR rings,
-    // classify aromatic vs non-aromatic, detect furanose sugars.
-    // For this integration layer we return a valid empty struct so the GA
-    // compiles and runs; ring detection is activated via flexaid.h flags.
+    // Build array of ligand atom indices. If lig_atom_offset is provided,
+    // it maps local indices to global atom array positions. Otherwise,
+    // assume the first n_lig_atoms in atoms[] are the ligand.
+    std::vector<int> lig_indices(n_lig_atoms);
+    for (int i = 0; i < n_lig_atoms; ++i)
+        lig_indices[i] = lig_atom_offset ? lig_atom_offset[i] : i;
+
+    // Detect non-aromatic rings via bond-graph DFS
+    auto rings = ring_flex::detect_non_aromatic_rings(
+        lig_indices.data(), n_lig_atoms, atoms);
+
+    // Classify each detected ring and populate gene arrays
+    for (const auto& rd : rings) {
+        int sz = static_cast<int>(rd.atom_indices.size());
+
+        if (sz == 6) {
+            // 6-membered non-aromatic ring (e.g., pyranose)
+            genes.conformer_indices.push_back(0); // default: 4C1 chair
+        } else if (sz == 5) {
+            if (is_furanose_ring(atoms, rd.atom_indices)) {
+                // Furanose sugar ring → sugar pucker gene
+                sugar_pucker::SugarType stype =
+                    sugar_pucker::detect_sugar_type(
+                        atoms, rd.atom_indices.data(), sz);
+                genes.sugar_phases.push_back(0.0f); // default phase
+                genes.sugar_types.push_back(stype);
+                genes.sugar_ring_indices.push_back(rd.atom_indices);
+            } else {
+                // Non-sugar 5-membered ring
+                genes.five_conformer_indices.push_back(0); // default: E0
+            }
+        }
+    }
+
     return genes;
 }
 

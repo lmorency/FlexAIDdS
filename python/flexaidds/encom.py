@@ -155,16 +155,20 @@ class ENCoMEngine:
             List of NormalMode objects sorted by mode index.
         """
         if _HAS_CORE:
-            cpp_modes = _core.ENCoMEngine.load_modes(eigenvalue_file, eigenvector_file)
-            return [
-                NormalMode(
-                    index=m.index,
-                    eigenvalue=m.eigenvalue,
-                    frequency=m.frequency,
-                    eigenvector=list(m.eigenvector),
-                )
-                for m in cpp_modes
-            ]
+            try:
+                cpp_modes = _core.ENCoMEngine.load_modes(eigenvalue_file, eigenvector_file)
+                return [
+                    NormalMode(
+                        index=m.index,
+                        eigenvalue=m.eigenvalue,
+                        frequency=m.frequency,
+                        eigenvector=list(m.eigenvector),
+                    )
+                    for m in cpp_modes
+                ]
+            except (AttributeError, RuntimeError):
+                # Fall through to pure-Python implementation if C++ unavailable
+                pass
 
         # Pure-Python fallback
         eigenvalues: List[float] = []
@@ -206,24 +210,29 @@ class ENCoMEngine:
             VibrationalEntropy with S_vib in both kcal/(mol·K) and J/(mol·K).
         """
         if _HAS_CORE:
-            cpp_modes = []
-            for m in modes:
-                cm = _core.NormalMode()
-                cm.index = m.index
-                cm.eigenvalue = m.eigenvalue
-                cm.frequency = m.frequency
-                cm.eigenvector = m.eigenvector
-                cpp_modes.append(cm)
-            vs_cpp = _core.ENCoMEngine.compute_vibrational_entropy(
-                cpp_modes, temperature_K, eigenvalue_cutoff
-            )
-            return VibrationalEntropy(
-                S_vib_kcal_mol_K=vs_cpp.S_vib_kcal_mol_K,
-                S_vib_J_mol_K=vs_cpp.S_vib_J_mol_K,
-                omega_eff=vs_cpp.omega_eff,
-                n_modes=vs_cpp.n_modes,
-                temperature=vs_cpp.temperature,
-            )
+            try:
+                cpp_modes = []
+                for m in modes:
+                    cm = _core.NormalMode()
+                    cm.index = m.index
+                    cm.eigenvalue = m.eigenvalue
+                    cm.frequency = m.frequency
+                    cm.eigenvector = m.eigenvector
+                    cpp_modes.append(cm)
+                eng = _core.ENCoMEngine(eigenvalue_cutoff=eigenvalue_cutoff)
+                vs_cpp = eng.compute_vibrational_entropy(
+                    cpp_modes, temperature_K
+                )
+                return VibrationalEntropy(
+                    S_vib_kcal_mol_K=vs_cpp.S_vib_kcal_mol_K,
+                    S_vib_J_mol_K=vs_cpp.S_vib_J_mol_K,
+                    omega_eff=vs_cpp.omega_eff,
+                    n_modes=vs_cpp.n_modes,
+                    temperature=vs_cpp.temperature,
+                )
+            except (AttributeError, RuntimeError):
+                # Fall through to pure-Python implementation if C++ unavailable
+                pass
 
         return _python_compute_vibrational_entropy(modes, temperature_K, eigenvalue_cutoff)
 
@@ -242,7 +251,10 @@ class ENCoMEngine:
             Total entropy in kcal mol⁻¹ K⁻¹.
         """
         if _HAS_CORE:
-            return _core.ENCoMEngine.total_entropy(S_conf_kcal_mol_K, S_vib_kcal_mol_K)
+            try:
+                return _core.ENCoMEngine.total_entropy(S_conf_kcal_mol_K, S_vib_kcal_mol_K)
+            except (AttributeError, RuntimeError):
+                pass
         return S_conf_kcal_mol_K + S_vib_kcal_mol_K
 
     @staticmethod
@@ -262,7 +274,10 @@ class ENCoMEngine:
             Total free energy including vibrational correction (kcal/mol).
         """
         if _HAS_CORE:
-            return _core.ENCoMEngine.free_energy_with_vibrations(
-                F_electronic, S_vib_kcal_mol_K, temperature_K
-            )
+            try:
+                return _core.ENCoMEngine.free_energy_with_vibrations(
+                    F_electronic, S_vib_kcal_mol_K, temperature_K
+                )
+            except (AttributeError, RuntimeError):
+                pass
         return F_electronic - temperature_K * S_vib_kcal_mol_K

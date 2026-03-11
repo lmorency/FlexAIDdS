@@ -10,6 +10,11 @@
 //
 // All sums use log-sum-exp for numerical stability when energies span
 // hundreds of kcal/mol (common in docking).
+//
+// Hardware dispatch (compile-time):
+//   1. Eigen3 vectorised array ops (FLEXAIDS_HAS_EIGEN)
+//   2. OpenMP parallel reductions for large ensembles (_OPENMP)
+//   3. Scalar fallback (always available)
 
 #include "statmech.h"
 
@@ -19,7 +24,18 @@
 #include <limits>
 #include <stdexcept>
 
+#ifdef FLEXAIDS_HAS_EIGEN
+#  include <Eigen/Dense>
+#endif
+
+#ifdef _OPENMP
+#  include <omp.h>
+#endif
+
 namespace statmech {
+
+// Threshold above which OpenMP parallelisation pays off for reductions.
+static constexpr std::size_t OMP_THRESHOLD = 4096;
 
 // ─── construction ────────────────────────────────────────────────────────────
 
@@ -46,9 +62,25 @@ double StatMechEngine::log_sum_exp(std::span<const double> x) {
     // If all values are -infinity or very small, return the max value
     // (This shouldn't happen in normal usage, but guard against it)
     if (x_max <= -1e308) return x_max;
+
+#ifdef FLEXAIDS_HAS_EIGEN
+    // Eigen vectorised exp() + sum — benefits from AVX2/AVX-512 auto-vectorisation
+    Eigen::Map<const Eigen::ArrayXd> arr(x.data(), static_cast<Eigen::Index>(x.size()));
+    double sum = (arr - x_max).exp().sum();
+#else
     double sum = 0.0;
-    for (double v : x)
-        sum += std::exp(v - x_max);
+    #ifdef _OPENMP
+    if (x.size() >= OMP_THRESHOLD) {
+        #pragma omp parallel for reduction(+:sum) schedule(static)
+        for (std::size_t i = 0; i < x.size(); ++i)
+            sum += std::exp(x[i] - x_max);
+    } else
+    #endif
+    {
+        for (double v : x)
+            sum += std::exp(v - x_max);
+    }
+#endif
     return x_max + std::log(sum);
 }
 
@@ -73,11 +105,27 @@ Thermodynamics StatMechEngine::compute() const {
     // To keep stability: ⟨E⟩ = Σ E_i exp(log_w_i − lnZ)
     double E_avg  = 0.0;
     double E2_avg = 0.0;
-    for (std::size_t i = 0; i < N; ++i) {
-        double p_i = std::exp(log_w[i] - lnZ);
-        double Ei  = ensemble_[i].energy;
-        E_avg  += p_i * Ei;
-        E2_avg += p_i * Ei * Ei;
+
+#ifdef FLEXAIDS_HAS_EIGEN
+    // Vectorised path: build energy array, compute probabilities, dot-product
+    if (N >= 16) {
+        Eigen::ArrayXd energies(static_cast<Eigen::Index>(N));
+        Eigen::Map<const Eigen::ArrayXd> lw(log_w.data(), static_cast<Eigen::Index>(N));
+        for (std::size_t i = 0; i < N; ++i)
+            energies[static_cast<Eigen::Index>(i)] = ensemble_[i].energy;
+
+        Eigen::ArrayXd probs = (lw - lnZ).exp();
+        E_avg  = (probs * energies).sum();
+        E2_avg = (probs * energies * energies).sum();
+    } else
+#endif
+    {
+        for (std::size_t i = 0; i < N; ++i) {
+            double p_i = std::exp(log_w[i] - lnZ);
+            double Ei  = ensemble_[i].energy;
+            E_avg  += p_i * Ei;
+            E2_avg += p_i * Ei * Ei;
+        }
     }
 
     double kT  = kB_kcal * T_;
@@ -100,16 +148,26 @@ Thermodynamics StatMechEngine::compute() const {
 std::vector<double> StatMechEngine::boltzmann_weights() const {
     if (ensemble_.empty()) return {};
 
-    std::vector<double> log_w(ensemble_.size());
-    for (std::size_t i = 0; i < ensemble_.size(); ++i)
+    const std::size_t N = ensemble_.size();
+    std::vector<double> log_w(N);
+    for (std::size_t i = 0; i < N; ++i)
         log_w[i] = std::log(static_cast<double>(ensemble_[i].count)) -
                    beta_ * ensemble_[i].energy;
 
     double lnZ = log_sum_exp(log_w);
 
-    std::vector<double> w(ensemble_.size());
-    for (std::size_t i = 0; i < ensemble_.size(); ++i)
-        w[i] = std::exp(log_w[i] - lnZ);
+    std::vector<double> w(N);
+#ifdef FLEXAIDS_HAS_EIGEN
+    if (N >= 16) {
+        Eigen::Map<const Eigen::ArrayXd> lw(log_w.data(), static_cast<Eigen::Index>(N));
+        Eigen::Map<Eigen::ArrayXd> out(w.data(), static_cast<Eigen::Index>(N));
+        out = (lw - lnZ).exp();
+    } else
+#endif
+    {
+        for (std::size_t i = 0; i < N; ++i)
+            w[i] = std::exp(log_w[i] - lnZ);
+    }
     return w;
 }
 
@@ -129,9 +187,20 @@ double StatMechEngine::helmholtz(std::span<const double> energies, double T) {
     if (energies.empty())
         throw std::invalid_argument("helmholtz: empty energy list");
     double beta = 1.0 / (kB_kcal * T);
+
     std::vector<double> neg_beta_E(energies.size());
+#ifdef FLEXAIDS_HAS_EIGEN
+    {
+        Eigen::Map<const Eigen::ArrayXd> e(energies.data(),
+                                            static_cast<Eigen::Index>(energies.size()));
+        Eigen::Map<Eigen::ArrayXd> out(neg_beta_E.data(),
+                                        static_cast<Eigen::Index>(energies.size()));
+        out = -beta * e;
+    }
+#else
     for (std::size_t i = 0; i < energies.size(); ++i)
         neg_beta_E[i] = -beta * energies[i];
+#endif
     double lnZ = log_sum_exp(neg_beta_E);
     return -(kB_kcal * T) * lnZ;
 }
