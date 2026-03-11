@@ -263,19 +263,25 @@ class TestENCoMEngineCpp:
 # ── Python-level ENCoM smoke test (no C++ needed) ────────────────────────────
 
 class TestENCoMPythonFallback:
-    """Verify that the ENCoM symbols are None (not missing) when C++ absent."""
+    """Verify that ENCoM symbols are always available (pure-Python fallback)."""
 
     def test_encom_symbols_accessible(self):
         import flexaidds as fds
-        # Should be importable either as a class or None
+        # Should always be importable as usable classes (never None)
         assert hasattr(fds, "ENCoMEngine")
         assert hasattr(fds, "NormalMode")
         assert hasattr(fds, "VibrationalEntropy")
 
-    def test_encom_symbols_none_when_no_core(self):
+    def test_encom_symbols_callable_when_no_core(self):
         if _CORE_AVAILABLE:
-            pytest.skip("C++ core is built; checking None path not applicable")
+            pytest.skip("C++ core is built; checking fallback path not applicable")
         import flexaidds as fds
-        assert fds.ENCoMEngine is None
-        assert fds.NormalMode is None
-        assert fds.VibrationalEntropy is None
+        # Pure-Python fallbacks should be real classes, not None
+        assert fds.ENCoMEngine is not None
+        assert fds.NormalMode is not None
+        assert fds.VibrationalEntropy is not None
+        # Verify they are actually usable
+        mode = fds.NormalMode(index=1, eigenvalue=2.0)
+        assert mode.eigenvalue == 2.0
+        vs = fds.ENCoMEngine.total_entropy(0.003, 0.001)
+        assert abs(vs - 0.004) < 1e-15
