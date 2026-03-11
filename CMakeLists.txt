@@ -254,6 +254,8 @@ target_sources(FlexAID PRIVATE
         LIB/Mol2Reader.cpp
         # ── CavityDetect: native SURFNET cavity detection ──
         LIB/CavityDetect/CavityDetect.cpp
+        # ── PTMAttachment: PTM/glycan modification on target chain ──
+        LIB/PTMAttachment/PTMAttachment.cpp
 )
 
 target_include_directories(FlexAID PRIVATE
@@ -263,6 +265,7 @@ target_include_directories(FlexAID PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
     ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ChiralCenter
     ${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect
+    ${CMAKE_CURRENT_SOURCE_DIR}/LIB/PTMAttachment
 )
 
 # ─── compiler flags ────────────────────────────────────────────────────
@@ -532,5 +535,22 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME TENCoMDiffTests COMMAND test_tencom_diff)
 
-    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_tencom_diff")
+    # test_ptm_attachment — PTMAttachment module tests
+    add_executable(test_ptm_attachment
+        tests/test_ptm_attachment.cpp
+        LIB/PTMAttachment/PTMAttachment.cpp
+    )
+    target_include_directories(test_ptm_attachment PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/PTMAttachment
+    )
+    target_link_libraries(test_ptm_attachment PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_ptm_attachment PRIVATE /O2)
+    else()
+        target_compile_options(test_ptm_attachment PRIVATE -O2)
+    endif()
+    add_test(NAME PTMAttachmentTests COMMAND test_ptm_attachment)
+
+    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_tencom_diff, test_ptm_attachment")
 endif()

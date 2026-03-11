@@ -1,0 +1,97 @@
+{
+  "NMan9": {
+    "description": "High-mannose N-glycan (Man9GlcNAc2)",
+    "attachment_residues": ["ASN"],
+    "bond_atom": "ND2",
+    "linkage": "N-glycosidic",
+    "added_atoms": [
+      {"name": "C1",  "element": "C", "radius": 1.70, "type_name": "C.3",  "resp_charge":  0.312},
+      {"name": "O5",  "element": "O", "radius": 1.52, "type_name": "O.3",  "resp_charge": -0.458},
+      {"name": "C2",  "element": "C", "radius": 1.70, "type_name": "C.3",  "resp_charge":  0.081},
+      {"name": "O2",  "element": "O", "radius": 1.52, "type_name": "O.3",  "resp_charge": -0.636},
+      {"name": "C3",  "element": "C", "radius": 1.70, "type_name": "C.3",  "resp_charge":  0.067},
+      {"name": "O3",  "element": "O", "radius": 1.52, "type_name": "O.3",  "resp_charge": -0.630}
+    ],
+    "conformers": [
+      {"phi": -75.0, "psi": 135.0, "omega":  60.0, "weight": 0.45},
+      {"phi": -60.0, "psi": 180.0, "omega": -60.0, "weight": 0.35},
+      {"phi": -85.0, "psi": 120.0, "omega": 180.0, "weight": 0.20}
+    ]
+  },
+  "ComplexBi": {
+    "description": "Complex-type biantennary N-glycan",
+    "attachment_residues": ["ASN"],
+    "bond_atom": "ND2",
+    "linkage": "N-glycosidic",
+    "added_atoms": [
+      {"name": "C1",  "element": "C", "radius": 1.70, "type_name": "C.3",  "resp_charge":  0.295},
+      {"name": "O5",  "element": "O", "radius": 1.52, "type_name": "O.3",  "resp_charge": -0.442},
+      {"name": "NAc", "element": "N", "radius": 1.55, "type_name": "N.am", "resp_charge": -0.380},
+      {"name": "C2",  "element": "C", "radius": 1.70, "type_name": "C.3",  "resp_charge":  0.092}
+    ],
+    "conformers": [
+      {"phi": -70.0, "psi": 150.0, "weight": 0.55},
+      {"phi": -80.0, "psi": 160.0, "weight": 0.45}
+    ]
+  },
+  "OGalNAc": {
+    "description": "Core 1 O-glycan (GalNAc-alpha-O-Ser/Thr)",
+    "attachment_residues": ["SER", "THR"],
+    "bond_atom": "OG",
+    "linkage": "O-glycosidic",
+    "added_atoms": [
+      {"name": "C1",  "element": "C", "radius": 1.70, "type_name": "C.3",  "resp_charge":  0.328},
+      {"name": "O5",  "element": "O", "radius": 1.52, "type_name": "O.3",  "resp_charge": -0.451},
+      {"name": "NAc", "element": "N", "radius": 1.55, "type_name": "N.am", "resp_charge": -0.365},
+      {"name": "C2",  "element": "C", "radius": 1.70, "type_name": "C.3",  "resp_charge":  0.108}
+    ],
+    "conformers": [
+      {"phi":  60.0, "psi": -120.0, "weight": 0.60},
+      {"phi":  75.0, "psi": -100.0, "weight": 0.40}
+    ]
+  },
+  "Phosphate": {
+    "description": "Phosphorylation (pSer / pThr / pTyr)",
+    "attachment_residues": ["SER", "THR", "TYR"],
+    "bond_atom": "OG",
+    "linkage": "phosphoester",
+    "added_atoms": [
+      {"name": "P",   "element": "P", "radius": 1.80, "type_name": "P.3",  "resp_charge":  1.166},
+      {"name": "O1P", "element": "O", "radius": 1.52, "type_name": "O.co2","resp_charge": -0.776},
+      {"name": "O2P", "element": "O", "radius": 1.52, "type_name": "O.co2","resp_charge": -0.776},
+      {"name": "O3P", "element": "O", "radius": 1.52, "type_name": "O.co2","resp_charge": -0.814}
+    ],
+    "conformers": [
+      {"phi": 180.0, "psi": 180.0, "weight": 1.0}
+    ]
+  },
+  "Sulfate": {
+    "description": "Sulfation (sulfo-Tyr)",
+    "attachment_residues": ["TYR"],
+    "bond_atom": "OH",
+    "linkage": "sulfoester",
+    "added_atoms": [
+      {"name": "S",   "element": "S", "radius": 1.80, "type_name": "S.o2", "resp_charge":  1.420},
+      {"name": "O1S", "element": "O", "radius": 1.52, "type_name": "O.co2","resp_charge": -0.654},
+      {"name": "O2S", "element": "O", "radius": 1.52, "type_name": "O.co2","resp_charge": -0.654},
+      {"name": "O3S", "element": "O", "radius": 1.52, "type_name": "O.co2","resp_charge": -0.652}
+    ],
+    "conformers": [
+      {"phi": 180.0, "psi": 180.0, "weight": 1.0}
+    ]
+  },
+  "Acetyl": {
+    "description": "Acetylation (Lys N-epsilon-acetyl)",
+    "attachment_residues": ["LYS"],
+    "bond_atom": "NZ",
+    "linkage": "amide",
+    "added_atoms": [
+      {"name": "C",   "element": "C", "radius": 1.70, "type_name": "C.2",  "resp_charge":  0.597},
+      {"name": "O",   "element": "O", "radius": 1.52, "type_name": "O.2",  "resp_charge": -0.568},
+      {"name": "CH3", "element": "C", "radius": 1.70, "type_name": "C.3",  "resp_charge": -0.362}
+    ],
+    "conformers": [
+      {"phi": 180.0, "psi": 0.0, "weight": 1.0}
+    ]
+  }
+}

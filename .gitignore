@@ -15,6 +15,9 @@
 !*.c
 !*.h
 !*.hpp
+# data files (PTM/glycan libraries, charge parameters)
+!data
+!data/**
 # test suite
 !tests
 !tests/**

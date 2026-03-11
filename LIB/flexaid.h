@@ -176,7 +176,7 @@ struct atom_struct{  // atom structure
 	float  coor[3];     // processing coordinates
 	float* coor_ref;    // reference coordinates
 	float  coor_ori[3]; // original coordinates
-	
+
 	int    number;  // atom number according to PDB file
 	float  radius;  // atomic radius
 	int    type;    // atom type
@@ -191,15 +191,21 @@ struct atom_struct{  // atom structure
 	int    ncons;   // number of constraint for atoms
 	int    isbb;    // atom is a backbone atom
 	int    graph;   // id of graph atom belongs to (ligands only)
-	
+
 	optmap* par;    // if this atom defines a variable (translational/rotational or dihedrals)
 	constraint** cons; // points to constraint , if NULL no constraint to atom
 	OptRes* optres;  // pointer to optimised residue list
 	float** eigen;   // eigen vectors
-	
+
 	int    rec[4];  // atom number to be used when reconstructing the atom coordinates from internal coordinates
 	char   name[5]; // atom name
 	char   element[3]; // element name
+
+	// ── PTM / RESP charge support ──
+	float  resp_charge;   // RESP partial charge (0.0 = not assigned; uses type-based scoring)
+	int    has_resp;       // flag: 1 if resp_charge was explicitly set, 0 otherwise
+	int    is_ptm;         // flag: 1 if this atom was added by PTM attachment
+	int    ptm_parent;     // atom number of the attachment point (valid when is_ptm=1)
 };
 typedef struct atom_struct atom;
 
