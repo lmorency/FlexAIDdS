@@ -534,3 +534,44 @@ if(BUILD_TESTING)
 
     message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_tencom_diff")
 endif()
+
+# ─── Swift Bridge (macOS only) ────────────────────────────────────────────
+option(BUILD_SWIFT_BRIDGE "Build Swift bridge static library (macOS only)" OFF)
+if(BUILD_SWIFT_BRIDGE)
+    if(NOT APPLE)
+        message(FATAL_ERROR "BUILD_SWIFT_BRIDGE requires macOS (Apple platform)")
+    endif()
+
+    enable_language(OBJCXX)
+
+    find_library(FOUNDATION_LIBRARY Foundation REQUIRED)
+
+    add_library(FlexAIDCore STATIC
+        swift/Sources/FlexAIDCore/FXStatMechEngine.mm
+        swift/Sources/FlexAIDCore/FXENCoMEngine.mm
+        swift/Sources/FlexAIDCore/FXBoltzmannLUT.mm
+        swift/Sources/FlexAIDCore/FXGA.mm
+        LIB/statmech.cpp
+        LIB/encom.cpp
+    )
+    target_include_directories(FlexAIDCore PUBLIC
+        swift/Sources/FlexAIDCore/include
+        LIB
+    )
+    set_target_properties(FlexAIDCore PROPERTIES
+        CXX_STANDARD 20
+        CXX_STANDARD_REQUIRED ON
+        POSITION_INDEPENDENT_CODE ON
+    )
+    set_source_files_properties(
+        swift/Sources/FlexAIDCore/FXStatMechEngine.mm
+        swift/Sources/FlexAIDCore/FXENCoMEngine.mm
+        swift/Sources/FlexAIDCore/FXBoltzmannLUT.mm
+        swift/Sources/FlexAIDCore/FXGA.mm
+        PROPERTIES LANGUAGE OBJCXX
+    )
+    target_compile_options(FlexAIDCore PRIVATE -std=c++20 -O2)
+    target_link_libraries(FlexAIDCore PUBLIC ${FOUNDATION_LIBRARY})
+
+    message(STATUS "Swift bridge enabled — build target: FlexAIDCore (static library)")
+endif()

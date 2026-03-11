@@ -15,6 +15,11 @@
 !*.c
 !*.h
 !*.hpp
+!*.mm
+!*.swift
+!*.ts
+!*.tsx
+!*.metal
 # test suite
 !tests
 !tests/**
@@ -30,6 +35,14 @@
 !THIRD_PARTY_LICENSES.md
 !docs
 !docs/**
+# swift package
+!swift
+!swift/**
+# typescript package
+!typescript
+!typescript/**
+typescript/**/node_modules
+typescript/**/dist
 # python package
 !python
 !python/**

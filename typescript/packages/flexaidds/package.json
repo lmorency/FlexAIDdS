@@ -1,0 +1,28 @@
+{
+  "name": "@bonhomme/flexaidds",
+  "version": "0.1.0",
+  "description": "FlexAIDdS TypeScript SDK — statistical mechanics, thermodynamics, and result loading for entropy-driven molecular docking",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.4",
+    "vitest": "^2.0"
+  },
+  "files": [
+    "dist",
+    "src"
+  ]
+}
