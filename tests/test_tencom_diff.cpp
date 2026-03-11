@@ -244,6 +244,172 @@ TEST(ModeConversion, TencmToEncomPreservesEigenvalues) {
     std::remove(path.c_str());
 }
 
+// ─── Nucleic Acid Tests ─────────────────────────────────────────────────────
+
+static std::string write_synthetic_dna_pdb(const std::string& prefix,
+                                            int n_nucleotides,
+                                            float radius = 4.5f,
+                                            float rise = 3.4f)
+{
+    std::string path = std::filesystem::temp_directory_path().string()
+                       + "/" + prefix + ".pdb";
+
+    std::ofstream ofs(path);
+    const float turn = 36.0f * 3.14159265f / 180.0f;  // ~10 bp per turn
+    const char* bases[] = {" DA", " DT", " DC", " DG"};
+
+    for (int r = 0; r < n_nucleotides; ++r) {
+        float x = radius * std::cos(r * turn);
+        float y = radius * std::sin(r * turn);
+        float z = r * rise;
+
+        // Write C4' atom (backbone representative for nucleic acids)
+        char line[82];
+        std::snprintf(line, sizeof(line),
+            "ATOM  %5d  C4' %3s A%4d    %8.3f%8.3f%8.3f  1.00  0.00           C",
+            r + 1, bases[r % 4], r + 1, x, y, z);
+        ofs << line << "\n";
+    }
+    ofs << "END\n";
+    ofs.close();
+
+    return path;
+}
+
+static std::string write_mixed_pdb(const std::string& prefix,
+                                    int n_protein, int n_dna)
+{
+    std::string path = std::filesystem::temp_directory_path().string()
+                       + "/" + prefix + ".pdb";
+
+    std::ofstream ofs(path);
+    int atom_num = 0;
+    int res_num = 0;
+
+    // Protein chain A
+    const float turn_p = 100.0f * 3.14159265f / 180.0f;
+    for (int r = 0; r < n_protein; ++r) {
+        ++atom_num; ++res_num;
+        float x = 2.3f * std::cos(r * turn_p);
+        float y = 2.3f * std::sin(r * turn_p);
+        float z = r * 1.5f;
+        char line[82];
+        std::snprintf(line, sizeof(line),
+            "ATOM  %5d  CA  ALA A%4d    %8.3f%8.3f%8.3f  1.00  0.00           C",
+            atom_num, res_num, x, y, z);
+        ofs << line << "\n";
+    }
+
+    // DNA chain B
+    const float turn_d = 36.0f * 3.14159265f / 180.0f;
+    const char* bases[] = {" DA", " DT", " DC", " DG"};
+    for (int r = 0; r < n_dna; ++r) {
+        ++atom_num; ++res_num;
+        float x = 4.5f * std::cos(r * turn_d) + 20.0f;
+        float y = 4.5f * std::sin(r * turn_d);
+        float z = r * 3.4f;
+        char line[82];
+        std::snprintf(line, sizeof(line),
+            "ATOM  %5d  C4' %3s B%4d    %8.3f%8.3f%8.3f  1.00  0.00           C",
+            atom_num, bases[r % 4], res_num, x, y, z);
+        ofs << line << "\n";
+    }
+
+    ofs << "END\n";
+    ofs.close();
+
+    return path;
+}
+
+TEST(NucleicAcidReader, ReadsDNAResidues) {
+    auto path = write_synthetic_dna_pdb("test_dna_20", 20);
+    auto structure = tencom_pdb::read_pdb_calpha(path);
+
+    EXPECT_EQ(structure.res_cnt, 20);
+    EXPECT_EQ(structure.n_dna, 20);
+    EXPECT_EQ(structure.n_protein, 0);
+    EXPECT_EQ(structure.n_rna, 0);
+
+    std::remove(path.c_str());
+}
+
+TEST(NucleicAcidReader, DNACompatibleWithENM) {
+    auto path = write_synthetic_dna_pdb("test_dna_enm", 30);
+    auto structure = tencom_pdb::read_pdb_calpha(path);
+
+    tencm::TorsionalENM enm;
+    enm.build(structure.atoms.data(), structure.residues.data(), structure.res_cnt);
+
+    EXPECT_TRUE(enm.is_built());
+    EXPECT_EQ(enm.n_residues(), 30);
+    EXPECT_GT(enm.modes().size(), 0u);
+
+    std::remove(path.c_str());
+}
+
+TEST(NucleicAcidReader, MixedProteinDNA) {
+    auto path = write_mixed_pdb("test_mixed", 20, 15);
+    auto structure = tencom_pdb::read_pdb_calpha(path);
+
+    EXPECT_EQ(structure.res_cnt, 35);
+    EXPECT_EQ(structure.n_protein, 20);
+    EXPECT_EQ(structure.n_dna, 15);
+
+    // Should build ENM across the whole complex
+    tencm::TorsionalENM enm;
+    enm.build(structure.atoms.data(), structure.residues.data(), structure.res_cnt);
+    EXPECT_TRUE(enm.is_built());
+    EXPECT_EQ(enm.n_residues(), 35);
+
+    std::remove(path.c_str());
+}
+
+TEST(NucleicAcidReader, ResidueTypeTracking) {
+    auto path = write_mixed_pdb("test_types", 10, 10);
+    auto structure = tencom_pdb::read_pdb_calpha(path);
+
+    // First 10 should be protein, next 10 DNA
+    for (int i = 1; i <= 10; ++i) {
+        EXPECT_EQ(structure.residue_types[i], tencom_pdb::ResidueType::PROTEIN);
+    }
+    for (int i = 11; i <= 20; ++i) {
+        EXPECT_EQ(structure.residue_types[i], tencom_pdb::ResidueType::DNA);
+    }
+
+    std::remove(path.c_str());
+}
+
+TEST(NucleicAcidReader, DNADifferentialWorks) {
+    auto path_ref = write_synthetic_dna_pdb("test_dna_diff_ref", 25);
+    auto path_tgt = write_synthetic_dna_pdb("test_dna_diff_tgt", 25);
+
+    auto s_ref = tencom_pdb::read_pdb_calpha(path_ref);
+    auto s_tgt = tencom_pdb::read_pdb_calpha(path_tgt);
+
+    tencm::TorsionalENM enm_ref, enm_tgt;
+    enm_ref.build(s_ref.atoms.data(), s_ref.residues.data(), s_ref.res_cnt);
+    enm_tgt.build(s_tgt.atoms.data(), s_tgt.residues.data(), s_tgt.res_cnt);
+
+    auto diff = tencom_diff::compute_differential(enm_ref, enm_tgt, "dna_ref", "dna_tgt");
+
+    // Identical structures: delta should be zero
+    EXPECT_NEAR(diff.delta_S_vib, 0.0, 1e-10);
+
+    std::remove(path_ref.c_str());
+    std::remove(path_tgt.c_str());
+}
+
+TEST(NucleicAcidReader, ClassifiesResidueTypes) {
+    EXPECT_EQ(tencom_pdb::classify_residue("ALA"), tencom_pdb::ResidueType::PROTEIN);
+    EXPECT_EQ(tencom_pdb::classify_residue("GLY"), tencom_pdb::ResidueType::PROTEIN);
+    EXPECT_EQ(tencom_pdb::classify_residue(" DA"), tencom_pdb::ResidueType::DNA);
+    EXPECT_EQ(tencom_pdb::classify_residue(" DT"), tencom_pdb::ResidueType::DNA);
+    EXPECT_EQ(tencom_pdb::classify_residue("  A"), tencom_pdb::ResidueType::RNA);
+    EXPECT_EQ(tencom_pdb::classify_residue("  U"), tencom_pdb::ResidueType::RNA);
+    EXPECT_EQ(tencom_pdb::classify_residue("HOH"), tencom_pdb::ResidueType::UNKNOWN);
+    EXPECT_EQ(tencom_pdb::classify_residue("ZZZ"), tencom_pdb::ResidueType::UNKNOWN);
+}
+
 // ─── Vibrational Entropy Tests ──────────────────────────────────────────────
 
 TEST(VibrationalEntropy, ReferenceEntropyPositive) {

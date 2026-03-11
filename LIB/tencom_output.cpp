@@ -101,7 +101,16 @@ void FlexPopulation::write_mode_pdb(const FlexMode& mode,
         ofs << "\n";
     }
 
-    // ── ATOM records (Cα only) ──────────────────────────────────────────────
+    // ── Composition summary ────────────────────────────────────────────────
+    if (structure.n_protein > 0 || structure.n_dna > 0 || structure.n_rna > 0) {
+        ofs << "REMARK Composition:";
+        if (structure.n_protein > 0) ofs << " protein=" << structure.n_protein;
+        if (structure.n_dna > 0)     ofs << " DNA=" << structure.n_dna;
+        if (structure.n_rna > 0)     ofs << " RNA=" << structure.n_rna;
+        ofs << "\n";
+    }
+
+    // ── ATOM records (backbone representatives) ─────────────────────────────
     for (int ai = 1; ai <= structure.res_cnt; ++ai) {
         const atom& a = structure.atoms[ai];
         const resid& r = structure.residues[ai];
@@ -112,10 +121,20 @@ void FlexPopulation::write_mode_pdb(const FlexMode& mode,
             bf = mode.bfactors[ai - 1];
         }
 
+        // Use correct atom name based on residue type
+        const char* atom_label = " CA ";
+        if (ai < static_cast<int>(structure.residue_types.size())) {
+            auto rt = structure.residue_types[ai];
+            if (rt == tencom_pdb::ResidueType::DNA ||
+                rt == tencom_pdb::ResidueType::RNA) {
+                atom_label = " C4'";
+            }
+        }
+
         char line[128];
         std::snprintf(line, sizeof(line),
-            "ATOM  %5d  CA  %3s %c%4d    %8.3f%8.3f%8.3f%6.2f%6.2f           C",
-            ai, r.name, r.chn, r.number,
+            "ATOM  %5d %4s %3s %c%4d    %8.3f%8.3f%8.3f%6.2f%6.2f           C",
+            ai, atom_label, r.name, r.chn, r.number,
             a.coor[0], a.coor[1], a.coor[2],
             1.00f, bf);
         ofs << line << "\n";

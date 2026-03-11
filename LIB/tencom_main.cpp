@@ -118,7 +118,7 @@ int main(int argc, char* argv[]) {
         std::cerr << "Error reading reference PDB: " << e.what() << "\n";
         return 1;
     }
-    std::cout << "  " << ref_struct.res_cnt << " residues (Calpha atoms)\n";
+    std::cout << "  " << ref_struct.res_cnt << " residues (backbone atoms)\n";
 
     // ── Step 2: Build reference TorsionalENM ────────────────────────────────
     std::cout << "Building reference TorsionalENM...\n";
@@ -169,7 +169,7 @@ int main(int argc, char* argv[]) {
             std::cerr << "  Error reading target PDB: " << e.what() << " — skipping.\n";
             continue;
         }
-        std::cout << "  " << tgt_struct.res_cnt << " residues (Calpha atoms)\n";
+        std::cout << "  " << tgt_struct.res_cnt << " residues (backbone atoms)\n";
 
         // Build target TorsionalENM
         tencm::TorsionalENM tgt_enm;

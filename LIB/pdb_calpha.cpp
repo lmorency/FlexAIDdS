@@ -1,4 +1,7 @@
-// pdb_calpha.cpp — Lightweight PDB Cα reader implementation
+// pdb_calpha.cpp — Lightweight PDB backbone reader implementation
+//
+// Extracts backbone representative atoms from proteins (Cα) and
+// nucleic acids (C4') for use with TorsionalENM.
 
 #include "pdb_calpha.h"
 
@@ -13,7 +16,6 @@ namespace tencom_pdb {
 // ─── CalphaStructure memory management ──────────────────────────────────────
 
 void CalphaStructure::free_residue_memory() {
-    // Free fatm/latm for all 1-based residues
     for (int i = 1; i <= res_cnt; ++i) {
         if (residues[i].fatm) { delete[] residues[i].fatm; residues[i].fatm = nullptr; }
         if (residues[i].latm) { delete[] residues[i].latm; residues[i].latm = nullptr; }
@@ -29,20 +31,43 @@ CalphaStructure::CalphaStructure(CalphaStructure&& o) noexcept
     , residues(std::move(o.residues))
     , res_cnt(o.res_cnt)
     , filename(std::move(o.filename))
+    , residue_types(std::move(o.residue_types))
+    , n_protein(o.n_protein)
+    , n_dna(o.n_dna)
+    , n_rna(o.n_rna)
 {
-    o.res_cnt = 0;  // prevent double-free
+    o.res_cnt = 0;
 }
 
 CalphaStructure& CalphaStructure::operator=(CalphaStructure&& o) noexcept {
     if (this != &o) {
         free_residue_memory();
-        atoms    = std::move(o.atoms);
-        residues = std::move(o.residues);
-        res_cnt  = o.res_cnt;
-        filename = std::move(o.filename);
+        atoms         = std::move(o.atoms);
+        residues      = std::move(o.residues);
+        res_cnt       = o.res_cnt;
+        filename      = std::move(o.filename);
+        residue_types = std::move(o.residue_types);
+        n_protein     = o.n_protein;
+        n_dna         = o.n_dna;
+        n_rna         = o.n_rna;
         o.res_cnt = 0;
     }
     return *this;
+}
+
+// ─── Helper: check if atom name matches a backbone representative ───────────
+
+// For proteins: " CA " or "CA  "
+static bool is_ca_atom(const char* nm) {
+    return (nm[0]==' ' && nm[1]=='C' && nm[2]=='A' && nm[3]==' ') ||
+           (nm[0]=='C' && nm[1]=='A' && nm[2]==' ' && nm[3]==' ');
+}
+
+// For DNA/RNA: " C4'" or "C4' " — the sugar ring C4' atom
+// This is the standard backbone representative for nucleic acid ENMs.
+static bool is_c4prime_atom(const char* nm) {
+    return (nm[0]==' ' && nm[1]=='C' && nm[2]=='4' && nm[3]=='\'') ||
+           (nm[0]=='C' && nm[1]=='4' && nm[2]=='\'' && nm[3]==' ');
 }
 
 // ─── PDB parser ─────────────────────────────────────────────────────────────
@@ -53,82 +78,92 @@ CalphaStructure read_pdb_calpha(const std::string& pdb_path) {
         throw std::runtime_error("Cannot open PDB file: " + pdb_path);
     }
 
-    // Temporary storage: residue key → (residue info, CA atom)
+    // Temporary storage per residue
     struct ResEntry {
-        char   res_name[4];
-        char   chain;
-        int    res_number;
-        float  ca_x, ca_y, ca_z;
-        bool   has_ca = false;
+        char        res_name[4];
+        char        chain;
+        int         res_number;
+        float       bb_x, bb_y, bb_z;  // backbone representative coordinates
+        bool        has_backbone = false;
+        ResidueType type = ResidueType::UNKNOWN;
     };
 
-    // Use insertion order via vector + map for dedup
     std::vector<ResEntry> res_entries;
-    std::map<std::string, int> res_key_map;  // key → index in res_entries
+    std::map<std::string, int> res_key_map;
 
     std::string line;
     while (std::getline(ifs, line)) {
-        // Only process ATOM records
         if (line.size() < 54) continue;
-        if (line.substr(0, 6) != "ATOM  ") continue;
+        // Accept both ATOM and HETATM (some modified nucleotides are HETATM)
+        bool is_atom   = (line.substr(0, 6) == "ATOM  ");
+        bool is_hetatm = (line.substr(0, 6) == "HETATM");
+        if (!is_atom && !is_hetatm) continue;
 
-        // Extract atom name (columns 13-16, 0-indexed 12-15)
+        // Atom name (columns 13-16, 0-indexed 12-15)
         char atom_name[5] = {};
         std::strncpy(atom_name, line.c_str() + 12, 4);
         atom_name[4] = '\0';
 
-        // Only keep CA atoms
-        bool is_ca = (atom_name[0]==' ' && atom_name[1]=='C' && atom_name[2]=='A' && atom_name[3]==' ') ||
-                     (atom_name[0]=='C' && atom_name[1]=='A' && atom_name[2]==' ' && atom_name[3]==' ');
-        if (!is_ca) continue;
-
-        // Alternate location indicator (column 17, 0-indexed 16)
+        // Alternate location indicator (column 17)
         char altloc = (line.size() > 16) ? line[16] : ' ';
-        if (altloc != ' ' && altloc != 'A') continue;  // take first altLoc only
+        if (altloc != ' ' && altloc != 'A') continue;
 
-        // Residue name (columns 18-20, 0-indexed 17-19)
+        // Residue name (columns 18-20)
         char res_name[4] = {};
         std::strncpy(res_name, line.c_str() + 17, 3);
         res_name[3] = '\0';
 
-        if (!is_standard_amino_acid(res_name)) continue;
+        // Classify residue
+        ResidueType rtype = classify_residue(res_name);
+        if (rtype == ResidueType::UNKNOWN) continue;
 
-        // Chain (column 22, 0-indexed 21)
+        // Check if this atom is the backbone representative for its residue type
+        bool is_backbone_rep = false;
+        if (rtype == ResidueType::PROTEIN) {
+            is_backbone_rep = is_ca_atom(atom_name);
+        } else {
+            // DNA or RNA: use C4' as backbone representative
+            is_backbone_rep = is_c4prime_atom(atom_name);
+        }
+        if (!is_backbone_rep) continue;
+
+        // Chain (column 22)
         char chain = line[21];
 
-        // Residue number (columns 23-26, 0-indexed 22-25)
+        // Residue number (columns 23-26)
         int res_number = std::atoi(line.substr(22, 4).c_str());
 
-        // Insertion code (column 27, 0-indexed 26)
+        // Insertion code (column 27)
         char ins = (line.size() > 26) ? line[26] : ' ';
 
-        // Coordinates (columns 31-54, 0-indexed 30-53)
+        // Coordinates (columns 31-54)
         float x = static_cast<float>(std::atof(line.substr(30, 8).c_str()));
         float y = static_cast<float>(std::atof(line.substr(38, 8).c_str()));
         float z = static_cast<float>(std::atof(line.substr(46, 8).c_str()));
 
-        // Build unique key: chain + resnum + insertion
+        // Unique key: chain + resnum + insertion
         std::string key = std::string(1, chain) + std::to_string(res_number) + ins;
 
         auto it = res_key_map.find(key);
         if (it == res_key_map.end()) {
-            // New residue
             ResEntry entry{};
             std::strncpy(entry.res_name, res_name, 3);
             entry.chain = chain;
             entry.res_number = res_number;
-            entry.ca_x = x;
-            entry.ca_y = y;
-            entry.ca_z = z;
-            entry.has_ca = true;
+            entry.bb_x = x;
+            entry.bb_y = y;
+            entry.bb_z = z;
+            entry.has_backbone = true;
+            entry.type = rtype;
             res_key_map[key] = static_cast<int>(res_entries.size());
             res_entries.push_back(entry);
         }
-        // If duplicate, skip (first altLoc wins)
     }
 
     if (res_entries.empty()) {
-        throw std::runtime_error("No Cα atoms found in PDB file: " + pdb_path);
+        throw std::runtime_error(
+            "No backbone atoms found in PDB file: " + pdb_path +
+            "\n  (looked for protein Cα and nucleic acid C4' atoms)");
     }
 
     // Build CalphaStructure with 1-based indexing
@@ -139,6 +174,7 @@ CalphaStructure read_pdb_calpha(const std::string& pdb_path) {
     // Allocate: index 0 is placeholder
     result.atoms.resize(result.res_cnt + 1);
     result.residues.resize(result.res_cnt + 1);
+    result.residue_types.resize(result.res_cnt + 1, ResidueType::UNKNOWN);
 
     // Zero-init placeholder at index 0
     std::memset(&result.atoms[0], 0, sizeof(atom));
@@ -158,23 +194,33 @@ CalphaStructure read_pdb_calpha(const std::string& pdb_path) {
 
     for (int i = 0; i < result.res_cnt; ++i) {
         const auto& entry = res_entries[i];
-        int ri = i + 1;  // 1-based residue index
-        int ai = i + 1;  // 1-based atom index (one CA per residue)
+        int ri = i + 1;
+        int ai = i + 1;
+
+        // Track residue type
+        result.residue_types[ri] = entry.type;
+        switch (entry.type) {
+            case ResidueType::PROTEIN: ++result.n_protein; break;
+            case ResidueType::DNA:     ++result.n_dna;     break;
+            case ResidueType::RNA:     ++result.n_rna;     break;
+            default: break;
+        }
 
         // Populate atom
         atom& a = result.atoms[ai];
         std::memset(&a, 0, sizeof(atom));
-        a.coor[0] = entry.ca_x;
-        a.coor[1] = entry.ca_y;
-        a.coor[2] = entry.ca_z;
-        a.coor_ori[0] = entry.ca_x;
-        a.coor_ori[1] = entry.ca_y;
-        a.coor_ori[2] = entry.ca_z;
+        a.coor[0] = entry.bb_x;
+        a.coor[1] = entry.bb_y;
+        a.coor[2] = entry.bb_z;
+        a.coor_ori[0] = entry.bb_x;
+        a.coor_ori[1] = entry.bb_y;
+        a.coor_ori[2] = entry.bb_z;
         a.coor_ref = nullptr;
         a.number = ai;
         a.ofres = ri;
         a.isbb = 1;
-        // Set atom name to " CA " (PDB convention)
+        // Store as " CA " so TorsionalENM::extract_ca() matches it.
+        // For nucleic acids this represents the C4' position.
         std::strncpy(a.name, " CA ", 4);
         a.name[4] = '\0';
         std::strncpy(a.element, "C", 2);
@@ -191,23 +237,34 @@ CalphaStructure read_pdb_calpha(const std::string& pdb_path) {
         r.name[3] = '\0';
         r.chn = entry.chain;
         r.number = entry.res_number;
-        r.type = 0;  // protein
+        r.type = 0;  // must be 0 for extract_ca() to accept it
         r.trot = 1;
         r.rot = 0;
 
-        // Allocate fatm/latm for rotamer 0
         r.fatm = new int[1];
         r.latm = new int[1];
-        r.fatm[0] = ai;  // first atom = this CA
-        r.latm[0] = ai;  // last atom = this CA (only one atom per residue)
+        r.fatm[0] = ai;
+        r.latm[0] = ai;
 
-        // Null out unused pointers
         r.bonded = nullptr;
         r.shortpath = nullptr;
         r.shortflex = nullptr;
         r.bond = nullptr;
         r.gpa = nullptr;
     }
+
+    // Print summary
+    bool has_types = result.n_protein > 0 || result.n_dna > 0 || result.n_rna > 0;
+    std::cout << "  Parsed " << result.res_cnt << " residues";
+    if (has_types) {
+        std::cout << " (";
+        bool first = true;
+        if (result.n_protein > 0) { std::cout << result.n_protein << " protein"; first = false; }
+        if (result.n_dna > 0)     { if (!first) std::cout << ", "; std::cout << result.n_dna << " DNA"; first = false; }
+        if (result.n_rna > 0)     { if (!first) std::cout << ", "; std::cout << result.n_rna << " RNA"; }
+        std::cout << ")";
+    }
+    std::cout << "\n";
 
     return result;
 }
