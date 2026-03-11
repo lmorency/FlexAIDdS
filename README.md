@@ -24,7 +24,10 @@
 - **FastOPTICS + Density Peak clustering** of docking poses
 - **Hardware acceleration** — CUDA, Metal (macOS), AVX-512, AVX2, OpenMP, Eigen3
 - **Ultra-fast HPC binaries** — LTO + `-march=native` for both FlexAIDdS and tENCoM
-- **Python package** (`flexaidds`) — result I/O, thermodynamics, ENCoM, docking API, PyMOL visualization
+- **Python package** (`flexaidds`) — result I/O, thermodynamics, ENCoM, docking API, CLI inspector, PyMOL visualization plugin
+- **Dead-end elimination (DEE)** — torsion pruning reduces ligand conformational search space
+- **Zero-copy batch scoring** — `VoronoiCFBatch` with `std::span` for OpenMP-parallel GA evaluation
+- **FreeNRG integration** — unified free energy framework bridging FlexAID∆S and NRGRank
 
 ## Repository Structure
 
@@ -180,6 +183,50 @@ delta_s = encom.compute_delta_s('apo.pdb', 'holo.pdb')
 ```
 
 **Available modules**: `docking`, `encom`, `io`, `models`, `results`, `thermodynamics`, `visualization`
+
+### Python CLI (Result Inspector)
+
+Inspect docking results from the command line without writing Python code:
+
+```bash
+# Human-readable summary table
+python -m flexaidds /path/to/results/
+
+# Show only the top 5 binding modes
+python -m flexaidds /path/to/results/ --top 5
+
+# Machine-readable JSON output
+python -m flexaidds /path/to/results/ --json
+
+# Export binding modes to CSV
+python -m flexaidds /path/to/results/ --csv results.csv
+```
+
+Output includes mode ID, rank, number of poses, free energy, enthalpy, entropy, and best CF score for each binding mode.
+
+### PyMOL Plugin
+
+A full visualization plugin for PyMOL with GUI panel and 8 registered commands:
+
+**Installation**:
+1. PyMOL > Plugin Manager > Install New Plugin
+2. Select the `pymol_plugin/` directory
+3. Restart PyMOL — access via Plugin > FlexAID∆S
+
+**Commands** (usable from PyMOL command line):
+
+| Command | Description |
+|:--------|:------------|
+| `flexaids_load <dir> [temp]` | Load docking results from output directory |
+| `flexaids_show_ensemble <mode>` | Display all poses in a binding mode |
+| `flexaids_color_boltzmann <mode>` | Color poses by Boltzmann weight (blue=low, red=high) |
+| `flexaids_thermo <mode>` | Print thermodynamic properties (G, H, S, Cv) |
+| `flexaids_load_results <dir>` | Load results via flexaidds API adapter |
+| `flexaids_show_mode <mode>` | Show a single binding mode cluster |
+| `flexaids_color_mode <mode>` | Color mode poses by score |
+| `flexaids_mode_details <mode>` | Print detailed mode statistics |
+
+The plugin requires the `flexaidds` Python package (`pip install -e python/`).
 
 ## Testing
 
@@ -393,11 +440,59 @@ All parameters have built-in defaults. Override files use a simple format: one p
 
 ---
 
+## JSON Config Reference
+
+All keys are optional — defaults enable full flexibility at 300 K. See `LIB/config_defaults.h` for the source of truth.
+
+| Section | Key | Default | Description |
+|:--------|:----|:--------|:------------|
+| `scoring` | `function` | `"VCT"` | Scoring function (`VCT` = Voronoi, `SPH` = sphere) |
+| `scoring` | `self_consistency` | `"MAX"` | A→B / B→A contact handling |
+| `scoring` | `solvent_penalty` | `0.0` | Solvent exposure penalty |
+| `optimization` | `translation_step` | `0.25` | Translation delta (A) |
+| `optimization` | `angle_step` | `5.0` | Bond angle delta (deg) |
+| `optimization` | `dihedral_step` | `5.0` | Dihedral delta (deg) |
+| `optimization` | `flexible_step` | `10.0` | Sidechain flex delta (deg) |
+| `optimization` | `grid_spacing` | `0.375` | Binding site grid spacer |
+| `flexibility` | `ligand_torsions` | `true` | Enable DEE ligand torsion sampling |
+| `flexibility` | `intramolecular` | `true` | Intramolecular energy scoring |
+| `flexibility` | `intramolecular_fraction` | `1.0` | Weight of intramolecular term |
+| `flexibility` | `permeability` | `1.0` | Global VDW permeability |
+| `flexibility` | `rotamer_permeability` | `0.8` | Rotamer acceptance permeability |
+| `flexibility` | `ring_conformers` | `true` | LigandRingFlex conformer sampling |
+| `flexibility` | `chirality` | `true` | ChiralCenter R/S discrimination |
+| `flexibility` | `dee_clash` | `0.5` | DEE clash threshold |
+| `thermodynamics` | `temperature` | `300` | Temperature in K (0 = entropy off) |
+| `thermodynamics` | `clustering_algorithm` | `"CF"` | `CF`, `DP`, or `FO` |
+| `thermodynamics` | `cluster_rmsd` | `2.0` | RMSD threshold for pose clustering |
+| `ga` | `num_chromosomes` | `1000` | Population size |
+| `ga` | `num_generations` | `500` | Number of GA generations |
+| `ga` | `crossover_rate` | `0.8` | Crossover probability |
+| `ga` | `mutation_rate` | `0.03` | Mutation probability |
+| `ga` | `fitness_model` | `"PSHARE"` | Fitness model |
+| `ga` | `reproduction_model` | `"BOOM"` | Reproduction strategy |
+| `ga` | `seed` | `0` | RNG seed (0 = time-based) |
+| `output` | `max_results` | `10` | Max result clusters |
+| `output` | `htp_mode` | `false` | High-throughput (minimal output files) |
+| `protein` | `remove_water` | `true` | Remove HOH molecules |
+| `protein` | `omit_buried` | `false` | Skip buried atoms in Vcontacts |
+
+| `advanced` | `vcontacts_index` | `false` | Enable Voronoi contact index caching |
+| `advanced` | `supernode` | `false` | Supernode mode for normal mode analysis |
+| `advanced` | `force_interaction` | `false` | Enable forced interaction penalty |
+| `advanced` | `interaction_factor` | `5.0` | Interaction penalty scaling factor |
+
+The `--rigid` flag overrides flexibility to all-off and temperature to 0.
+
+---
+
 ## Modules
 
 ### Torsional ENCoM (TENCM)
 
 Implements the torsional elastic network contact model (Delarue & Sanejouand 2002; Yang, Song & Cui 2009) for protein backbone flexibility. Builds a spring network over C-alpha contacts within a cutoff radius, computes torsional normal modes via Jacobi diagonalisation, and samples Boltzmann-weighted backbone perturbations during the GA without rebuilding the rotamer library every generation.
+
+Supports both protein (C-alpha) and nucleic acid (C4' backbone) chains for RNA/DNA flexibility.
 
 ### Statistical Mechanics Engine
 
@@ -447,6 +542,56 @@ Density-based hierarchical clustering of docking poses using the FastOPTICS algo
 - **RibosomeElongation**: Zhao 2011 master equation for codon-dependent ribosome speed (E. coli K-12 and Human HEK293). Identifies pause sites as co-translational folding windows. Also supports nucleotide-by-nucleotide RNA polymerase synthesis.
 - **TransloconInsertion**: Sec61 translocon lateral gating model (Hessa 2007). Computes per-window delta-G of TM helix insertion using the Hessa scale with Wimley-White position-weighted helix-dipole correction. Hardware-accelerated via AVX-512/AVX2/Eigen.
 - **DualAssemblyEngine**: Grows the receptor chain residue-by-residue at ribosome speed while computing incremental CF and Shannon entropy at each growth step to capture co-translational stereochemical selection.
+
+### VoronoiCFBatch
+
+Zero-copy `std::span`-based batch evaluation interface for the GA inner loop. Scores entire chromosome populations in parallel via OpenMP without redundant atom buffer copies. Includes a built-in `benchmark()` method for wall-clock comparison of serial vs parallel throughput.
+
+### Dead-End Elimination (DEE)
+
+Torsion pruning for ligand flexibility. The DEE tree (`DEELig_Node`) eliminates rotamer combinations that provably cannot be part of the global minimum, reducing the conformational search space before GA evaluation. Controlled via `flexibility.ligand_torsions` (enabled by default) with a clash threshold of `dee_clash: 0.5`.
+
+### Scoring Functions: VCT vs SPH
+
+Two complementarity functions are available:
+
+- **VCT** (Voronoi Contact Function) — computes atom-atom contact surfaces via Voronoi tessellation. Higher accuracy, accounts for shape complementarity and burial. Default in JSON mode.
+- **SPH** (Sphere Function) — samples contacts using a 610-point unit sphere approximation. Faster but less precise. Default in legacy `.inp` mode.
+
+Select via `scoring.function` in JSON config or `COMPLF` in legacy mode.
+
+### GPU Acceleration
+
+Hardware-accelerated evaluation for compute-intensive operations:
+
+- **CUDA** (`FLEXAIDS_USE_CUDA=ON`): Batch CF evaluation (`cuda_eval.cu`) and Shannon entropy histogram computation (`shannon_cuda.cu`). Pre-configured for architectures: sm_70, sm_75, sm_80, sm_86, sm_89, sm_90 (Volta through Hopper).
+- **Metal** (`FLEXAIDS_USE_METAL=ON`, macOS only): Shannon entropy histograms (`ShannonMetalBridge.mm`), cavity detection (`CavityDetectMetalBridge.mm`), and general evaluation (`metal_eval.mm`). Objective-C++ bridge with automatic CPU fallback.
+- **SIMD** (`simd_distance.h`): AVX2-vectorised geometric primitives — batch distance, cross product, dot product, normalization. Used by tENCoM and cavity detection for inner-loop performance.
+
+---
+
+## FreeNRG Integration
+
+The [FreeNRG](https://github.com/lmorency/FreeNRG) Python package bridges FlexAID∆S with NRGRank virtual screening in a unified free energy framework:
+
+```bash
+pip install freenrg
+```
+
+```python
+from freenrg.pipeline import FreeNRGPipeline, FreeNRGConfig, DockingMode
+
+config = FreeNRGConfig(
+    mode=DockingMode.FLEXAID,
+    flexaid_binary="/path/to/FlexAID",
+    receptor_pdb="receptor.pdb",
+    ligand_inp="ligand.inp",
+    binding_site="cleft.pdb",
+)
+result = FreeNRGPipeline().run(config)
+```
+
+Provides Python ports of StatMechEngine, ShannonThermoStack, TorsionalENM, and CFScorer. See [FREENRG_INTEGRATION.md](FREENRG_INTEGRATION.md) for details.
 
 ---
 
