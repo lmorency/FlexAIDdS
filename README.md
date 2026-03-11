@@ -58,7 +58,7 @@ FlexAIDdS/
 ### Requirements
 
 - **Required**: C++20 compiler (GCC >= 10, Clang >= 10, MSVC), CMake >= 3.18
-- **Optional**: Boost, Eigen3 (`libeigen3-dev`), OpenMP, CUDA Toolkit, Metal framework (macOS), pybind11
+- **Optional**: Eigen3 (`libeigen3-dev`), OpenMP, CUDA Toolkit, Metal framework (macOS), pybind11
 
 ### Build Commands
 
@@ -69,8 +69,6 @@ mkdir build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release
 cmake --build . --target FlexAID -j $(nproc)
 ```
-
-On macOS, install Boost via Homebrew (`brew install boost`). On Windows, download Boost binaries and pass `-DBoost_DIR=<path>` to CMake if not auto-detected.
 
 ### With Tests
 
@@ -105,20 +103,17 @@ cmake --build . -j $(nproc)
 
 ### Docking
 
-All docking and GA parameters have built-in defaults. You only need to provide an override file to change specific values from their presets.
-
 ```bash
-# Minimal — uses all defaults, receptor and ligand specified in override file
-./FlexAID overrides.inp
-
-# With GA overrides
-./FlexAID overrides.inp ga_overrides.inp
-
-# With explicit output path
-./FlexAID overrides.inp ga_overrides.inp output.pdb
+./FlexAID config.inp ga.inp output_prefix
 ```
 
-An override file only needs the parameters you want to change. For example, to dock a receptor with a ligand using Voronoi scoring at 300 K:
+| Argument        | Description                                              |
+|:----------------|:---------------------------------------------------------|
+| `config.inp`    | Docking configuration (receptor, ligand, scoring, etc.)  |
+| `ga.inp`        | Genetic algorithm parameters                             |
+| `output_prefix` | Base path for result files (`.cad`, `_0.pdb`, `_1.pdb`) |
+
+All docking and GA parameters have built-in defaults. Your config files only need to specify values you want to change from their presets. For example, a minimal `config.inp` for Voronoi scoring at 300 K:
 
 ```ini
 PDBNAM receptor.pdb
@@ -127,7 +122,7 @@ COMPLF VCT
 TEMPER 300
 ```
 
-Everything else (grid spacing, clustering threshold, optimization steps, etc.) uses sensible defaults automatically.
+Everything else (grid spacing, clustering threshold, optimization steps, etc.) uses sensible defaults automatically. See [Configuration Reference](#configuration-reference) for all parameters and their defaults.
 
 ### Vibrational Entropy (tENCoM)
 
