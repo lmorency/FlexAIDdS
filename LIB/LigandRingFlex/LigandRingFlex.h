@@ -10,11 +10,7 @@
 #include <vector>
 #include <cstdint>
 
-// Forward declarations (must match typedefs in flexaid.h)
-struct atom_struct;
-typedef atom_struct atom;
-struct FA_Global_struct;
-typedef FA_Global_struct FA_Global;
+// flexaid.h is already included via RingConformerLibrary.h
 
 namespace ligand_ring_flex {
 

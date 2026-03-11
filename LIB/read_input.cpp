@@ -1,7 +1,9 @@
 #include "flexaid.h"
 #include "fileio.h"
+#include "CavityDetect/CavityDetect.h"
+#include "CleftDetector.h"
 
-/***************************************************************************** 
+/*****************************************************************************
  * SUBROUTINE read_input reads input file.
  *****************************************************************************/
 void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpoint** cleftgrid,char* input_file){
@@ -433,14 +435,84 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 		calc_cleftic(FA,*cleftgrid);
         
 	}else if(!strcmp(rngopt,"LOCCLF")){
-        
+
 		//RNGOPT LOCCLF filename.pdb
 		strcpy(FA->rngopt,"locclf");
 		strcpy(clf_file,&rngoptline[14]);
-        
+
 		printf("read binding-site grid <%s>\n",clf_file);
 		spheres = read_spheres(clf_file);
-        
+
+		(*cleftgrid) = generate_grid(FA,spheres,(*atoms),(*residue));
+		calc_cleftic(FA,*cleftgrid);
+
+	}else if(!strcmp(rngopt,"LOCCDT")){
+
+		// RNGOPT LOCCDT [cleft_id] [min_radius] [max_radius]
+		// Use native CavityDetector (SURFNET + AVX-512/OpenMP/Metal) to
+		// locate the largest binding cleft automatically.
+		// Optional args: cleft_id (default 1), probe radii (default 1.4–4.0 Å).
+		strcpy(FA->rngopt,"loccdt");
+
+		int   cdt_cleft_id  = 1;
+		float cdt_min_r     = 1.4f;
+		float cdt_max_r     = 4.0f;
+		sscanf(rngoptline,"%*s %d %f %f", &cdt_cleft_id, &cdt_min_r, &cdt_max_r);
+		if(cdt_cleft_id < 1) cdt_cleft_id = 1;
+
+		printf("LOCCDT: running native CavityDetector (cleft %d, probe %.2f–%.2f Å)\n",
+		       cdt_cleft_id, cdt_min_r, cdt_max_r);
+
+		{
+			cavity_detect::CavityDetector detector;
+			detector.load_from_fa(*atoms, *residue, FA->res_cnt);
+			detector.detect(cdt_min_r, cdt_max_r);
+
+			if(detector.clefts().empty()){
+				fprintf(stderr,"ERROR: LOCCDT found no clefts — "
+				        "check probe radii or fall back to LOCCLF/LOCCEN\n");
+				Terminate(2);
+			}
+
+			// Write the detected cleft as a CLF sphere PDB for inspection
+			detector.write_sphere_pdb("loccdt_cleft.pdb", cdt_cleft_id);
+			const auto& cleft_list = detector.clefts();
+			size_t cdt_idx = static_cast<size_t>(cdt_cleft_id - 1);
+			printf("LOCCDT: cleft %d detected (%zu spheres) — "
+			       "written to loccdt_cleft.pdb\n",
+			       cdt_cleft_id,
+			       cdt_idx < cleft_list.size() ? cleft_list[cdt_idx].spheres.size() : 0u);
+
+			spheres = detector.to_flexaid_spheres(cdt_cleft_id);
+		}
+
+		if(!spheres){
+			fprintf(stderr,"ERROR: LOCCDT cleft %d not found\n", cdt_cleft_id);
+			Terminate(2);
+		}
+
+	}else if(!strncmp(rngopt,"AUTO  ",4)){
+
+		// RNGOPT AUTO — automatic cleft detection (SURFNET gap-sphere)
+		strcpy(FA->rngopt,"locclf");
+		printf("AUTO binding-site detection (CleftDetector) ...\n");
+
+		spheres = detect_cleft(*atoms, *residue, FA->atm_cnt_real, FA->res_cnt);
+		if(spheres == NULL){
+			fprintf(stderr,"ERROR: AUTO cleft detection found no cavities.\n");
+			Terminate(2);
+		}
+
+		// Optionally write detected spheres for inspection
+		char auto_sph[MAX_PATH__];
+		strcpy(auto_sph, FA->temp_path);
+#ifdef _WIN32
+		strcat(auto_sph, "\\auto_cleft.sph");
+#else
+		strcat(auto_sph, "/auto_cleft.sph");
+#endif
+		write_cleft_spheres(spheres, auto_sph);
+
 		(*cleftgrid) = generate_grid(FA,spheres,(*atoms),(*residue));
 		calc_cleftic(FA,*cleftgrid);
 	}

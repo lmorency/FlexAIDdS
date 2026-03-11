@@ -249,6 +249,9 @@ target_sources(FlexAID PRIVATE
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
         LIB/ChiralCenter/ChiralCenterGene.cpp
+        # ── CleftDetector + Mol2Reader ──
+        LIB/CleftDetector.cpp
+        LIB/Mol2Reader.cpp
         # ── CavityDetect: native SURFNET cavity detection ──
         LIB/CavityDetect/CavityDetect.cpp
 )
@@ -296,10 +299,13 @@ if(FLEXAIDS_USE_CUDA)
         LIB/ShannonThermoStack/shannon_cuda.cu    # Shannon entropy histogram kernel
     )
     target_compile_definitions(FlexAID PRIVATE FLEXAIDS_USE_CUDA)
+    if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+        set(CMAKE_CUDA_ARCHITECTURES "70;75;80;86;89;90")
+    endif()
     set_target_properties(FlexAID PROPERTIES
         CUDA_SEPARABLE_COMPILATION ON
         CUDA_STANDARD 17)
-    target_link_libraries(FlexAID PRIVATE CUDA::cudart)
+    target_link_libraries(FlexAID PRIVATE CUDA::cudart CUDA::cudadevrt)
     message(STATUS "CUDA enabled — CF batch kernel + Shannon histogram kernel")
 endif()
 
@@ -319,7 +325,7 @@ if(FLEXAIDS_USE_METAL)
     )
     # Shannon Metal GPU bridge (Apple Silicon Shannon entropy histogram)
     target_sources(FlexAID PRIVATE LIB/ShannonThermoStack/ShannonMetalBridge.mm)
-    target_compile_definitions(FlexAID PRIVATE ENABLE_METAL_CORE)
+    target_compile_definitions(FlexAID PRIVATE FLEXAIDS_HAS_METAL_SHANNON)
     set_source_files_properties(LIB/ShannonThermoStack/ShannonMetalBridge.mm PROPERTIES
         LANGUAGE OBJCXX
         COMPILE_FLAGS "-std=c++20 -fno-objc-arc"
@@ -453,5 +459,24 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME StatMechTests COMMAND test_statmech)
 
-    message(STATUS "Unit tests enabled — build target: test_statmech")
+    # test_hardware_dispatch — ShannonThermoStack dispatch layer tests
+    add_executable(test_hardware_dispatch
+        tests/test_hardware_dispatch.cpp
+        LIB/ShannonThermoStack/ShannonThermoStack.cpp
+        LIB/statmech.cpp
+        LIB/tencm.cpp)
+    target_include_directories(test_hardware_dispatch PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ShannonThermoStack)
+    target_link_libraries(test_hardware_dispatch PRIVATE GTest::gtest GTest::gtest_main)
+    target_compile_options(test_hardware_dispatch PRIVATE -O2)
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(test_hardware_dispatch PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    if(FLEXAIDS_HAS_EIGEN)
+        target_link_libraries(test_hardware_dispatch PRIVATE Eigen3::Eigen)
+    endif()
+    add_test(NAME HardwareDispatchTests COMMAND test_hardware_dispatch)
+
+    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch")
 endif()

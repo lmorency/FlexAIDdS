@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include "flexaid.h"
 
 namespace ring_flex {
 
@@ -90,8 +91,12 @@ struct RingDescriptor {
 };
 
 // Detect all non-aromatic rings in the ligand atom array.
-// `n_atoms`: total atoms; `atoms_lig` points to the ligand subset.
+// `atom_indices`: ordered ligand atom indices into the global atoms[] array.
+// `n_atoms`: number of ligand atoms.
+// `atoms`: global atom array (needed to walk bond[0..bond[0]] adjacency).
+// Uses the global ::atom_struct (typedef'd as atom) from flexaid.h.
 std::vector<RingDescriptor> detect_non_aromatic_rings(
-    const int* atom_indices, int n_atoms);
+    const int* atom_indices, int n_atoms,
+    const ::atom* atoms);
 
 } // namespace ring_flex

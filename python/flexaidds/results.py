@@ -106,7 +106,7 @@ def _mode_metadata(poses: Sequence[PoseResult]) -> Dict[str, object]:
     return meta
 
 
-def _build_mode(mode_id: int, poses: Sequence[PoseResult]) -> BindingModeResult:
+def _build_mode(mode_id: int, poses: Sequence[PoseResult], rank: int = 1) -> BindingModeResult:
     """Construct a :class:`BindingModeResult` from a flat list of poses.
 
     Poses are sorted by ``(pose_rank, filename)`` and thermodynamic
@@ -115,6 +115,7 @@ def _build_mode(mode_id: int, poses: Sequence[PoseResult]) -> BindingModeResult:
     Args:
         mode_id: Numeric binding-mode identifier.
         poses: All :class:`~flexaidds.models.PoseResult` objects for this mode.
+        rank: Rank of this mode among all modes (1-based, where 1 = best).
 
     Returns:
         Fully assembled :class:`~flexaidds.models.BindingModeResult`.
@@ -129,7 +130,7 @@ def _build_mode(mode_id: int, poses: Sequence[PoseResult]) -> BindingModeResult:
 
     return BindingModeResult(
         mode_id=mode_id,
-        rank=mode_id,
+        rank=rank,
         poses=list(ordered),
         free_energy=_mode_metric(ordered, "free_energy"),
         enthalpy=_mode_metric(ordered, "enthalpy"),
@@ -183,12 +184,39 @@ def load_results(path: str | Path) -> DockingResult:
         pose = parse_pose_result(pose_file)
         grouped[pose.mode_id].append(pose)
 
-    modes = [_build_mode(mode_id, poses) for mode_id, poses in sorted(grouped.items())]
-    temperature = next((m.temperature for m in modes if m.temperature is not None), None)
+    # Build modes (initially with rank=1, will be corrected after sorting)
+    modes = [_build_mode(mode_id, poses, rank=1) for mode_id, poses in sorted(grouped.items())]
+
+    # Sort modes by free energy (best = lowest ΔG), fallback to alphabetical mode_id
+    modes_sorted = sorted(
+        modes,
+        key=lambda m: (m.free_energy is None, m.free_energy, m.mode_id)
+    )
+
+    # Assign correct ranks (1-based, 1 = best)
+    modes_with_ranks = [
+        BindingModeResult(
+            mode_id=m.mode_id,
+            rank=rank,
+            poses=m.poses,
+            free_energy=m.free_energy,
+            enthalpy=m.enthalpy,
+            entropy=m.entropy,
+            heat_capacity=m.heat_capacity,
+            std_energy=m.std_energy,
+            best_cf=m.best_cf,
+            frequency=m.frequency,
+            temperature=m.temperature,
+            metadata=m.metadata,
+        )
+        for rank, m in enumerate(modes_sorted, start=1)
+    ]
+
+    temperature = next((m.temperature for m in modes_with_ranks if m.temperature is not None), None)
 
     return DockingResult(
         source_dir=root,
-        binding_modes=modes,
+        binding_modes=modes_with_ranks,
         temperature=temperature,
         metadata={"n_pose_files": len(pose_files)},
     )

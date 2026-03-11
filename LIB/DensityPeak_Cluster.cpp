@@ -238,8 +238,8 @@ void DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome
 	pChrom = NULL;
 	nClusters = 0;
 	stddev = calculate_stddev(Chrom, num_chrom);
-	mean = calculate_mean(Chrom, num_chrom);
 	for(i = 1; i < num_chrom; ++i)
+	mean = calculate_mean(Chrom, num_chrom);
 	{
 		iChrom = &Chrom[i];
 		iiChrom = &Chrom[i-1];
@@ -535,7 +535,6 @@ void DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome
 
     printf("there is %d pairwise-chromosomes with similar (x < 0.0001) RMSD values.\n", k);
     
-	// Need to modify write_rrd.c OR  
 	if(FA->refstructure == 1) { write_DensityPeak_rrd(FA,GB,chrom,gene_lim,atoms,residue,cleftgrid,Chrom,Clust,RMSD,end_strfile); }
 
 	
