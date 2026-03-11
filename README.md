@@ -5,14 +5,12 @@
 [![Build](https://img.shields.io/badge/build-passing-brightgreen.svg)](#)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey.svg)](#)
 
-**FlexAID with Delta-S Entropy** — an entropy-driven molecular docking engine combining genetic algorithms with statistical mechanics thermodynamics. Targets real-world psychopharmacology and drug discovery applications.
-
 ## Features
 
 - **Genetic algorithm docking** with configurable population, crossover, mutation, and selection
 - **Voronoi contact function (CF)** for shape complementarity scoring
-- **Statistical mechanics engine** — partition function, free energy, heat capacity, conformational entropy
 - **Torsional ENCoM (TENCM)** backbone flexibility without full rotamer rebuilds
+- **Statistical mechanics engine** — partition function, free energy, heat capacity, conformational entropy
 - **Shannon entropy + torsional vibrational entropy stack** for thermodynamic scoring
 - **Ligand ring flexibility** — non-aromatic ring conformer sampling and sugar pucker
 - **Chiral center sampling** — explicit R/S stereocenter discrimination in the GA
@@ -20,50 +18,10 @@
 - **FastOPTICS** density-based clustering of docking poses
 - **Hardware acceleration** — CUDA, Metal (macOS), AVX-512, AVX2, OpenMP, Eigen3
 
-## Repository Structure
-
-```
-FlexAIDdS/
-├── LIB/                    # Core C++ library (~100+ files)
-│   ├── flexaid.h            # Main header: constants, data structures
-│   ├── gaboom.cpp/h         # Genetic algorithm (GA) engine
-│   ├── Vcontacts.cpp/h      # Voronoi contact function scoring
-│   ├── statmech.cpp/h       # StatMechEngine: partition function, free energy, entropy
-│   ├── BindingMode.cpp/h    # Pose clustering & thermodynamic integration
-│   ├── encom.cpp/h          # Elastic network contact model (vibrational entropy)
-│   ├── tencm.cpp/h          # Torsional ENCoM backbone flexibility
-│   ├── ShannonThermoStack/  # Shannon configurational entropy + HW acceleration
-│   ├── LigandRingFlex/      # Non-aromatic ring & sugar pucker sampling
-│   ├── ChiralCenter/        # R/S stereocenter discrimination
-│   ├── NATURaL/             # Co-translational assembly module
-│   └── CavityDetect/        # SURFNET cavity detection (Metal GPU support)
-├── src/                    # Entry point (gaboom.cpp)
-├── tests/                  # C++ unit tests (GoogleTest)
-├── python/                 # Python package & bindings
-│   ├── flexaidds/           # Python package (API, models, CLI)
-│   ├── bindings/            # pybind11 C++ bridge
-│   ├── tests/               # Pytest test suite
-│   ├── setup.py             # setuptools config
-│   └── pyproject.toml       # Python project metadata
-├── docs/                   # Documentation (architecture, implementation, licensing)
-├── cmake/                  # CMake helpers
-├── .github/workflows/      # CI/CD (GitHub Actions)
-├── CMakeLists.txt          # Primary build configuration
-├── WRK/                    # Working directory for builds
-└── BIN/                    # Binary output directory
-```
-
 ## Build
 
-### Requirements
-
-- **Required**: C++20 compiler (GCC >= 10, Clang >= 10, MSVC), CMake >= 3.18
-- **Optional**: Boost, Eigen3 (`libeigen3-dev`), OpenMP, CUDA Toolkit, Metal framework (macOS), pybind11
-
-### Build Commands
-
 ```bash
-git clone https://github.com/lmorency/FlexAIDdS.git
+git clone https://github.com/lmorency/FlexAIDdS
 cd FlexAIDdS
 mkdir build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release
@@ -71,21 +29,6 @@ cmake --build . --target FlexAID -j $(nproc)
 ```
 
 On macOS, install Boost via Homebrew (`brew install boost`). On Windows, download Boost binaries and pass `-DBoost_DIR=<path>` to CMake if not auto-detected.
-
-### With Tests
-
-```bash
-cmake .. -DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=Release
-cmake --build . -j $(nproc)
-ctest --test-dir .
-```
-
-### With Python Bindings
-
-```bash
-cmake .. -DBUILD_PYTHON_BINDINGS=ON -DCMAKE_BUILD_TYPE=Release
-cmake --build . -j $(nproc)
-```
 
 ### CMake Options
 
@@ -97,49 +40,89 @@ cmake --build . -j $(nproc)
 | `FLEXAIDS_USE_AVX512`     | OFF     | AVX-512 SIMD acceleration                |
 | `FLEXAIDS_USE_OPENMP`     | ON      | OpenMP thread parallelism                |
 | `FLEXAIDS_USE_EIGEN`      | ON      | Eigen3 vectorised linear algebra         |
-| `BUILD_PYTHON_BINDINGS`   | OFF     | pybind11 Python extensions               |
-| `BUILD_TESTING`           | OFF     | GoogleTest unit tests                    |
-| `ENABLE_TENCOM_BENCHMARK` | OFF     | Build standalone TeNCoM benchmark binary |
+| `BUILD_PYTHON_BINDINGS`   | OFF     | Build pybind11 Python extension (`_core`)|
+| `BUILD_TESTING`           | OFF     | Build GoogleTest unit tests              |
+| `ENABLE_TENCOM_BENCHMARK` | OFF     | Build standalone tENCoM benchmark binary |
+| `ENABLE_TENCOM_TOOL`      | OFF     | Build tENCoM vibrational entropy tool    |
+| `ENABLE_VCFBATCH_BENCHMARK`| OFF    | Build VoronoiCFBatch benchmark binary    |
+
+### Dependencies
+
+- **Required**: C++20 compiler, CMake >= 3.18
+- **Optional**: Boost, Eigen3 (`libeigen3-dev`), OpenMP, CUDA Toolkit, Metal framework (macOS)
 
 ## Usage
 
-### Docking
-
-All docking and GA parameters have built-in defaults. You only need to provide an override file to change specific values from their presets.
-
-```bash
-# Minimal — uses all defaults, receptor and ligand specified in override file
-./FlexAID overrides.inp
-
-# With GA overrides
-./FlexAID overrides.inp ga_overrides.inp
-
-# With explicit output path
-./FlexAID overrides.inp ga_overrides.inp output.pdb
-```
-
-An override file only needs the parameters you want to change. For example, to dock a receptor with a ligand using Voronoi scoring at 300 K:
-
-```ini
-PDBNAM receptor.pdb
-INPLIG ligand.mol2
-COMPLF VCT
-TEMPER 300
-```
-
-Everything else (grid spacing, clustering threshold, optimization steps, etc.) uses sensible defaults automatically.
-
-### Vibrational Entropy (tENCoM)
+FlexAID requires a **config file** and a **GA parameter file**. These can be generated using `ProcessLigand` (installed via PyPI: `pip install processligand-py`).
+When using ProcessLigand make sure `atom_index=90000` on the ligand.
 
 ```bash
-tENCoM reference.pdb target1.pdb [target2.pdb ...] [-T temp] [-r cutoff] [-k k0] [-o prefix]
+./FlexAID config.inp ga.inp
 ```
 
-### Python API (Phase 2 — in progress)
+## 📖 Usage Modes
+
+### Python Results Inspection
+
+The `flexaidds` Python package can inspect existing docking results:
+
+```bash
+cd python && pip install -e .
+
+# Inspect result directory
+python -m flexaidds path/to/output_dir
+python -m flexaidds path/to/output_dir --json
+python -m flexaidds path/to/output_dir --csv results.csv
+python -m flexaidds path/to/output_dir --top 5
+```
 
 ```python
-import flexaidds
+import flexaidds as fd
 
+# Load and analyze existing results
+run = fd.load_results("path/to/output_dir")
+print(run.n_modes)
+print(run.binding_modes[0].best_cf)
+print(run.binding_modes[0].free_energy)
+
+# Thermodynamic analysis
+engine = fd.StatMechEngine(temperature=300.0)
+engine.add_sample(-7.5)
+engine.add_sample(-6.0)
+thermo = engine.compute()
+print("F =", thermo.free_energy)
+print("S =", thermo.entropy)
+```
+
+### Planned: Zero-Config CLI (Phase 2)
+
+> **Not yet implemented.** The following CLI and YAML config modes are planned for a future release.
+
+```bash
+# Planned zero-config interface
+./flexaids dock receptor.pdb ligand.mol2
+```
+
+```yaml
+# Planned YAML config format
+docking:
+  binding_site:
+    method: auto
+  flexible_sidechains: ["A:TYR123", "A:PHE456"]
+  temperature: 300.0
+genetic_algorithm:
+  population_size: 2000
+  max_generations: 100
+hardware:
+  backend: auto  # cuda, metal, avx512, openmp
+```
+
+### Planned: Python Docking API (Phase 2)
+
+> **Not yet implemented.** Live docking orchestration from Python is staged behind ongoing C++ integration.
+
+```python
+# Planned Python docking interface
 results = flexaidds.dock(
     receptor='receptor.pdb',
     ligand='ligand.mol2',
@@ -148,39 +131,9 @@ results = flexaidds.dock(
 )
 ```
 
-## Testing
-
-### C++ Tests (GoogleTest)
-
-```bash
-cmake -DBUILD_TESTING=ON .. && cmake --build . -j $(nproc)
-ctest --test-dir build
-```
-
-Key test files in `tests/`:
-- `test_statmech.cpp` — StatMechEngine correctness
-- `test_binding_mode_statmech.cpp` — BindingMode / StatMechEngine integration
-- `test_ga_validation.cpp` — Genetic algorithm validation
-
-### Python Tests (pytest)
-
-```bash
-cd python
-pip install -e .
-pytest tests/
-```
-
-Key test files in `python/tests/`:
-- `test_results_io.py` — Result file parsing (pure Python, no C++ needed)
-- `test_results_loader_models.py` — Data model tests (pure Python)
-- `test_statmech.py` — StatMechEngine accuracy (requires C++ bindings)
-- `test_statmech_smoke.py` — Smoke test for CI
-
-Tests marked with `@requires_core` need the compiled C++ `_core` extension and skip gracefully if bindings are not built.
-
 ---
 
-## Scientific Background
+## 🧬 Scientific Background
 
 ### NATURaL Scoring Function
 
@@ -213,7 +166,7 @@ C_v = k_B·β²·(⟨E²⟩ − ⟨E⟩²)       (heat capacity)
 
 ---
 
-## Benchmarks
+## 🏆 Benchmarks
 
 ### ITC-187: Calorimetry Gold Standard
 
@@ -236,172 +189,13 @@ C_v = k_B·β²·(⟨E²⟩ − ⟨E⟩²)       (heat capacity)
 **23 neurological targets** (GPCR, ion channels, transporters):
 - **Pose rescue rate**: 92% (entropy recovers correct mode when enthalpy fails)
 - **Average entropic penalty**: +3.02 kcal/mol
-- **Example** (mu-opioid + fentanyl):
-  - Enthalpy-only: Wrong pocket (−14.2 kcal/mol, RMSD 8.3 A)
-  - With entropy: **Correct** (−10.8 kcal/mol, RMSD 1.2 A, exp: −11.1)
+- **Example** (μ-opioid + fentanyl):
+  - Enthalpy-only: Wrong pocket (−14.2 kcal/mol, RMSD 8.3 Å)
+  - With entropy: **Correct** (−10.8 kcal/mol, RMSD 1.2 Å, exp: −11.1)
 
 ---
 
-## Configuration Reference
-
-All parameters have built-in defaults. Override files use a simple format: one parameter per line, code followed by value.
-
-### Docking Parameters (config)
-
-#### Input Files
-
-| Code     | Description                  | Default              |
-|:---------|:-----------------------------|:---------------------|
-| `PDBNAM` | Receptor PDB file            | *(required)*         |
-| `INPLIG` | Ligand input file            | *(required)*         |
-| `DEFTYP` | Atom type definition file    | Auto (AMINO.def)     |
-| `IMATRX` | Energy matrix file           | MC_st0r5.2_6.dat     |
-| `CONSTR` | Distance constraint file     | None                 |
-| `RMSDST` | RMSD reference structure     | None                 |
-
-#### Scoring & Complementarity
-
-| Code     | Description                         | Default | Options         |
-|:---------|:------------------------------------|:--------|:----------------|
-| `COMPLF` | Complementarity function            | `SPH`   | `SPH`, `VCT`    |
-| `VCTSCO` | Voronoi self-consistency mode       | `MAX`   |                 |
-| `VCTPLA` | Voronoi plane definition            | `X`     |                 |
-| `NORMAR` | Normalize contact area              | Off     |                 |
-| `USEACS` | Use accessible surface              | Off     |                 |
-| `ACSWEI` | ACS weighting factor                | 1.0     |                 |
-
-#### Binding Site
-
-| Code     | Description                         | Default | Options                              |
-|:---------|:------------------------------------|:--------|:-------------------------------------|
-| `RNGOPT` | Binding site method                 |         | `LOCCEN`, `LOCCLF`, `LOCCDT`, `AUTO`|
-
-- `LOCCEN x y z radius` — search around center coordinates
-- `LOCCLF file.pdb` — use pre-computed sphere file
-- `LOCCDT [cleft_id] [min_r] [max_r]` — automatic cavity detection (SURFNET)
-
-#### Optimization Steps
-
-| Code     | Description                         | Default |
-|:---------|:------------------------------------|:--------|
-| `VARDIS` | Translation step (A)                | 0.25    |
-| `VARANG` | Angle step (deg)                    | 5.0     |
-| `VARDIH` | Dihedral step (deg)                 | 5.0     |
-| `VARFLX` | Flexible sidechain step (deg)       | 10.0    |
-| `SPACER` | Grid point spacing                  | 0.375   |
-
-#### Flexibility
-
-| Code     | Description                         | Default |
-|:---------|:------------------------------------|:--------|
-| `FLEXSC` | Flexible sidechain specification    | None    |
-| `ROTPER` | Rotamer vdW permeability            | 0.8     |
-| `PERMEA` | Global vdW permeability             | 1.0     |
-| `NOINTR` | Disable intramolecular scoring      | Off (intramolecular enabled) |
-| `INTRAF` | Intramolecular energy fraction      | 1.0     |
-
-#### Thermodynamics & Clustering
-
-| Code     | Description                         | Default | Options            |
-|:---------|:------------------------------------|:--------|:-------------------|
-| `TEMPER` | Temperature (K, 0 = entropy off)    | 0       |                    |
-| `CLUSTA` | Clustering algorithm                | `CF`    | `CF`, `FO`, `DP`   |
-| `CLRMSD` | Clustering RMSD threshold (A)       | 2.0     |                    |
-
-#### Output
-
-| Code     | Description                         | Default |
-|:---------|:------------------------------------|:--------|
-| `MAXRES` | Max result clusters                 | 10      |
-| `SCOOUT` | Output scored poses only            | Off     |
-| `SCOLIG` | Score ligand only (no docking)      | Off     |
-| `OUTRNG` | Output binding site range           | Off     |
-| `EXCHET` | Exclude HET groups from receptor    | Off     |
-| `INCHOH` | Include water molecules             | Off (waters removed) |
-
-### GA Parameters (ga_overrides)
-
-#### Population & Generations
-
-| Code       | Description                                                      | Default  |
-|:-----------|:-----------------------------------------------------------------|:---------|
-| `NUMCHROM` | Number of chromosomes                                            | *(required)* |
-| `NUMGENER` | Number of generations                                            | *(required)* |
-| `POPINIMT` | Population initialization method                                 | `RANDOM` |
-| `STRTSEED` | Random seed (0 = time-based)                                     | 0        |
-
-#### Genetic Operators
-
-| Code       | Description                                                      | Default  |
-|:-----------|:-----------------------------------------------------------------|:---------|
-| `CROSRATE` | Crossover rate                                                   | float (0.0-1.0) |
-| `MUTARATE` | Mutation rate                                                    | float (0.0-1.0) |
-| `ADAPTVGA` | Enable adaptive GA (auto-adjusts rates)                          | 0 (off)  |
-| `ADAPTKCO` | Adaptive response parameters k1-k4                               | 0.0 0.0 0.0 0.0 |
-
-#### Selection & Reproduction
-
-| Code       | Description                                                      | Default  |
-|:-----------|:-----------------------------------------------------------------|:---------|
-| `FITMODEL` | Fitness model                                                    | `PSHARE` or `LINEAR` |
-| `REPMODEL` | Reproduction model                                               | `STEADY` or `BOOM` |
-| `BOOMFRAC` | BOOM reproduction fraction                                       | 1.0      |
-| `SHAREALF` | Fitness sharing alpha (sigma share)                              | float    |
-| `SHAREPEK` | Expected number of fitness peaks                                 | float    |
-| `SHARESCL` | Fitness sharing scale factor                                     | float    |
-
-#### Output & Debugging
-
-| Code       | Description                                                      | Default  |
-|:-----------|:-----------------------------------------------------------------|:---------|
-| `PRINTCHR` | Best chromosomes to print per generation                         | 10       |
-| `PRINTINT` | Print generation progress                                        | 1        |
-| `OUTGENER` | Output results every generation                                  | Off      |
-
----
-
-## Modules
-
-### Torsional ENCoM (TENCM)
-
-Implements the torsional elastic network contact model (Delarue & Sanejouand 2002; Yang, Song & Cui 2009) for protein backbone flexibility. Builds a spring network over C-alpha contacts within a cutoff radius, computes torsional normal modes via Jacobi diagonalisation, and samples Boltzmann-weighted backbone perturbations during the GA without rebuilding the rotamer library every generation.
-
-### Statistical Mechanics Engine
-
-Full thermodynamic analysis of the GA conformational ensemble:
-- Partition function Z(T) with log-sum-exp numerical stability
-- Helmholtz free energy F = -kT ln Z
-- Average energy, variance, and heat capacity
-- Conformational entropy S = (E - F) / T
-- Boltzmann-weighted state probabilities
-- Parallel tempering (replica exchange) swap acceptance
-- WHAM for free energy profiles
-- Thermodynamic integration via trapezoidal rule
-- Fast Boltzmann lookup table for inner-loop evaluation
-
-### ShannonThermoStack
-
-Combines Shannon configurational entropy (over GA ensemble binned into 256 mega-clusters) with torsional ENCoM vibrational entropy. Uses a precomputed 256x256 energy matrix for O(1) pairwise entropy lookup. Hardware-accelerated histogram computation via Metal (Apple Silicon), CUDA, or OpenMP/Eigen.
-
-### LigandRingFlex
-
-Unified ring flexibility for the GA: non-aromatic ring conformer sampling (chair/boat/twist for 6-membered, envelope/twist for 5-membered) and furanose sugar pucker phase sampling. Integrates with GA initialisation, mutation, crossover, and fitness evaluation.
-
-### ChiralCenter
-
-Explicit R/S stereocenter sampling. Detects sp3 tetrahedral chiral centers in the ligand, encodes each as a single GA bit (R=0, S=1), and applies an energy penalty for incorrect stereochemistry (~15-25 kcal/mol per wrong center). Low mutation rate (1-2%) reflects the high inversion barrier.
-
-### NATURaL (co-translational assembly)
-
-**N**ative **A**ssembly of co-**T**ranscriptionally/co-**T**ranslationally **U**nified **R**eceptor-**L**igand module. Auto-detects nucleotide ligands or nucleic acid receptors and activates co-translational DualAssembly mode:
-
-- **RibosomeElongation**: Zhao 2011 master equation for codon-dependent ribosome speed (E. coli K-12 and Human HEK293). Identifies pause sites as co-translational folding windows. Also supports nucleotide-by-nucleotide RNA polymerase synthesis.
-- **TransloconInsertion**: Sec61 translocon lateral gating model (Hessa 2007). Computes per-window delta-G of TM helix insertion using the Hessa scale with Wimley-White position-weighted helix-dipole correction. Hardware-accelerated via AVX-512/AVX2/Eigen.
-- **DualAssemblyEngine**: Grows the receptor chain residue-by-residue at ribosome speed while computing incremental CF and Shannon entropy at each growth step to capture co-translational stereochemical selection.
-
----
-
-## Publications
+## 📚 Publications
 
 ### Please Cite
 
@@ -417,42 +211,43 @@ Explicit R/S stereocenter sampling. Detects sp3 tetrahedral chiral centers in th
 ### Related Work (Inspiration Only)
 
 - **NRGRank** (GPL-3.0, *not a dependency*):
-  > Gaudreault et al. (2024). bioRxiv preprint.
+  > Gaudreault et al. (2024). bioRxiv preprint.  
   > *Note*: FlexAID∆S reimplements cube screening from first principles (Apache-2.0). No GPL code included. See [clean-room policy](docs/licensing/clean-room-policy.md).
 
 ---
 
-## Contributing
+## 🤝 Contributing
 
 **Key Policies**:
-- Apache-2.0, BSD, MIT, MPL-2.0 dependencies OK
-- GPL/AGPL **forbidden** (see [clean-room policy](docs/licensing/clean-room-policy.md))
+- ✅ Apache-2.0, BSD, MIT, MPL-2.0 dependencies OK
+- ❌ GPL/AGPL **forbidden** (see [clean-room policy](docs/licensing/clean-room-policy.md))
 - All contributions require Contributor License Agreement (CLA)
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for code style, testing, PR workflow.
 
 ---
 
-## License
+## 📜 License
 
-**Apache License 2.0** — Permissive open-source.
+**Apache License 2.0** – Permissive open-source.
 
-**You CAN**: Use commercially, modify, redistribute, relicense in proprietary software.
-**You MUST**: Include LICENSE, preserve copyright, state changes.
+**You CAN**: Use commercially, modify, redistribute, relicense in proprietary software.  
+**You MUST**: Include LICENSE, preserve copyright, state changes.  
 **You CANNOT**: Hold authors liable, use trademarks.
 
 See [LICENSE](LICENSE) | [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)
 
 ---
 
-## Links
+## 🔗 Links
 
 **Repository**: [github.com/lmorency/FlexAIDdS](https://github.com/lmorency/FlexAIDdS)
 **Issues**: [github.com/lmorency/FlexAIDdS/issues](https://github.com/lmorency/FlexAIDdS/issues)
+**Original FlexAID**: [github.com/NRGlab/FlexAID](https://github.com/NRGlab/FlexAID)
 **NRGlab**: [biophys.umontreal.ca/nrg](http://biophys.umontreal.ca/nrg) | [github.com/NRGlab](https://github.com/NRGlab)
 
-**Lead Developer**: Louis-Philippe Morency, PhD (Candidate)
-**Affiliation**: Universite de Montreal, NRGlab
+**Lead Developer**: Louis-Philippe Morency, PhD (Candidate)  
+**Affiliation**: Université de Montréal, NRGlab  
 **Email**: louis-philippe.morency@umontreal.ca
 
 ---
@@ -460,5 +255,74 @@ See [LICENSE](LICENSE) | [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)
 <p align="center">
   <strong>FlexAID∆S: Where Information Theory Meets Drug Discovery</strong><br>
   <em>Zero friction. Zero entropy waste. Zero bullshit.</em><br><br>
-  <sub>DRUG IS ALWAYS AN ANSWER. One Shannon bit at a time.</sub>
+  <sub>DRUG IS ALWAYS AN ANSWER. One Shannon bit at a time. 🧬⚡</sub>
 </p>
+
+---
+
+## GA Codes
+
+| Code       | Description                                                   | Value                | 
+|:-----------|:--------------------------------------------------------------|:---------------------|
+| `NUMCHROM` | Number of chromosomes                                         | (int)                |
+| `NUMGENER` | Number of generations                                         | (int)                |
+| `ADAPTVGA` | Enable adaptive GA (adjusts crossover/mutation rates dynamically) | (int flag)           |
+| `ADAPTKCO` | Adaptive GA response parameters k1–k4 (each in range 0.0–1.0)    | (list) with 4 floats |
+| `CROSRATE` | Crossover rate                                                    | float (0.0–1.0)      |
+| `MUTARATE` | Mutation rate                                                     | float (0.0–1.0)      |
+| `POPINIMT` | Population initialization method                                  | `RANDOM` or `IPFILE` |
+| `FITMODEL` | Fitness model                                                     | `PSHARE` or `LINEAR` |
+| `SHAREALF` | Sharing parameter α (sigma share)                                 | float                |
+| `SHAREPEK` | Expected number of sharing peaks in the search space              | float                |
+| `SHARESCL` | Fitness scaling factor for sharing                                | float                |
+| `STRTSEED` | Set a custom starting seed                                        | (int)                |
+| `REPMODEL` | Reproduction technique code                                       | `STEADY`, `BOOM`     |
+| `BOOMFRAC` | Population boom size  (fraction of the number of chromosomes)     | 0 to 1 (float)       |
+| `PRINTCHR` | Number of best chromosome to print each generation                | (int)                |
+| `PRINTINT` | Print generation progress as well as current best cf              | 0 or 1               |
+| `OUTGENER` | Output results for each generation                                | N/A                  |
+
+---
+
+## v1.5 Modules
+
+### Torsional ENCoM (TENCM)
+
+Implements the torsional elastic network contact model (Delarue & Sanejouand 2002; Yang, Song & Cui 2009) for protein backbone flexibility. Builds a spring network over Cα contacts within a cutoff radius, computes torsional normal modes via Jacobi diagonalisation, and samples Boltzmann-weighted backbone perturbations during the GA without rebuilding the rotamer library every generation.
+
+### Statistical Mechanics Engine
+
+Full thermodynamic analysis of the GA conformational ensemble:
+- Partition function Z(T) with log-sum-exp numerical stability
+- Helmholtz free energy F = −kT ln Z
+- Average energy, variance, and heat capacity
+- Conformational entropy S = (⟨E⟩ − F) / T
+- Boltzmann-weighted state probabilities
+- Parallel tempering (replica exchange) swap acceptance
+- WHAM for free energy profiles
+- Thermodynamic integration via trapezoidal rule
+- Fast Boltzmann lookup table for inner-loop evaluation
+
+### ShannonThermoStack
+
+Combines Shannon configurational entropy (over GA ensemble binned into 256 mega-clusters) with torsional ENCoM vibrational entropy. Uses a precomputed 256×256 energy matrix for O(1) pairwise entropy lookup. Hardware-accelerated histogram computation via Metal (Apple Silicon), CUDA, or OpenMP/Eigen.
+
+### LigandRingFlex
+
+Unified ring flexibility for the GA: non-aromatic ring conformer sampling (chair/boat/twist for 6-membered, envelope/twist for 5-membered) and furanose sugar pucker phase sampling. Integrates with GA initialisation, mutation, crossover, and fitness evaluation.
+
+### ChiralCenter
+
+Explicit R/S stereocenter sampling. Detects sp3 tetrahedral chiral centers in the ligand, encodes each as a single GA bit (R=0, S=1), and applies an energy penalty for incorrect stereochemistry (~15–25 kcal/mol per wrong center). Low mutation rate (1–2%) reflects the high inversion barrier.
+
+### NATURaL (co-translational assembly)
+
+**N**ative **A**ssembly of co-**T**ranscriptionally/co-**T**ranslationally **U**nified **R**eceptor–**L**igand module. Auto-detects nucleotide ligands or nucleic acid receptors and activates co-translational DualAssembly mode:
+
+- **RibosomeElongation**: Zhao 2011 master equation for codon-dependent ribosome speed (E. coli K-12 and Human HEK293). Identifies pause sites as co-translational folding windows. Also supports nucleotide-by-nucleotide RNA polymerase synthesis.
+- **TransloconInsertion**: Sec61 translocon lateral gating model (Hessa 2007). Computes per-window ΔG of TM helix insertion using the Hessa scale with Wimley-White position-weighted helix-dipole correction. Hardware-accelerated via AVX-512/AVX2/Eigen.
+- **DualAssemblyEngine**: Grows the receptor chain residue-by-residue at ribosome speed while computing incremental CF and Shannon entropy at each growth step to capture co-translational stereochemical selection.
+
+## License
+
+Apache License 2.0. See [LICENSE](LICENSE) for details.
