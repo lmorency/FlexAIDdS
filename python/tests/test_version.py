@@ -36,3 +36,14 @@ class TestVersion:
 
     def test_url_is_string(self):
         assert isinstance(__url__, str) and __url__
+
+    def test_package_version_matches_version_module(self):
+        """flexaidds.__version__ must equal flexaidds.__version__.__version__."""
+        import flexaidds
+        assert flexaidds.__version__ == __version__
+
+    def test_statmech_in_all(self):
+        """StatMechEngine and Thermodynamics should always be in __all__."""
+        import flexaidds
+        assert "StatMechEngine" in flexaidds.__all__
+        assert "Thermodynamics" in flexaidds.__all__

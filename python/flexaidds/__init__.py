@@ -21,18 +21,6 @@ try:
     )
     HAS_CORE_BINDINGS = True
 except ImportError:
-    BoltzmannLUT = None
-    ENCoMEngine = None
-    NormalMode = None
-    Replica = None
-    State = None
-    StatMechEngine = None
-    Thermodynamics = None
-    TIPoint = None
-    VibrationalEntropy = None
-    WHAMBin = None
-    kB_kcal = 0.0019872041
-    kB_SI = 1.380649e-23
     HAS_CORE_BINDINGS = False
     # Fall back to pure-Python implementations where available
     from .thermodynamics import StatMechEngine, Thermodynamics, kB_kcal, kB_SI
@@ -45,9 +33,6 @@ except ImportError:
     VibrationalEntropy = None
     WHAMBin = None
 
-from .models import BindingModeResult, DockingResult, PoseResult
-from .results import load_results
-
 __all__ = [
     # Python models & I/O (always available)
     "PoseResult",
@@ -59,13 +44,14 @@ __all__ = [
     "kB_SI",
     # Availability flag
     "HAS_CORE_BINDINGS",
+    # Pure-Python fallbacks (always available)
+    "StatMechEngine",
+    "Thermodynamics",
 ]
 
 # C++ core modules (only available when compiled)
 if HAS_CORE_BINDINGS:
     __all__.extend([
-        "StatMechEngine",
-        "Thermodynamics",
         "State",
         "BoltzmannLUT",
         "Replica",
@@ -75,5 +61,3 @@ if HAS_CORE_BINDINGS:
         "NormalMode",
         "VibrationalEntropy",
     ])
-
-__version__ = "0.1.0"
