@@ -21,8 +21,8 @@
 ## Build
 
 ```bash
-git clone --branch flexaid-cpp https://github.com/NRGlab/FlexAID
-cd FlexAID
+git clone https://github.com/lmorency/FlexAIDdS
+cd FlexAIDdS
 mkdir build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release
 cmake --build . --target FlexAID -j $(nproc)
@@ -40,7 +40,11 @@ On macOS, install Boost via Homebrew (`brew install boost`). On Windows, downloa
 | `FLEXAIDS_USE_AVX512`     | OFF     | AVX-512 SIMD acceleration                |
 | `FLEXAIDS_USE_OPENMP`     | ON      | OpenMP thread parallelism                |
 | `FLEXAIDS_USE_EIGEN`      | ON      | Eigen3 vectorised linear algebra         |
-| `ENABLE_TENCOM_BENCHMARK` | OFF     | Build standalone TeNCoM benchmark binary |
+| `BUILD_PYTHON_BINDINGS`   | OFF     | Build pybind11 Python extension (`_core`)|
+| `BUILD_TESTING`           | OFF     | Build GoogleTest unit tests              |
+| `ENABLE_TENCOM_BENCHMARK` | OFF     | Build standalone tENCoM benchmark binary |
+| `ENABLE_TENCOM_TOOL`      | OFF     | Build tENCoM vibrational entropy tool    |
+| `ENABLE_VCFBATCH_BENCHMARK`| OFF    | Build VoronoiCFBatch benchmark binary    |
 
 ### Dependencies
 
@@ -56,44 +60,70 @@ When using ProcessLigand make sure `atom_index=90000` on the ligand.
 ./FlexAID config.inp ga.inp
 ```
 
-## Required Config file codes
-
 ## 📖 Usage Modes
 
-### Option A: Zero-Config CLI
+### Python Results Inspection
+
+The `flexaidds` Python package can inspect existing docking results:
 
 ```bash
-./flexaids dock receptor.pdb ligand.mol2
-# Auto-detects: binding site, rotatable bonds, hardware backend
-# Output: binding_modes.pdb, thermodynamics.json
+cd python && pip install -e .
+
+# Inspect result directory
+python -m flexaidds path/to/output_dir
+python -m flexaidds path/to/output_dir --json
+python -m flexaidds path/to/output_dir --csv results.csv
+python -m flexaidds path/to/output_dir --top 5
 ```
 
-### Option B: YAML Config (Advanced)
+```python
+import flexaidds as fd
+
+# Load and analyze existing results
+run = fd.load_results("path/to/output_dir")
+print(run.n_modes)
+print(run.binding_modes[0].best_cf)
+print(run.binding_modes[0].free_energy)
+
+# Thermodynamic analysis
+engine = fd.StatMechEngine(temperature=300.0)
+engine.add_sample(-7.5)
+engine.add_sample(-6.0)
+thermo = engine.compute()
+print("F =", thermo.free_energy)
+print("S =", thermo.entropy)
+```
+
+### Planned: Zero-Config CLI (Phase 2)
+
+> **Not yet implemented.** The following CLI and YAML config modes are planned for a future release.
+
+```bash
+# Planned zero-config interface
+./flexaids dock receptor.pdb ligand.mol2
+```
 
 ```yaml
+# Planned YAML config format
 docking:
   binding_site:
-    method: auto  # or {center: [x,y,z], radius: 10.0}
+    method: auto
   flexible_sidechains: ["A:TYR123", "A:PHE456"]
   temperature: 300.0
-
 genetic_algorithm:
   population_size: 2000
   max_generations: 100
-
 hardware:
-  backend: auto  # or: cuda, metal, avx512, openmp
-
-output:
-  top_n_modes: 10
-  json_thermodynamics: true
-  entropy_decomposition: true
+  backend: auto  # cuda, metal, avx512, openmp
 ```
 
-### Option C: Python API (Phase 2)
+### Planned: Python Docking API (Phase 2)
+
+> **Not yet implemented.** Live docking orchestration from Python is staged behind ongoing C++ integration.
 
 ```python
-results = flexaids.dock(
+# Planned Python docking interface
+results = flexaidds.dock(
     receptor='receptor.pdb',
     ligand='ligand.mol2',
     binding_site='auto',
@@ -211,8 +241,9 @@ See [LICENSE](LICENSE) | [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)
 
 ## 🔗 Links
 
-**Repository**: [github.com/lmorency/FlexAIDdS](https://github.com/lmorency/FlexAIDdS)  
-**Issues**: [github.com/lmorency/FlexAIDdS/issues](https://github.com/lmorency/FlexAIDdS/issues)  
+**Repository**: [github.com/lmorency/FlexAIDdS](https://github.com/lmorency/FlexAIDdS)
+**Issues**: [github.com/lmorency/FlexAIDdS/issues](https://github.com/lmorency/FlexAIDdS/issues)
+**Original FlexAID**: [github.com/NRGlab/FlexAID](https://github.com/NRGlab/FlexAID)
 **NRGlab**: [biophys.umontreal.ca/nrg](http://biophys.umontreal.ca/nrg) | [github.com/NRGlab](https://github.com/NRGlab)
 
 **Lead Developer**: Louis-Philippe Morency, PhD (Candidate)  
