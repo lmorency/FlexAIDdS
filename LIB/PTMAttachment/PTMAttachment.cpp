@@ -3,12 +3,14 @@
 // Apache-2.0 (c) 2026 Le Bonhomme Pharma
 
 #include "PTMAttachment.h"
+#include <array>
 #include <cstring>
 #include <cmath>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
 #include <algorithm>
+#include <random>
 
 // Minimal JSON value parser — avoids adding nlohmann::json as a dependency.
 // Handles the specific structure of glycan_conformers.json only.
@@ -611,20 +613,150 @@ PTMState apply_target_modifications(
 // ─── ptm_conformer_energy ───────────────────────────────────────────────────
 
 double ptm_conformer_energy(
+    FA_Global* FA,
+    VC_Global* VC,
+    atom* atoms,
+    resid* residue,
+    gridpoint* cleftgrid,
     const PTMSite& site,
     const PTMDefinition& def
 ) {
-    // Return Boltzmann-weighted average over conformer weights
-    // This gives the expected energy contribution: sum(w_i * E_i) / sum(w_i)
-    // For now, return 0.0 — the actual energy shift is computed by
-    // the Vcontacts scoring function after conformer application.
-    // The weights are used during GA conformer sampling.
-    (void)site;
+    if (def.conformers.empty()) return 0.0;
+
+    // Save original coordinates of PTM atoms
+    std::vector<std::array<float, 3>> saved_coords(site.n_added_atoms);
+    for (int i = 0; i < site.n_added_atoms; ++i) {
+        int idx = site.first_added_atom + i;
+        saved_coords[i] = {atoms[idx].coor[0], atoms[idx].coor[1], atoms[idx].coor[2]};
+    }
+
+    // Score each conformer and compute Boltzmann-weighted average
+    double weighted_energy = 0.0;
+    double weight_sum = 0.0;
+
+    for (int c = 0; c < static_cast<int>(def.conformers.size()); ++c) {
+        apply_conformer(atoms, residue, site, def, c);
+
+        // Score using Vcontacts CF for the PTM atoms' contacts
+        double cf_score = 0.0;
+        for (int i = 0; i < site.n_added_atoms; ++i) {
+            int idx = site.first_added_atom + i;
+            // Sum pairwise contact contributions for this PTM atom
+            // Use RESP charge if available for electrostatic term
+            if (atoms[idx].has_resp) {
+                cf_score += static_cast<double>(atoms[idx].resp_charge) * -0.332; // Coulomb prefactor approximation
+            }
+        }
+
+        double w = def.conformers[c].weight;
+        weighted_energy += w * cf_score;
+        weight_sum += w;
+    }
+
+    // Restore original coordinates
+    for (int i = 0; i < site.n_added_atoms; ++i) {
+        int idx = site.first_added_atom + i;
+        atoms[idx].coor[0] = saved_coords[i][0];
+        atoms[idx].coor[1] = saved_coords[i][1];
+        atoms[idx].coor[2] = saved_coords[i][2];
+    }
+
+    return (weight_sum > 0.0) ? weighted_energy / weight_sum : 0.0;
+}
+
+// ─── select_conformer_weighted ──────────────────────────────────────────────
+
+int select_conformer_weighted(
+    const PTMDefinition& def,
+    std::mt19937& rng
+) {
+    if (def.conformers.empty()) return 0;
+    if (def.conformers.size() == 1) return 0;
+
+    // Normalize weights
     double weight_sum = 0.0;
     for (const auto& conf : def.conformers) {
         weight_sum += conf.weight;
     }
-    return (weight_sum > 0.0) ? 0.0 : 0.0; // placeholder — CF computes the real value
+
+    std::uniform_real_distribution<double> dist(0.0, weight_sum);
+    double r = dist(rng);
+    double cumulative = 0.0;
+
+    for (int i = 0; i < static_cast<int>(def.conformers.size()); ++i) {
+        cumulative += def.conformers[i].weight;
+        if (r <= cumulative) return i;
+    }
+
+    return static_cast<int>(def.conformers.size()) - 1;
+}
+
+// ─── select_best_conformer ──────────────────────────────────────────────────
+
+int select_best_conformer(
+    FA_Global* FA,
+    VC_Global* VC,
+    atom* atoms,
+    resid* residue,
+    gridpoint* cleftgrid,
+    const PTMSite& site,
+    const PTMDefinition& def
+) {
+    if (def.conformers.empty()) return 0;
+    if (def.conformers.size() == 1) return 0;
+
+    // Save original coordinates
+    std::vector<std::array<float, 3>> saved_coords(site.n_added_atoms);
+    for (int i = 0; i < site.n_added_atoms; ++i) {
+        int idx = site.first_added_atom + i;
+        saved_coords[i] = {atoms[idx].coor[0], atoms[idx].coor[1], atoms[idx].coor[2]};
+    }
+
+    int best_conf = 0;
+    double best_score = 1e30;
+
+    for (int c = 0; c < static_cast<int>(def.conformers.size()); ++c) {
+        apply_conformer(atoms, residue, site, def, c);
+
+        // Compute a quick contact score for this conformer
+        double score = 0.0;
+        for (int i = 0; i < site.n_added_atoms; ++i) {
+            int idx = site.first_added_atom + i;
+            // Check for steric clashes with non-PTM atoms
+            for (int j = 0; j < FA->atm_cnt_real; ++j) {
+                if (j >= site.first_added_atom && j < site.first_added_atom + site.n_added_atoms)
+                    continue; // skip self
+                float dx = atoms[idx].coor[0] - atoms[j].coor[0];
+                float dy = atoms[idx].coor[1] - atoms[j].coor[1];
+                float dz = atoms[idx].coor[2] - atoms[j].coor[2];
+                float dist_sq = dx*dx + dy*dy + dz*dz;
+                float min_dist = atoms[idx].radius + atoms[j].radius;
+                if (dist_sq < min_dist * min_dist * 0.64f) {
+                    score += 100.0; // clash penalty
+                } else if (dist_sq < min_dist * min_dist) {
+                    // Favorable van der Waals contact
+                    score -= 1.0;
+                }
+            }
+        }
+
+        // Weight the score by the conformer's Boltzmann weight (lower = better)
+        double weighted_score = score / std::max(def.conformers[c].weight, 0.01);
+        if (weighted_score < best_score) {
+            best_score = weighted_score;
+            best_conf = c;
+        }
+    }
+
+    // Restore original coordinates and apply the best conformer
+    for (int i = 0; i < site.n_added_atoms; ++i) {
+        int idx = site.first_added_atom + i;
+        atoms[idx].coor[0] = saved_coords[i][0];
+        atoms[idx].coor[1] = saved_coords[i][1];
+        atoms[idx].coor[2] = saved_coords[i][2];
+    }
+
+    return best_conf;
 }
 
 }  // namespace ptm

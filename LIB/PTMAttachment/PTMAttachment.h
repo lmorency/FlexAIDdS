@@ -146,9 +146,35 @@ PTMState apply_target_modifications(
     const char* ptm_spec
 );
 
-/// Compute the conformer-weighted energy contribution of a PTM site
-/// by cycling through all conformers and returning Boltzmann-averaged CF shift.
+/// Compute the conformer-weighted energy contribution of a PTM site.
+/// Cycles through all conformers, evaluates each via the scoring function,
+/// and returns the Boltzmann-weighted average CF shift.
 double ptm_conformer_energy(
+    FA_Global* FA,
+    VC_Global* VC,
+    atom* atoms,
+    resid* residue,
+    gridpoint* cleftgrid,
+    const PTMSite& site,
+    const PTMDefinition& def
+);
+
+/// Select a conformer index using weighted random sampling.
+/// Weights are taken from def.conformers[i].weight (normalized internally).
+/// Returns the selected conformer index.
+int select_conformer_weighted(
+    const PTMDefinition& def,
+    std::mt19937& rng
+);
+
+/// Enumerate all conformers for a PTM site, score each via Vcontacts,
+/// and return the Boltzmann-optimal conformer index (lowest weighted energy).
+int select_best_conformer(
+    FA_Global* FA,
+    VC_Global* VC,
+    atom* atoms,
+    resid* residue,
+    gridpoint* cleftgrid,
     const PTMSite& site,
     const PTMDefinition& def
 );

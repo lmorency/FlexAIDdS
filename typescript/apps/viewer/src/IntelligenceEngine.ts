@@ -51,7 +51,26 @@ export class IntelligenceEngine {
       );
     }
 
-    // Bullet 3: Health correlation or target modifications
+    // Bullet 3: Target modifications with population impact
+    if (population.targetModifications?.length) {
+      const mods = population.targetModifications;
+      const modSummary = mods.map((m) => `${m.type}@${m.residueName}${m.residueNumber}`).join(', ');
+      const deltaF = mods
+        .filter((m) => m.effect?.deltaFreeEnergy !== undefined)
+        .reduce((sum, m) => sum + (m.effect?.deltaFreeEnergy ?? 0), 0);
+      const deltaS = mods
+        .filter((m) => m.effect?.deltaEntropy !== undefined)
+        .reduce((sum, m) => sum + (m.effect?.deltaEntropy ?? 0), 0);
+
+      let modBullet = `${mods.length} target modification(s) (${modSummary})`;
+      if (deltaF !== 0 || deltaS !== 0) {
+        modBullet += ` — net population shift: ΔF=${deltaF.toFixed(2)} kcal/mol, ΔS=${deltaS.toFixed(4)} kcal/mol/K`;
+      }
+      modBullet += '. Population recalculated with PTM/glycan effects on the binding landscape.';
+      bullets.push(modBullet);
+    }
+
+    // Bullet 4 (optional): Health correlation
     if (health?.hrvSDNN) {
       if (population.isCollapsed && health.hrvSDNN > 60) {
         bullets.push(
@@ -66,12 +85,7 @@ export class IntelligenceEngine {
           `HRV at ${health.hrvSDNN.toFixed(0)} ms — stable physiological state for analysis.`,
         );
       }
-    } else if (population.targetModifications?.length) {
-      const mods = population.targetModifications;
-      bullets.push(
-        `${mods.length} target modification(s) detected (${mods.map((m) => m.type).join(', ')}). Population includes PTM/glycan effects on binding landscape.`,
-      );
-    } else {
+    } else if (!population.targetModifications?.length) {
       bullets.push(
         'Connect HealthKit for entropy-health correlation. Enable fleet mode for distributed compute.',
       );
