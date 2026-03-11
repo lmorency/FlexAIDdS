@@ -411,6 +411,35 @@ if(ENABLE_TENCOM_BENCHMARK)
     message(STATUS "TeNCoM benchmark enabled — build target: benchmark_tencom")
 endif()
 
+# ─── tENCoM vibrational entropy tool (standalone executable) ──────────────────
+option(ENABLE_TENCOM_TOOL "Build the tENCoM vibrational entropy differential tool" OFF)
+if(ENABLE_TENCOM_TOOL)
+    add_executable(tENCoM
+        LIB/tencom_main.cpp
+        LIB/tencom_diff.cpp
+        LIB/tencom_output.cpp
+        LIB/pdb_calpha.cpp
+        LIB/tencm.cpp
+        LIB/statmech.cpp
+        LIB/encom.cpp
+    )
+    target_include_directories(tENCoM PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    if(MSVC)
+        target_compile_options(tENCoM PRIVATE /O2 /fp:fast)
+    else()
+        target_compile_options(tENCoM PRIVATE -O3 -ffast-math)
+    endif()
+    flexaids_configure_simd(tENCoM)
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(tENCoM PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
+        target_link_libraries(tENCoM PRIVATE Eigen3::Eigen)
+        target_compile_definitions(tENCoM PRIVATE FLEXAIDS_HAS_EIGEN)
+    endif()
+    message(STATUS "tENCoM tool enabled — build target: tENCoM")
+endif()
+
 # ─── VoronoiCFBatch benchmark (Task 2.3) ───────────────────────────────────────
 # VoronoiCFBatch.h is header-only; the benchmark binary exercises the std::span
 # batch interface and prints a serial-vs-OpenMP speedup table.
@@ -478,5 +507,31 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME HardwareDispatchTests COMMAND test_hardware_dispatch)
 
-    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch")
+    # test_tencom_diff — tENCoM differential engine tests
+    add_executable(test_tencom_diff
+        tests/test_tencom_diff.cpp
+        LIB/tencom_diff.cpp
+        LIB/pdb_calpha.cpp
+        LIB/tencm.cpp
+        LIB/statmech.cpp
+        LIB/encom.cpp
+    )
+    target_include_directories(test_tencom_diff PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_tencom_diff PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_tencom_diff PRIVATE /O2)
+    else()
+        target_compile_options(test_tencom_diff PRIVATE -O2)
+    endif()
+    flexaids_configure_simd(test_tencom_diff)
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(test_tencom_diff PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
+        target_link_libraries(test_tencom_diff PRIVATE Eigen3::Eigen)
+        target_compile_definitions(test_tencom_diff PRIVATE FLEXAIDS_HAS_EIGEN)
+    endif()
+    add_test(NAME TENCoMDiffTests COMMAND test_tencom_diff)
+
+    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_tencom_diff")
 endif()
