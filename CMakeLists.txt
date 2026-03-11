@@ -532,22 +532,202 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME TENCoMDiffTests COMMAND test_tencom_diff)
 
-    # test_ga_validation — Voronoi geometry & GA validation tests
-    add_executable(test_ga_validation
-        tests/test_ga_validation.cpp
-        LIB/Vcontacts.cpp
-        LIB/fileio.cpp
+    # test_encom — ENCoM vibrational entropy engine tests
+    add_executable(test_encom
+        tests/test_encom.cpp
+        LIB/encom.cpp
     )
-    target_include_directories(test_ga_validation PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
-    target_link_libraries(test_ga_validation PRIVATE GTest::gtest GTest::gtest_main)
+    target_include_directories(test_encom PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_encom PRIVATE GTest::gtest GTest::gtest_main)
     if(MSVC)
-        target_compile_options(test_ga_validation PRIVATE /O2)
+        target_compile_options(test_encom PRIVATE /O2)
     else()
-        target_compile_options(test_ga_validation PRIVATE -O2)
+        target_compile_options(test_encom PRIVATE -O2)
     endif()
-    add_test(NAME GAValidationTests COMMAND test_ga_validation)
+    add_test(NAME ENCoMTests COMMAND test_encom)
 
-    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_tencom_diff, test_ga_validation")
+    # test_ring_conformer_library — RingConformerLibrary + ring detection tests
+    add_executable(test_ring_conformer_library
+        tests/test_ring_conformer_library.cpp
+        LIB/LigandRingFlex/RingConformerLibrary.cpp
+    )
+    target_include_directories(test_ring_conformer_library PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/LigandRingFlex
+    )
+    target_link_libraries(test_ring_conformer_library PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_ring_conformer_library PRIVATE /O2)
+    else()
+        target_compile_options(test_ring_conformer_library PRIVATE -O2)
+    endif()
+    add_test(NAME RingConformerLibraryTests COMMAND test_ring_conformer_library)
+
+    # test_sugar_pucker — SugarPucker Cremer-Pople pseudorotation tests
+    add_executable(test_sugar_pucker
+        tests/test_sugar_pucker.cpp
+        LIB/LigandRingFlex/SugarPucker.cpp
+    )
+    target_include_directories(test_sugar_pucker PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/LigandRingFlex
+    )
+    target_link_libraries(test_sugar_pucker PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_sugar_pucker PRIVATE /O2)
+    else()
+        target_compile_options(test_sugar_pucker PRIVATE -O2)
+    endif()
+    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
+        target_link_libraries(test_sugar_pucker PRIVATE Eigen3::Eigen)
+        target_compile_definitions(test_sugar_pucker PRIVATE FLEXAIDS_HAS_EIGEN)
+    endif()
+    add_test(NAME SugarPuckerTests COMMAND test_sugar_pucker)
+
+    # test_chiral_center — ChiralCenterGene R/S stereocenter tests
+    add_executable(test_chiral_center
+        tests/test_chiral_center.cpp
+        LIB/ChiralCenter/ChiralCenterGene.cpp
+    )
+    target_include_directories(test_chiral_center PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ChiralCenter
+    )
+    target_link_libraries(test_chiral_center PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_chiral_center PRIVATE /O2)
+    else()
+        target_compile_options(test_chiral_center PRIVATE -O2)
+    endif()
+    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
+        target_link_libraries(test_chiral_center PRIVATE Eigen3::Eigen)
+        target_compile_definitions(test_chiral_center PRIVATE FLEXAIDS_HAS_EIGEN)
+    endif()
+    add_test(NAME ChiralCenterTests COMMAND test_chiral_center)
+
+    # test_cavity_detect — CavityDetect SURFNET cavity detection tests
+    add_executable(test_cavity_detect
+        tests/test_cavity_detect.cpp
+        LIB/CavityDetect/CavityDetect.cpp
+    )
+    target_include_directories(test_cavity_detect PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect
+    )
+    target_link_libraries(test_cavity_detect PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_cavity_detect PRIVATE /O2)
+    else()
+        target_compile_options(test_cavity_detect PRIVATE -O2)
+    endif()
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(test_cavity_detect PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    add_test(NAME CavityDetectTests COMMAND test_cavity_detect)
+
+    # ── flexaid_testlib: static library for tests needing BindingMode/gaboom ──
+    # Avoids duplicating 50+ source files across multiple test targets.
+    set(FLEXAID_TESTLIB_SOURCES
+        LIB/gaboom.cpp
+        LIB/BindingMode.cpp
+        LIB/statmech.cpp
+        LIB/encom.cpp
+        LIB/tencm.cpp
+        LIB/Vcontacts.cpp
+        LIB/ic2cf.cpp
+        LIB/vcfunction.cpp
+        LIB/geometry.cpp
+        LIB/cluster.cpp
+        LIB/DensityPeak_Cluster.cpp
+        LIB/FastOPTICS_cluster.cpp
+        LIB/FOPTICS.cpp
+        LIB/calc_rmsd.cpp
+        LIB/calc_rmsd_chrom.cpp
+        LIB/calc_center.cpp
+        LIB/write_sphere.cpp
+        LIB/write_grid.cpp
+        LIB/write_rrg.cpp
+        LIB/write_rrd.cpp
+        LIB/write_pdb.cpp
+        LIB/print_surfmat.cpp
+        LIB/fileio.cpp
+        LIB/read_coor.cpp
+        LIB/create_rebuild_list.cpp
+        LIB/buildic.cpp
+        LIB/buildcc.cpp
+        LIB/buildic_point.cpp
+        LIB/buildcc_point.cpp
+        LIB/buildlist.cpp
+        LIB/bondedlist.cpp
+        LIB/assign_shift.cpp
+        LIB/ic_bounds.cpp
+        LIB/modify_pdb.cpp
+        LIB/shortest_path.cpp
+        LIB/assign_shortflex.cpp
+        LIB/update_constraint.cpp
+        LIB/update_optres.cpp
+        LIB/update_bonded.cpp
+        LIB/maps.cpp
+        LIB/read_rotlib.cpp
+        LIB/number_of_dihedrals.cpp
+        LIB/build_rotamers.cpp
+        LIB/check_clash.cpp
+        LIB/dee_pivot.cpp
+        LIB/alter_mode.cpp
+        LIB/rna_structure.cpp
+        LIB/slice_grid.cpp
+        LIB/partition_grid.cpp
+        LIB/generate_grid.cpp
+        LIB/calc_cleftic.cpp
+        LIB/ShannonThermoStack/ShannonThermoStack.cpp
+        LIB/LigandRingFlex/RingConformerLibrary.cpp
+        LIB/LigandRingFlex/SugarPucker.cpp
+        LIB/LigandRingFlex/LigandRingFlex.cpp
+        LIB/NATURaL/NATURaLDualAssembly.cpp
+        LIB/NATURaL/RibosomeElongation.cpp
+        LIB/NATURaL/TransloconInsertion.cpp
+        LIB/ChiralCenter/ChiralCenterGene.cpp
+        LIB/CavityDetect/CavityDetect.cpp
+    )
+    add_library(flexaid_testlib STATIC ${FLEXAID_TESTLIB_SOURCES})
+    target_include_directories(flexaid_testlib PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ShannonThermoStack
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/LigandRingFlex
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ChiralCenter
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect
+    )
+    if(MSVC)
+        target_compile_options(flexaid_testlib PRIVATE /O2)
+    else()
+        target_compile_options(flexaid_testlib PRIVATE -O2 -ffast-math)
+    endif()
+    flexaids_configure_simd(flexaid_testlib)
+    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
+        target_link_libraries(flexaid_testlib PUBLIC Eigen3::Eigen)
+        target_compile_definitions(flexaid_testlib PUBLIC FLEXAIDS_HAS_EIGEN)
+    endif()
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(flexaid_testlib PUBLIC OpenMP::OpenMP_CXX)
+    endif()
+
+    # test_binding_mode_statmech — BindingMode ↔ StatMechEngine integration tests
+    add_executable(test_binding_mode_statmech tests/test_binding_mode_statmech.cpp)
+    target_link_libraries(test_binding_mode_statmech PRIVATE flexaid_testlib GTest::gtest GTest::gtest_main)
+    add_test(NAME BindingModeStatMechTests COMMAND test_binding_mode_statmech)
+
+    # test_binding_mode_advanced — BindingMode advanced methods (delta_G, WHAM, representative)
+    add_executable(test_binding_mode_advanced tests/test_binding_mode_advanced.cpp)
+    target_link_libraries(test_binding_mode_advanced PRIVATE flexaid_testlib GTest::gtest GTest::gtest_main)
+    add_test(NAME BindingModeAdvancedTests COMMAND test_binding_mode_advanced)
+
+    # test_ga_core — GA primitive operations (QuickSort, mutate, crossover, copy)
+    add_executable(test_ga_core tests/test_ga_core.cpp)
+    target_link_libraries(test_ga_core PRIVATE flexaid_testlib GTest::gtest GTest::gtest_main)
+    add_test(NAME GACoreTests COMMAND test_ga_core)
+
+    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_tencom_diff, test_encom, test_ring_conformer_library, test_sugar_pucker, test_chiral_center, test_cavity_detect, test_binding_mode_statmech, test_binding_mode_advanced, test_ga_core")
 endif()
 
 # ─── Swift Bridge (macOS only) ────────────────────────────────────────────

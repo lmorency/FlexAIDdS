@@ -33,9 +33,9 @@
 **Use Case:** Project management, approval signoff
 
 #### c) `docs/implementation/PHASE1_DETAILED_IMPLEMENTATION_GUIDE.md`
-**Status:** ✅ PRE-EXISTING  
+**Status:** ⛔ REMOVED (superseded)
 **Content:** Original implementation patch (pre-corrections)
-**Note:** Kept for reference; use CORRECTED version for actual coding
+**Note:** Superseded by PHASE1_CORRECTED.md; removed from repository
 
 ---
 
@@ -367,7 +367,7 @@ docs/
 ├── implementation/
 │   ├── PHASE1_CORRECTED.md  ◄─ [PRIMARY] Code patches with red flags fixed
 │   ├── PHASE1_EXECUTIVE_SUMMARY.md  ◄─ High-level overview
-│   └── PHASE1_DETAILED_IMPLEMENTATION_GUIDE.md  ◄─ Original patch (reference)
+│   └── (PHASE1_DETAILED_IMPLEMENTATION_GUIDE.md removed — superseded by CORRECTED)
 ├── architecture/
 │   └── PHASE1_ARCHITECTURE_DIAGRAM.md  ◄─ Visual before/after diagrams
 ├── licensing/

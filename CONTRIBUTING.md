@@ -14,7 +14,7 @@ This document explains how to contribute while keeping the codebase fast, scient
 
 1. **Fork and branch**
 
-   Fork the repo and create a feature branch from the active dev branch (e.g., `claude/write-implementation-MglRZ`).
+   Fork the repo and create a feature branch from `master`.
 
 2. **Open an issue (recommended)**
 
@@ -29,8 +29,8 @@ This document explains how to contribute while keeping the codebase fast, scient
 4. **Run tests locally**
 
    ```bash
-   cmake -B build -DCMAKE_BUILD_TYPE=Release
-   cmake --build build -j
+   cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+   cmake --build build -j $(nproc)
    ctest --test-dir build --output-on-failure
    ```
 
@@ -50,7 +50,7 @@ This document explains how to contribute while keeping the codebase fast, scient
 
 - **Languages**
 
-  - C++17 (or later) for the core engine.
+  - C++20 for the core engine.
   - Python for high-level workflows, analysis, and CLI tooling.
 
 - **Performance**

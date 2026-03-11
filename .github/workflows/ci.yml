@@ -21,12 +21,14 @@ jobs:
       - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pytest
+          python -m pip install pytest numpy
       - name: Run read-only loader tests
         run: |
           PYTHONPATH=python pytest -q \
             python/tests/test_results_io.py \
-            python/tests/test_results_loader_models.py
+            python/tests/test_results_loader_models.py \
+            python/tests/test_pdb_io.py \
+            python/tests/test_import_fallback.py
 
   cxx_core_build:
     name: C++ core (${{ matrix.name }})
@@ -108,6 +110,8 @@ jobs:
             -DCMAKE_LIBRARY_OUTPUT_DIRECTORY=${{ github.workspace }}/python/flexaidds
       - name: Build Python extension
         run: cmake --build build-python --parallel --target _core
-      - name: Run statmech smoke test
+      - name: Run Python binding tests
         run: |
-          PYTHONPATH=python pytest -q python/tests/test_statmech_smoke.py
+          PYTHONPATH=python pytest -q \
+            python/tests/test_statmech_smoke.py \
+            python/tests/test_statmech.py

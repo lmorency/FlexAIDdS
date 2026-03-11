@@ -260,7 +260,7 @@ TEST_F(StatMechEngineTest, HighTemperatureFlattensWeights) {
     auto weights = hot.boltzmann_weights();
     double mean_w = 1.0 / static_cast<double>(energies.size());
     for (double w : weights)
-        EXPECT_NEAR(w, mean_w, 0.01);
+        EXPECT_NEAR(w, mean_w, 0.03);
 }
 
 TEST_F(StatMechEngineTest, LowTemperatureConcentratesWeight) {

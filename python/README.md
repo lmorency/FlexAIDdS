@@ -57,8 +57,17 @@ The loader scans PDB-like files recursively, parses `REMARK` lines such as `bind
 You can inspect a result directory directly without writing Python code:
 
 ```bash
+# Summary table
 python -m flexaidds path/to/output_dir
+
+# JSON output
 python -m flexaidds path/to/output_dir --json
+
+# Export to CSV
+python -m flexaidds path/to/output_dir --csv results.csv
+
+# Show only top N binding modes
+python -m flexaidds path/to/output_dir --top 5
 ```
 
 This is useful for smoke-checking ensemble structure before pushing results into notebooks, pandas, or PyMOL-side tooling.
