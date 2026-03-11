@@ -1,4 +1,9 @@
 *
+# CI and build infrastructure
+!.github
+!.github/**
+!cmake
+!cmake/**
 # source files
 !LIB
 !LIB/**
