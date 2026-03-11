@@ -117,6 +117,35 @@ DifferentialResult compute_differential(
         result.delta_bfactors[i] = result.bfactors_tgt[i] - result.bfactors_ref[i];
     }
 
+    // ── Per-residue vibrational entropy decomposition ────────────────────────
+    // Distribute global S_vib across residues proportional to their B-factors.
+    // B_i ∝ <Δr_i²> ∝ Σ_k (v_ki² / λ_k), so B_i/Σ(B_j) gives each
+    // residue's fractional contribution to the total thermal fluctuation.
+    auto decompose_svib = [](const std::vector<float>& bfactors, double total_svib) {
+        std::vector<double> per_res(bfactors.size(), 0.0);
+        double sum_bf = 0.0;
+        for (float bf : bfactors) sum_bf += bf;
+        if (sum_bf > 0.0) {
+            for (size_t i = 0; i < bfactors.size(); ++i) {
+                per_res[i] = total_svib * (bfactors[i] / sum_bf);
+            }
+        }
+        return per_res;
+    };
+
+    result.per_residue_svib_ref = decompose_svib(
+        result.bfactors_ref, result.svib_ref.S_vib_kcal_mol_K);
+    result.per_residue_svib_tgt = decompose_svib(
+        result.bfactors_tgt, result.svib_tgt.S_vib_kcal_mol_K);
+
+    int n_pr = std::min(result.per_residue_svib_ref.size(),
+                        result.per_residue_svib_tgt.size());
+    result.per_residue_delta_svib.resize(n_pr);
+    for (int i = 0; i < n_pr; ++i) {
+        result.per_residue_delta_svib[i] =
+            result.per_residue_svib_tgt[i] - result.per_residue_svib_ref[i];
+    }
+
     return result;
 }
 

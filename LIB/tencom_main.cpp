@@ -256,6 +256,19 @@ static void run_analysis_at_temperature(
     ref_mode.n_modes = ref_svib.n_modes;
     ref_mode.n_residues = ref_enm.n_residues();
 
+    // Per-residue S_vib decomposition for reference
+    {
+        double sum_bf = 0.0;
+        for (float bf : ref_mode.bfactors) sum_bf += bf;
+        ref_mode.per_residue_svib.resize(ref_mode.bfactors.size());
+        if (sum_bf > 0.0) {
+            for (size_t i = 0; i < ref_mode.bfactors.size(); ++i) {
+                ref_mode.per_residue_svib[i] =
+                    ref_svib.S_vib_kcal_mol_K * (ref_mode.bfactors[i] / sum_bf);
+            }
+        }
+    }
+
     tencom_output::FlexPopulation population;
     population.temperature = temperature;
     population.output_prefix = prefix;
@@ -277,6 +290,8 @@ static void run_analysis_at_temperature(
         tgt_mode.mode_data = std::move(diff.mode_comparisons);
         tgt_mode.bfactors = std::move(diff.bfactors_tgt);
         tgt_mode.delta_bfactors = std::move(diff.delta_bfactors);
+        tgt_mode.per_residue_svib = std::move(diff.per_residue_svib_tgt);
+        tgt_mode.per_residue_delta_svib = std::move(diff.per_residue_delta_svib);
         tgt_mode.n_modes = diff.svib_tgt.n_modes;
         tgt_mode.n_residues = tgt_enms[t].n_residues();
 

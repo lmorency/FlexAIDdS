@@ -482,6 +482,41 @@ TEST(PDBCalphaReader, ThrowsOnAllNonBackboneAtoms) {
     std::remove(path.c_str());
 }
 
+// ─── Per-Residue Decomposition Tests ─────────────────────────────────────
+
+TEST(PerResidueDecomposition, SumsToTotalSvib) {
+    auto path_ref = write_synthetic_pdb("test_prdecomp_ref", 30);
+    auto path_tgt = write_synthetic_pdb("test_prdecomp_tgt", 30, 2.3f, 1.5f, 0.3f);
+
+    auto s_ref = tencom_pdb::read_pdb_calpha(path_ref);
+    auto s_tgt = tencom_pdb::read_pdb_calpha(path_tgt);
+
+    tencm::TorsionalENM enm_ref, enm_tgt;
+    enm_ref.build(s_ref.atoms.data(), s_ref.residues.data(), s_ref.res_cnt);
+    enm_tgt.build(s_tgt.atoms.data(), s_tgt.residues.data(), s_tgt.res_cnt);
+
+    auto diff = tencom_diff::compute_differential(enm_ref, enm_tgt, "ref", "tgt", 300.0);
+
+    // Per-residue S_vib should sum to total S_vib
+    ASSERT_FALSE(diff.per_residue_svib_ref.empty());
+    ASSERT_FALSE(diff.per_residue_svib_tgt.empty());
+
+    double sum_ref = 0.0, sum_tgt = 0.0;
+    for (double sv : diff.per_residue_svib_ref) sum_ref += sv;
+    for (double sv : diff.per_residue_svib_tgt) sum_tgt += sv;
+
+    EXPECT_NEAR(sum_ref, diff.svib_ref.S_vib_kcal_mol_K, 1e-8);
+    EXPECT_NEAR(sum_tgt, diff.svib_tgt.S_vib_kcal_mol_K, 1e-8);
+
+    // Delta per-residue should sum to total delta
+    double sum_delta = 0.0;
+    for (double dsv : diff.per_residue_delta_svib) sum_delta += dsv;
+    EXPECT_NEAR(sum_delta, diff.delta_S_vib, 1e-6);
+
+    std::remove(path_ref.c_str());
+    std::remove(path_tgt.c_str());
+}
+
 // ─── Vibrational Entropy Tests ──────────────────────────────────────────────
 
 TEST(VibrationalEntropy, ReferenceEntropyPositive) {

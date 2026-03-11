@@ -97,6 +97,25 @@ void FlexPopulation::write_mode_pdb(const FlexMode& mode,
         ofs << "\n";
     }
 
+    // Per-residue vibrational entropy
+    if (!mode.per_residue_svib.empty()) {
+        ofs << std::setprecision(6);
+        ofs << "REMARK PER_RESIDUE_SVIB";
+        for (double sv : mode.per_residue_svib) {
+            ofs << " " << sv;
+        }
+        ofs << "\n";
+    }
+
+    if (!mode.per_residue_delta_svib.empty()) {
+        ofs << std::setprecision(6);
+        ofs << "REMARK PER_RESIDUE_DELTA_SVIB";
+        for (double dsv : mode.per_residue_delta_svib) {
+            ofs << " " << dsv;
+        }
+        ofs << "\n";
+    }
+
     // Composition summary
     if (structure.n_protein > 0 || structure.n_dna > 0 || structure.n_rna > 0) {
         ofs << "REMARK COMPOSITION";
@@ -275,6 +294,21 @@ void FlexPopulation::write_json(
         for (size_t i = 0; i < m.delta_bfactors.size(); ++i) {
             if (i > 0) ofs << ", ";
             ofs << std::setprecision(4) << m.delta_bfactors[i];
+        }
+        ofs << "],\n";
+
+        // Per-residue S_vib
+        ofs << "      \"per_residue_svib\": [";
+        for (size_t i = 0; i < m.per_residue_svib.size(); ++i) {
+            if (i > 0) ofs << ", ";
+            ofs << std::setprecision(6) << m.per_residue_svib[i];
+        }
+        ofs << "],\n";
+
+        ofs << "      \"per_residue_delta_svib\": [";
+        for (size_t i = 0; i < m.per_residue_delta_svib.size(); ++i) {
+            if (i > 0) ofs << ", ";
+            ofs << std::setprecision(6) << m.per_residue_delta_svib[i];
         }
         ofs << "],\n";
 
