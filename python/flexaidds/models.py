@@ -62,6 +62,14 @@ class PoseResult:
     temperature: Optional[float] = None
     remarks: Dict[str, Any] = field(default_factory=dict)
 
+    def __repr__(self) -> str:
+        parts = [f"mode={self.mode_id}", f"rank={self.pose_rank}"]
+        if self.cf is not None:
+            parts.append(f"cf={self.cf:.2f}")
+        if self.free_energy is not None:
+            parts.append(f"F={self.free_energy:.2f}")
+        return f"<PoseResult {' '.join(parts)}>"
+
 
 @dataclass(frozen=True)
 class BindingModeResult:
@@ -102,6 +110,14 @@ class BindingModeResult:
     frequency: Optional[int] = None
     temperature: Optional[float] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def __repr__(self) -> str:
+        parts = [f"id={self.mode_id}", f"rank={self.rank}", f"poses={len(self.poses)}"]
+        if self.free_energy is not None:
+            parts.append(f"F={self.free_energy:.2f}")
+        if self.best_cf is not None:
+            parts.append(f"best_cf={self.best_cf:.2f}")
+        return f"<BindingModeResult {' '.join(parts)}>"
 
     @property
     def n_poses(self) -> int:
@@ -152,6 +168,9 @@ class DockingResult:
     binding_modes: List[BindingModeResult]
     temperature: Optional[float] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def __repr__(self) -> str:
+        return f"<DockingResult modes={len(self.binding_modes)} source={self.source_dir.name!r}>"
 
     @property
     def n_modes(self) -> int:

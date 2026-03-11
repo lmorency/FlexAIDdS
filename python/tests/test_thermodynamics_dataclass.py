@@ -64,3 +64,45 @@ class TestThermodynamicsDataclass:
         for attr in ("temperature", "log_Z", "free_energy", "mean_energy",
                      "mean_energy_sq", "heat_capacity", "entropy", "std_energy"):
             assert hasattr(t, attr)
+
+
+class TestThermodynamicsFromDict:
+    def test_round_trip(self):
+        """from_dict(to_dict()) should reconstruct all fields."""
+        original = _make()
+        d = original.to_dict()
+        # Add fields not in to_dict() output for exact round-trip
+        d["log_Z"] = original.log_Z
+        d["mean_energy_sq"] = original.mean_energy_sq
+        restored = Thermodynamics.from_dict(d)
+        assert restored.temperature == original.temperature
+        assert restored.log_Z == pytest.approx(original.log_Z)
+        assert restored.free_energy == pytest.approx(original.free_energy)
+        assert restored.mean_energy == pytest.approx(original.mean_energy)
+        assert restored.mean_energy_sq == pytest.approx(original.mean_energy_sq)
+        assert restored.heat_capacity == pytest.approx(original.heat_capacity)
+        assert restored.entropy == pytest.approx(original.entropy)
+        assert restored.std_energy == pytest.approx(original.std_energy)
+
+    def test_infers_log_Z_when_missing(self):
+        """log_Z should be recomputed from free_energy and temperature."""
+        original = _make()
+        d = original.to_dict()
+        d["mean_energy_sq"] = original.mean_energy_sq
+        # Don't include log_Z — it should be inferred
+        restored = Thermodynamics.from_dict(d)
+        assert restored.log_Z == pytest.approx(original.log_Z, rel=1e-6)
+
+    def test_infers_mean_energy_sq_when_missing(self):
+        """mean_energy_sq should be estimated from std_energy and mean_energy."""
+        original = _make()
+        d = original.to_dict()
+        d["log_Z"] = original.log_Z
+        # Don't include mean_energy_sq — it should be inferred
+        restored = Thermodynamics.from_dict(d)
+        expected = original.std_energy ** 2 + original.mean_energy ** 2
+        assert restored.mean_energy_sq == pytest.approx(expected)
+
+    def test_missing_required_key_raises(self):
+        with pytest.raises(KeyError):
+            Thermodynamics.from_dict({"temperature_K": 300.0})

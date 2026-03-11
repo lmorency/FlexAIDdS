@@ -71,6 +71,49 @@ class Thermodynamics:
             'std_energy_kcal_mol': self.std_energy,
         }
 
+    @classmethod
+    def from_dict(cls, data: dict) -> "Thermodynamics":
+        """Reconstruct a Thermodynamics instance from a dictionary.
+
+        Accepts the key format produced by :meth:`to_dict`.  The ``log_Z``
+        and ``mean_energy_sq`` fields are optional: when absent, ``log_Z``
+        is recomputed from *free_energy* and *temperature*, and
+        ``mean_energy_sq`` is estimated from *mean_energy* and *std_energy*.
+
+        Args:
+            data: Dictionary with keys matching :meth:`to_dict` output.
+
+        Returns:
+            A new :class:`Thermodynamics` instance.
+        """
+        temperature = data['temperature_K']
+        free_energy = data['free_energy_kcal_mol']
+        mean_energy = data['enthalpy_kcal_mol']
+        entropy = data['entropy_kcal_mol_K']
+        heat_capacity = data['heat_capacity_kcal_mol_K2']
+        std_energy = data['std_energy_kcal_mol']
+
+        if 'log_Z' in data:
+            log_Z = data['log_Z']
+        else:
+            log_Z = -free_energy / (kB_kcal * temperature)
+
+        if 'mean_energy_sq' in data:
+            mean_energy_sq = data['mean_energy_sq']
+        else:
+            mean_energy_sq = std_energy ** 2 + mean_energy ** 2
+
+        return cls(
+            temperature=temperature,
+            log_Z=log_Z,
+            free_energy=free_energy,
+            mean_energy=mean_energy,
+            mean_energy_sq=mean_energy_sq,
+            heat_capacity=heat_capacity,
+            entropy=entropy,
+            std_energy=std_energy,
+        )
+
 
 class _PyStatMechEngine:
     """Pure-Python canonical-ensemble engine (fallback when C++ _core is absent).
