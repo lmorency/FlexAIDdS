@@ -68,6 +68,36 @@ void TorsionalENM::build(const atom*  atoms,
     built_ = true;
 }
 
+// ─── build_from_ca (standalone, no FA dependency) ───────────────────────────
+void TorsionalENM::build_from_ca(const std::vector<std::array<float,3>>& ca_coords,
+                                  float cutoff, float k0)
+{
+    cutoff_ = cutoff;
+    k0_     = k0;
+    built_  = false;
+
+    ca_ = ca_coords;
+    ca_atom_idx_.clear();
+    res_idx_.clear();
+    // Identity mapping — each sequential Cα is its own "residue"
+    for (int i = 0; i < static_cast<int>(ca_.size()); ++i) {
+        ca_atom_idx_.push_back(i);
+        res_idx_.push_back(i);
+    }
+
+    if (static_cast<int>(ca_.size()) < 3) {
+        std::cerr << "TENCM: fewer than 3 Cα atoms; skipping.\n";
+        return;
+    }
+
+    build_contacts();
+    build_bonds();
+    assemble_hessian();
+    diagonalize();
+
+    built_ = true;
+}
+
 // ─── extract_ca ──────────────────────────────────────────────────────────────
 void TorsionalENM::extract_ca(const atom*  atoms,
                                const resid* residue,

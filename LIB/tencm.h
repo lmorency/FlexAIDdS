@@ -90,11 +90,18 @@ public:
     // Predicted Cα B-factors at given T (Å²)
     std::vector<float> bfactors(float temperature) const;
 
+    // Build directly from Cα coordinates (no FA atom/resid dependency).
+    // ca_coords: sequential Cα positions (x,y,z) along the chain.
+    void build_from_ca(const std::vector<std::array<float,3>>& ca_coords,
+                       float cutoff = DEFAULT_RC,
+                       float k0     = DEFAULT_K0);
+
     // Getters
     int n_residues() const noexcept { return static_cast<int>(ca_.size()); }
     int n_bonds()    const noexcept { return static_cast<int>(bonds_.size()); }
     const std::vector<NormalMode>& modes() const noexcept { return modes_; }
     bool is_built()  const noexcept { return built_; }
+    const std::vector<std::array<float,3>>& ca_positions() const noexcept { return ca_; }
 
 private:
     // Internal Cα coordinate store (row-major, index = sequential residue idx)

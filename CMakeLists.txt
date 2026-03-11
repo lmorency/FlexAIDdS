@@ -411,6 +411,32 @@ if(ENABLE_TENCOM_BENCHMARK)
     message(STATUS "TeNCoM benchmark enabled — build target: benchmark_tencom")
 endif()
 
+# ─── TENCoM Entropy Differential (standalone flexibility analysis tool) ────────
+option(ENABLE_TENCOM_ENTROPY_DIFF "Build the TENCoM entropy differential binary" OFF)
+if(ENABLE_TENCOM_ENTROPY_DIFF)
+    add_executable(tencom_entropy_diff
+        LIB/tencom_entropy_diff.cpp
+        LIB/tencm.cpp
+        LIB/statmech.cpp
+        LIB/encom.cpp
+    )
+    target_include_directories(tencom_entropy_diff PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    if(MSVC)
+        target_compile_options(tencom_entropy_diff PRIVATE /O2 /fp:fast)
+    else()
+        target_compile_options(tencom_entropy_diff PRIVATE -O3 -ffast-math)
+    endif()
+    flexaids_configure_simd(tencom_entropy_diff)
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(tencom_entropy_diff PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
+        target_link_libraries(tencom_entropy_diff PRIVATE Eigen3::Eigen)
+        target_compile_definitions(tencom_entropy_diff PRIVATE FLEXAIDS_HAS_EIGEN)
+    endif()
+    message(STATUS "TENCoM entropy differential enabled — build target: tencom_entropy_diff")
+endif()
+
 # ─── VoronoiCFBatch benchmark (Task 2.3) ───────────────────────────────────────
 # VoronoiCFBatch.h is header-only; the benchmark binary exercises the std::span
 # batch interface and prints a serial-vs-OpenMP speedup table.
@@ -478,5 +504,29 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME HardwareDispatchTests COMMAND test_hardware_dispatch)
 
-    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch")
+    # test_tencom_entropy_diff — TENCoM entropy differential unit tests
+    add_executable(test_tencom_entropy_diff
+        tests/test_tencom_entropy_diff.cpp
+        LIB/tencm.cpp
+        LIB/statmech.cpp
+        LIB/encom.cpp
+    )
+    target_include_directories(test_tencom_entropy_diff PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_tencom_entropy_diff PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_tencom_entropy_diff PRIVATE /O2)
+    else()
+        target_compile_options(test_tencom_entropy_diff PRIVATE -O2)
+    endif()
+    flexaids_configure_simd(test_tencom_entropy_diff)
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(test_tencom_entropy_diff PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
+        target_link_libraries(test_tencom_entropy_diff PRIVATE Eigen3::Eigen)
+        target_compile_definitions(test_tencom_entropy_diff PRIVATE FLEXAIDS_HAS_EIGEN)
+    endif()
+    add_test(NAME TENCoMEntropyDiffTests COMMAND test_tencom_entropy_diff)
+
+    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_tencom_entropy_diff")
 endif()
