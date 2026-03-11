@@ -415,7 +415,8 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	}
 
 	// NATURaL co-translational / co-transcriptional DualAssembly analysis
-	if (FA->resligand && FA->resligand->fatm && FA->resligand->latm) {
+	// Skipped when --folded flag or advanced.assume_folded=true (receptor is fully folded)
+	if (!FA->assume_folded && FA->resligand && FA->resligand->fatm && FA->resligand->latm) {
 		int lig_start   = FA->resligand->fatm[0];
 		int lig_end     = FA->resligand->latm[0];
 		int n_lig_atoms = lig_end - lig_start + 1;

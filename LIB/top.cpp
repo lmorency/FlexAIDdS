@@ -15,6 +15,7 @@ static void print_usage(const char* progname) {
 	printf("  -c, --config <file.json>   JSON config file (overrides defaults)\n");
 	printf("  -o, --output <prefix>      Output file prefix (default: flexaid_out)\n");
 	printf("  --rigid                    Disable all flexibility (fast screening)\n");
+	printf("  --folded                   Assume receptor is fully folded (skip NATURaL chain growth)\n");
 	printf("  --legacy                   Legacy 3-file input mode\n");
 	printf("  -h, --help                 Show this help\n\n");
 	printf("Full flexibility is enabled by default (T=300K, ligand torsions,\n");
@@ -133,6 +134,7 @@ int main(int argc, char **argv){
 	FA->translational=0;
 	FA->refstructure=0;
 	FA->omit_buried=0;
+	FA->assume_folded=0;
 	FA->is_protein=1;
 
 	FA->delta_angstron=0.25;
@@ -208,6 +210,7 @@ int main(int argc, char **argv){
 	// ── CLI argument parsing ──────────────────────────────────────────────
 	bool legacy_mode = false;
 	bool use_rigid = false;
+	bool use_folded = false;
 	std::string config_path;
 	std::string output_prefix = "flexaid_out";
 
@@ -260,15 +263,22 @@ int main(int argc, char **argv){
 				output_prefix = argv[++a];
 			} else if (strcmp(argv[a], "--rigid") == 0) {
 				use_rigid = true;
+			} else if (strcmp(argv[a], "--folded") == 0) {
+				use_folded = true;
 			} else {
 				fprintf(stderr, "WARNING: Unknown option '%s' — ignoring.\n", argv[a]);
 			}
 		}
 
-		// Load JSON config: defaults → user overrides → rigid overrides
+		// Load JSON config: defaults → user overrides → rigid/folded overrides
 		json::Value config = load_config(config_path);
 		if (use_rigid) {
 			config = json::merge(config, flexaid_rigid_overrides());
+		}
+		if (use_folded) {
+			using V = json::Value;
+			using O = json::Object;
+			config = json::merge(config, V(O{{"advanced", V(O{{"assume_folded", V(true)}})}}));
 		}
 
 		// Apply config to FA/GB structs

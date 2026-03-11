@@ -155,6 +155,9 @@ Full flexibility is enabled by default (T=300K, ligand torsions, intramolecular 
 # Fast rigid screening (no flexibility, no entropy)
 ./FlexAIDdS receptor.pdb ligand.mol2 --rigid
 
+# Dock nucleotide system without co-translational chain growth
+./FlexAIDdS ribosome.pdb atp_analog.mol2 --folded
+
 # Custom output prefix
 ./FlexAIDdS receptor.pdb ligand.mol2 -o my_results
 ```
@@ -237,6 +240,15 @@ When active, the engine:
 5. Reports final co-translational ΔG, number of pause sites, and TM insertion events
 
 Supported organisms: *E. coli* K-12 and Human HEK293 (codon-specific tRNA abundance tables).
+
+To **skip** co-translational/co-transcriptional chain growth and treat the receptor as fully folded, use the `--folded` flag:
+
+```bash
+# Nucleotide system, but dock against the fully folded receptor
+./FlexAIDdS ribosome.pdb atp_analog.mol2 --folded
+```
+
+Or via JSON config: `"advanced": { "assume_folded": true }`
 
 ### Python API (Phase 2 — in progress)
 
@@ -618,8 +630,10 @@ All keys are optional — defaults enable full flexibility at 300 K. See `LIB/co
 | `advanced` | `supernode` | `false` | Supernode mode for normal mode analysis |
 | `advanced` | `force_interaction` | `false` | Enable forced interaction penalty |
 | `advanced` | `interaction_factor` | `5.0` | Interaction penalty scaling factor |
+| `advanced` | `assume_folded` | `false` | Skip NATURaL co-translational chain growth |
 
 The `--rigid` flag overrides flexibility to all-off and temperature to 0.
+The `--folded` flag sets `advanced.assume_folded = true`, treating the receptor as fully folded and skipping NATURaL co-translational/co-transcriptional chain growth even when nucleotide ligands or nucleic acid receptors are detected.
 
 ---
 

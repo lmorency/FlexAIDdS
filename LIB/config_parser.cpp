@@ -163,6 +163,7 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB) {
         FA->supernode          = jbool(config, "advanced", "supernode", false) ? 1 : 0;
         FA->force_interaction  = jbool(config, "advanced", "force_interaction", false) ? 1 : 0;
         FA->interaction_factor = jflt(config, "advanced", "interaction_factor", 5.0f);
+        FA->assume_folded      = jbool(config, "advanced", "assume_folded", false) ? 1 : 0;
     }
 
     // Always GA
