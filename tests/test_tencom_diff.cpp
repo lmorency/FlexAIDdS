@@ -410,6 +410,113 @@ TEST(NucleicAcidReader, ClassifiesResidueTypes) {
     EXPECT_EQ(tencom_pdb::classify_residue("ZZZ"), tencom_pdb::ResidueType::UNKNOWN);
 }
 
+// ─── Robustness Tests ──────────────────────────────────────────────────────
+
+TEST(PDBCalphaReader, SkipsShortLines) {
+    // PDB file with lines too short for ATOM records — should be skipped
+    std::string path = std::filesystem::temp_directory_path().string()
+                       + "/test_short_lines.pdb";
+    {
+        std::ofstream ofs(path);
+        ofs << "ATOM  short line\n";  // too short (< 54 chars)
+        ofs << "HETATM also short\n";
+        ofs << "REMARK this is fine\n";
+        // Add one valid line so it doesn't throw "no atoms found"
+        char line[82];
+        std::snprintf(line, sizeof(line),
+            "ATOM      1  CA  ALA A   1       1.000   2.000   3.000  1.00  0.00           C");
+        ofs << line << "\n";
+        ofs << "END\n";
+    }
+    auto structure = tencom_pdb::read_pdb_calpha(path);
+    EXPECT_EQ(structure.res_cnt, 1);
+    std::remove(path.c_str());
+}
+
+TEST(PDBCalphaReader, ThrowsOnInvalidCoordinates) {
+    std::string path = std::filesystem::temp_directory_path().string()
+                       + "/test_bad_coords.pdb";
+    {
+        std::ofstream ofs(path);
+        // Valid columns except coordinates are garbage
+        ofs << "ATOM      1  CA  ALA A   1       XXXXXXXX  2.000   3.000  1.00  0.00           C\n";
+        ofs << "END\n";
+    }
+    EXPECT_THROW(tencom_pdb::read_pdb_calpha(path), std::runtime_error);
+    std::remove(path.c_str());
+}
+
+TEST(PDBCalphaReader, SkipsInvalidResidueNumber) {
+    std::string path = std::filesystem::temp_directory_path().string()
+                       + "/test_bad_resnum.pdb";
+    {
+        std::ofstream ofs(path);
+        // Residue number field is "XXXX" — should be skipped with warning
+        ofs << "ATOM      1  CA  ALA AXXXX       1.000   2.000   3.000  1.00  0.00           C\n";
+        // Add one valid line
+        char line[82];
+        std::snprintf(line, sizeof(line),
+            "ATOM      2  CA  ALA A   2       4.000   5.000   6.000  1.00  0.00           C");
+        ofs << line << "\n";
+        ofs << "END\n";
+    }
+    auto structure = tencom_pdb::read_pdb_calpha(path);
+    EXPECT_EQ(structure.res_cnt, 1);
+    EXPECT_NEAR(structure.atoms[1].coor[0], 4.0f, 0.01f);
+    std::remove(path.c_str());
+}
+
+TEST(PDBCalphaReader, ThrowsOnAllNonBackboneAtoms) {
+    std::string path = std::filesystem::temp_directory_path().string()
+                       + "/test_no_backbone.pdb";
+    {
+        std::ofstream ofs(path);
+        // CB atom — not a backbone representative
+        char line[82];
+        std::snprintf(line, sizeof(line),
+            "ATOM      1  CB  ALA A   1       1.000   2.000   3.000  1.00  0.00           C");
+        ofs << line << "\n";
+        ofs << "END\n";
+    }
+    EXPECT_THROW(tencom_pdb::read_pdb_calpha(path), std::runtime_error);
+    std::remove(path.c_str());
+}
+
+// ─── Per-Residue Decomposition Tests ─────────────────────────────────────
+
+TEST(PerResidueDecomposition, SumsToTotalSvib) {
+    auto path_ref = write_synthetic_pdb("test_prdecomp_ref", 30);
+    auto path_tgt = write_synthetic_pdb("test_prdecomp_tgt", 30, 2.3f, 1.5f, 0.3f);
+
+    auto s_ref = tencom_pdb::read_pdb_calpha(path_ref);
+    auto s_tgt = tencom_pdb::read_pdb_calpha(path_tgt);
+
+    tencm::TorsionalENM enm_ref, enm_tgt;
+    enm_ref.build(s_ref.atoms.data(), s_ref.residues.data(), s_ref.res_cnt);
+    enm_tgt.build(s_tgt.atoms.data(), s_tgt.residues.data(), s_tgt.res_cnt);
+
+    auto diff = tencom_diff::compute_differential(enm_ref, enm_tgt, "ref", "tgt", 300.0);
+
+    // Per-residue S_vib should sum to total S_vib
+    ASSERT_FALSE(diff.per_residue_svib_ref.empty());
+    ASSERT_FALSE(diff.per_residue_svib_tgt.empty());
+
+    double sum_ref = 0.0, sum_tgt = 0.0;
+    for (double sv : diff.per_residue_svib_ref) sum_ref += sv;
+    for (double sv : diff.per_residue_svib_tgt) sum_tgt += sv;
+
+    EXPECT_NEAR(sum_ref, diff.svib_ref.S_vib_kcal_mol_K, 1e-8);
+    EXPECT_NEAR(sum_tgt, diff.svib_tgt.S_vib_kcal_mol_K, 1e-8);
+
+    // Delta per-residue should sum to total delta
+    double sum_delta = 0.0;
+    for (double dsv : diff.per_residue_delta_svib) sum_delta += dsv;
+    EXPECT_NEAR(sum_delta, diff.delta_S_vib, 1e-6);
+
+    std::remove(path_ref.c_str());
+    std::remove(path_tgt.c_str());
+}
+
 // ─── Vibrational Entropy Tests ──────────────────────────────────────────────
 
 TEST(VibrationalEntropy, ReferenceEntropyPositive) {

@@ -32,6 +32,7 @@ except ImportError:
 from .thermodynamics import StatMechEngine, Thermodynamics
 from .models import BindingModeResult, DockingResult, PoseResult
 from .results import load_results
+from .tencom_results import FlexModeResult, FlexPopulationResult, parse_tencom_pdb, parse_tencom_json
 
 __all__ = [
     # Python models & I/O (always available)
@@ -42,6 +43,11 @@ __all__ = [
     # StatMech (pure Python, always available)
     "StatMechEngine",
     "Thermodynamics",
+    # tENCoM results (always available, pure Python)
+    "FlexModeResult",
+    "FlexPopulationResult",
+    "parse_tencom_pdb",
+    "parse_tencom_json",
     # Physical constants (always available)
     "kB_kcal",
     "kB_SI",

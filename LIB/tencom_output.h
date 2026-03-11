@@ -35,6 +35,10 @@ struct FlexMode {
     std::vector<float> bfactors;
     std::vector<float> delta_bfactors;
 
+    // Per-residue vibrational entropy decomposition
+    std::vector<double> per_residue_svib;
+    std::vector<double> per_residue_delta_svib;
+
     int n_modes   = 0;          // number of non-trivial normal modes
     int n_residues = 0;
 };
@@ -57,6 +61,12 @@ struct FlexPopulation {
 
     // Write all outputs: summary + PDB files
     void output_all(const std::vector<tencom_pdb::CalphaStructure>& structures) const;
+
+    // Write JSON results file
+    void write_json(const std::vector<tencom_pdb::CalphaStructure>& structures) const;
+
+    // Write CSV summary table
+    void write_csv() const;
 };
 
 }  // namespace tencom_output
