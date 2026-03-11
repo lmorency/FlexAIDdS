@@ -427,8 +427,9 @@ if(ENABLE_TENCOM_BENCHMARK)
     message(STATUS "TeNCoM benchmark enabled — build target: benchmark_tencom")
 endif()
 
-# ─── tENCoM vibrational entropy tool (standalone executable) ──────────────────
-option(ENABLE_TENCOM_TOOL "Build the tENCoM vibrational entropy differential tool" OFF)
+# ─── tENCoM: ultra-fast vibrational entropy tool (HPC-ready) ──────────────────
+# Enabled by default. Same LTO + native optimisation as FlexAIDdS.
+option(ENABLE_TENCOM_TOOL "Build the tENCoM vibrational entropy differential tool" ON)
 if(ENABLE_TENCOM_TOOL)
     add_executable(tENCoM
         LIB/tencom_main.cpp
@@ -441,9 +442,12 @@ if(ENABLE_TENCOM_TOOL)
     )
     target_include_directories(tENCoM PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
     if(MSVC)
-        target_compile_options(tENCoM PRIVATE /O2 /fp:fast)
+        target_compile_options(tENCoM PRIVATE /O2 /GL /fp:fast /DNDEBUG /MT)
+        target_link_options(tENCoM PRIVATE /LTCG)
     else()
-        target_compile_options(tENCoM PRIVATE -O3 -ffast-math)
+        target_compile_options(tENCoM PRIVATE
+            -O3 -ffast-math -march=native -flto -DNDEBUG)
+        target_link_options(tENCoM PRIVATE -flto -s)
     endif()
     flexaids_configure_simd(tENCoM)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
@@ -453,7 +457,7 @@ if(ENABLE_TENCOM_TOOL)
         target_link_libraries(tENCoM PRIVATE Eigen3::Eigen)
         target_compile_definitions(tENCoM PRIVATE FLEXAIDS_HAS_EIGEN)
     endif()
-    message(STATUS "tENCoM tool enabled — build target: tENCoM")
+    message(STATUS "tENCoM ultra-fast tool enabled — build target: tENCoM")
 endif()
 
 # ─── VoronoiCFBatch benchmark (Task 2.3) ───────────────────────────────────────
@@ -485,7 +489,7 @@ endif()
 #   - -march=native: tunes for the build machine's exact CPU
 #   - Stripped binary (-s): smaller on-disk footprint
 #   - NDEBUG: disables assert() overhead
-option(BUILD_FLEXAIDDS_FAST "Build ultra-fast FlexAIDdS docking executable (LTO + native)" OFF)
+option(BUILD_FLEXAIDDS_FAST "Build ultra-fast FlexAIDdS docking executable (LTO + native)" ON)
 if(BUILD_FLEXAIDDS_FAST)
     add_executable(FlexAIDdS "")
     # Re-use the same source list as FlexAID

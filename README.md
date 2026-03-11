@@ -62,21 +62,31 @@ FlexAIDdS/
 
 ### Build Commands
 
+Both ultra-fast HPC binaries (`FlexAIDdS` + `tENCoM`) are built by default:
+
 ```bash
 git clone https://github.com/lmorency/FlexAIDdS.git
 cd FlexAIDdS
 mkdir build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release
-cmake --build . --target FlexAID -j $(nproc)
+cmake --build . -j $(nproc)
 ```
 
-### Ultra-Fast FlexAIDdS Build (LTO + native)
+This produces three binaries:
+- **`FlexAID`** — standard docking executable
+- **`FlexAIDdS`** — ultra-fast docking (LTO + `-march=native` + stripped)
+- **`tENCoM`** — ultra-fast vibrational entropy tool (same optimizations)
 
-Builds the same docking engine with link-time optimisation, `-march=native`, and stripped binary:
+### HPC Deployment
+
+For cluster / HPC nodes, build once on the target architecture:
 
 ```bash
-cmake .. -DBUILD_FLEXAIDDS_FAST=ON -DCMAKE_BUILD_TYPE=Release
-cmake --build . --target FlexAIDdS -j $(nproc)
+cmake .. -DCMAKE_BUILD_TYPE=Release \
+         -DFLEXAIDS_USE_AVX512=ON \
+         -DFLEXAIDS_USE_OPENMP=ON
+cmake --build . -j $(nproc)
+# Produces: FlexAIDdS and tENCoM with LTO + AVX-512 + OpenMP
 ```
 
 ### With Tests
@@ -98,7 +108,8 @@ cmake --build . -j $(nproc)
 
 | Option                    | Default | Description                                          |
 |:--------------------------|:--------|:-----------------------------------------------------|
-| `BUILD_FLEXAIDDS_FAST`    | OFF     | Build ultra-fast FlexAIDdS binary (LTO + native)    |
+| `BUILD_FLEXAIDDS_FAST`    | **ON**  | Ultra-fast FlexAIDdS binary (LTO + native)           |
+| `ENABLE_TENCOM_TOOL`      | **ON**  | Ultra-fast tENCoM vibrational entropy tool            |
 | `FLEXAIDS_USE_CUDA`       | OFF     | CUDA GPU batch evaluation                            |
 | `FLEXAIDS_USE_METAL`      | OFF     | Metal GPU acceleration (macOS only)                  |
 | `FLEXAIDS_USE_AVX2`       | ON      | AVX2 SIMD acceleration                               |
