@@ -151,7 +151,9 @@ int main(int argc, char **argv){
 	FA->permeability=1.0;
 	FA->intramolecular=1;
 	FA->solventterm=0.0f;
-	
+	FA->use_elec=0;
+	FA->dielectric=4.0f;
+
 	FA->useflexdee=0;
 	FA->num_constraints=0;
 	

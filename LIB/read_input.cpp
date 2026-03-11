@@ -117,6 +117,8 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 		if(strcmp(field,"VARDIH") == 0){sscanf(buffer,"%s %lf",field,&FA->delta_dihedral);}
 		if(strcmp(field,"VARFLX") == 0){sscanf(buffer,"%s %lf",field,&FA->delta_flexible);}
 		if(strcmp(field,"SLVPEN") == 0){sscanf(buffer,"%s %f",field,&FA->solventterm);}
+		if(strcmp(field,"USEELC") == 0){FA->use_elec=1;}
+		if(strcmp(field,"DIELEC") == 0){sscanf(buffer,"%s %f",field,&FA->dielectric);}
 		if(strcmp(field,"OUTRNG") == 0){FA->output_range=1;}
 		if(strcmp(field,"USEDEE") == 0){FA->useflexdee=1;}
 		if(strcmp(field,"IMATRX") == 0){strcpy(emat_forced,&buffer[7]);}

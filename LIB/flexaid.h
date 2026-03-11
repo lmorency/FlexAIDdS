@@ -105,6 +105,7 @@ struct cf_str{  // Complementarity Function value structure
 	double con;    // constraint value
 	double wal;    // wall term
 	double sas;    // solvent accessibility surface
+	double elec;   // electrostatic (Coulomb) energy
 	double totsas; // overall sas of molecule
 	int   rclash; // flag that shows whether the residue is making steric clashes
 };
@@ -188,6 +189,7 @@ struct atom_struct{  // atom structure
 	float  dih;     // dihedral between atom, rec[0], rec[1] and rec[2]
 	float  shift;   // gives the angle shift from that of rec[3]'s atom
 	float  acs;     // accessible contact surface
+	float  charge;  // partial atomic charge (e.g. RESP from MOL2)
 	int    ncons;   // number of constraint for atoms
 	int    isbb;    // atom is a backbone atom
 	int    graph;   // id of graph atom belongs to (ligands only)
@@ -337,6 +339,9 @@ struct FA_Global_struct{
 	int   intramolecular;                // consider intramolecular forces (ligand only)
 	float solventterm;                   // solvent penalty term
 	float intrafraction;                 // intramolecular fraction interaction
+
+	int   use_elec;                      // enable Coulomb electrostatic scoring
+	float dielectric;                    // distance-dependent dielectric constant (default 4.0)
 
 	constraint* constraints;             // list of constraints
 	int num_constraints;                 // constraints counter
