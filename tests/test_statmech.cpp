@@ -250,9 +250,10 @@ TEST_F(StatMechEngineTest, EntropyIncreasesWithSpread) {
 // ===========================================================================
 
 TEST_F(StatMechEngineTest, HighTemperatureFlattensWeights) {
-    // At T → ∞, all Boltzmann weights become equal
-    // Need T high enough so β·ΔE ≪ 1 (ΔE=30 kcal/mol → need kT ≫ 30)
-    StatMechEngine hot(100000.0);  // very high T
+    // At T → ∞, all Boltzmann weights become equal.
+    // Need T high enough so β·ΔE ≪ 1.  With ΔE=30 kcal/mol and
+    // kB=0.001987 kcal/(mol·K), T=1e7 gives β·ΔE ≈ 1.5e-3.
+    StatMechEngine hot(10000000.0);
     std::vector<double> energies = {-20.0, -10.0, 0.0, 10.0};
     for (double e : energies)
         hot.add_sample(e);

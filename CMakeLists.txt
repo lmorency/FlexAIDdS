@@ -368,6 +368,8 @@ if(BUILD_PYTHON_BINDINGS AND pybind11_FOUND)
     pybind11_add_module(_core
         python/bindings/core_bindings.cpp
         LIB/statmech.cpp
+        LIB/hardware_dispatch.cpp
+        LIB/hardware_detect.cpp
         LIB/encom.cpp
         # BindingMode requires full GA infrastructure
         # Partial exposure for now (thermodynamics only)
@@ -394,6 +396,8 @@ if(ENABLE_TENCOM_BENCHMARK)
         LIB/benchmark_tencom.cpp
         LIB/tencm.cpp
         LIB/statmech.cpp
+        LIB/hardware_dispatch.cpp
+        LIB/hardware_detect.cpp
         LIB/encom.cpp
     )
     target_include_directories(benchmark_tencom PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
@@ -423,6 +427,8 @@ if(ENABLE_TENCOM_TOOL)
         LIB/pdb_calpha.cpp
         LIB/tencm.cpp
         LIB/statmech.cpp
+        LIB/hardware_dispatch.cpp
+        LIB/hardware_detect.cpp
         LIB/encom.cpp
     )
     target_include_directories(tENCoM PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
@@ -480,13 +486,25 @@ if(BUILD_TESTING)
     enable_testing()
 
     # test_statmech — StatMechEngine unit tests
-    add_executable(test_statmech tests/test_statmech.cpp LIB/statmech.cpp)
+    add_executable(test_statmech tests/test_statmech.cpp LIB/statmech.cpp
+                   LIB/hardware_dispatch.cpp LIB/hardware_detect.cpp)
     target_include_directories(test_statmech PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
     target_link_libraries(test_statmech PRIVATE GTest::gtest GTest::gtest_main)
     if(MSVC)
         target_compile_options(test_statmech PRIVATE /O2)
     else()
         target_compile_options(test_statmech PRIVATE -O2)
+    endif()
+    flexaids_configure_simd(test_statmech)
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(test_statmech PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
+        target_link_libraries(test_statmech PRIVATE Eigen3::Eigen)
+        target_compile_definitions(test_statmech PRIVATE FLEXAIDS_HAS_EIGEN)
+    elseif(FLEXAIDS_USE_EIGEN AND EIGEN3_FOUND)
+        target_include_directories(test_statmech PRIVATE ${EIGEN3_INCLUDE_DIRS})
+        target_compile_definitions(test_statmech PRIVATE FLEXAIDS_HAS_EIGEN)
     endif()
     add_test(NAME StatMechTests COMMAND test_statmech)
 
@@ -495,6 +513,8 @@ if(BUILD_TESTING)
         tests/test_hardware_dispatch.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         LIB/statmech.cpp
+        LIB/hardware_dispatch.cpp
+        LIB/hardware_detect.cpp
         LIB/tencm.cpp)
     target_include_directories(test_hardware_dispatch PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB
@@ -550,6 +570,8 @@ if(BUILD_TESTING)
         LIB/pdb_calpha.cpp
         LIB/tencm.cpp
         LIB/statmech.cpp
+        LIB/hardware_dispatch.cpp
+        LIB/hardware_detect.cpp
         LIB/encom.cpp
     )
     target_include_directories(test_tencom_diff PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
