@@ -103,46 +103,19 @@ cmake --build . -j $(nproc)
 
 ## Usage
 
-### Legacy Mode
-
-FlexAID requires a **config file** and a **GA parameter file**. These can be generated using `ProcessLigand` (installed via PyPI: `pip install processligand-py`).
-When using ProcessLigand make sure `atom_index=90000` on the ligand.
+### Docking
 
 ```bash
-./FlexAID config.inp ga.inp
+./FlexAID config.inp ga.inp output.pdb
 ```
 
-### Zero-Config CLI
+### Vibrational Entropy (tENCoM)
 
 ```bash
-./flexaids dock receptor.pdb ligand.mol2
-# Auto-detects: binding site, rotatable bonds, hardware backend
-# Output: binding_modes.pdb, thermodynamics.json
+tENCoM reference.pdb target1.pdb [target2.pdb ...] [-T temp] [-r cutoff] [-k k0] [-o prefix]
 ```
 
-### YAML Config (Advanced)
-
-```yaml
-docking:
-  binding_site:
-    method: auto  # or {center: [x,y,z], radius: 10.0}
-  flexible_sidechains: ["A:TYR123", "A:PHE456"]
-  temperature: 300.0
-
-genetic_algorithm:
-  population_size: 2000
-  max_generations: 100
-
-hardware:
-  backend: auto  # or: cuda, metal, avx512, openmp
-
-output:
-  top_n_modes: 10
-  json_thermodynamics: true
-  entropy_decomposition: true
-```
-
-### Python API (Phase 2)
+### Python API (Phase 2 — in progress)
 
 ```python
 import flexaidds
