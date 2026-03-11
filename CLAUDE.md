@@ -48,6 +48,8 @@ FlexAIDdS/
 │   ├── visualization.py     # Pose rendering & Boltzmann coloring
 │   └── results_adapter.py   # Bridge to flexaidds.load_results()
 ├── docs/                   # Documentation
+│   ├── IMPLEMENTATION_ROADMAP.md  # Development roadmap
+│   ├── PHASE1_SUMMARY_AND_DELIVERABLES.md  # Phase 1 deliverables
 │   ├── architecture/        # Architecture diagrams
 │   ├── implementation/      # Phase summaries & corrected docs
 │   └── licensing/           # License matrix, clean-room policy, GPL isolation
@@ -98,7 +100,10 @@ FlexAIDdS/
 `read_lig.cpp`, `build_rotamers.cpp`, `read_rotlib.cpp`, `read_rotobs.cpp`, `buildcc.cpp`, `buildcc_point.cpp`, `buildic.cpp`, `buildic_point.cpp`, `build_close.cpp`, `bondedlist.cpp`, `update_bonded.cpp`
 
 **Scoring & evaluation:**
-`vcfunction.cpp`, `cffunction.cpp`, `spfunction.cpp`
+`vcfunction.cpp`, `cffunction.cpp`, `spfunction.cpp`, `set_intprob.cpp`
+
+**GPU evaluation:**
+`cuda_eval.cu/cuh` (CUDA batch kernel), `metal_eval.h/mm` (Metal batch evaluation)
 
 **Atom typing & assignment:**
 `assign_radii.cpp`, `assign_radii_types.cpp`, `assign_radius.cpp`, `assign_types.cpp`, `assign_shift.cpp`, `assign_shortflex.cpp`, `assign_eigen.cpp`, `assign_constraint.cpp`, `update_constraint.cpp`
@@ -111,6 +116,12 @@ FlexAIDdS/
 
 **Input/config:**
 `read_input.cpp`, `read_emat.cpp`, `read_flexscfile.cpp`, `read_constraints.cpp`, `read_rmsdst.cpp`, `top.cpp`
+
+**Benchmarks:**
+`benchmark_tencom.cpp`, `benchmark_vcfbatch.cpp`
+
+**Legacy/internal:**
+`python_bindings.cpp` (legacy pybind11 stub), `add2_optimiz_vec.cpp`, `alter_mode.cpp`, `buildlist.cpp`, `create_rebuild_list.cpp`, `print_surfmat.cpp`, `read_eigen.cpp`, `update_optres.cpp`, `wif083.cpp`
 
 **Other:**
 `rna_structure.cpp`, `dee_pivot.cpp`, `dee_print.cpp`, `maps.cpp`, `check_clash.cpp`, `calc_center.cpp`, `calc_cleftic.cpp`, `number_of_dihedrals.cpp`
