@@ -1,0 +1,217 @@
+// tencom_main.cpp — Standalone tENCoM vibrational entropy differential tool
+//
+// Usage: tENCoM reference.pdb target1.pdb [target2.pdb ...] [options]
+//
+// Computes TorsionalENM normal modes on a reference structure and one or more
+// target structures, outputs eigenvalue/eigenvector differentials and
+// vibrational entropy differences (ΔS_vib) in BindingMode-like PDB format.
+//
+// The reference structure is always required (first positional argument).
+// Full flexibility is always on (all torsional modes used).
+//
+// Options:
+//   -T <temperature>   Temperature in Kelvin (default: 300.0)
+//   -r <cutoff>        Contact cutoff in Angstroms (default: 9.0)
+//   -k <spring_const>  Spring constant k0 (default: 1.0)
+//   -o <prefix>        Output file prefix (default: "tencom")
+//   -h                 Print help and exit
+
+#include "pdb_calpha.h"
+#include "tencom_diff.h"
+#include "tencom_output.h"
+#include "tencm.h"
+#include "encom.h"
+
+#include <iostream>
+#include <string>
+#include <vector>
+#include <cstdlib>
+#include <cstring>
+
+// ─── CLI argument parsing ───────────────────────────────────────────────────
+
+struct Options {
+    std::vector<std::string> pdb_files;  // [0] = reference, [1..N] = targets
+    double temperature  = 300.0;
+    float  cutoff       = 9.0f;
+    float  k0           = 1.0f;
+    std::string prefix  = "tencom";
+    double eigenvalue_cutoff = 1e-6;
+};
+
+static void print_usage(const char* progname) {
+    std::cout
+        << "\nFlexAIDdS tENCoM — Vibrational Entropy Differential Tool\n"
+        << "  Torsional Elastic Network Contact Model (TENCoM)\n\n"
+        << "Usage: " << progname << " reference.pdb target1.pdb [target2.pdb ...] [options]\n\n"
+        << "The reference structure is always required (first positional argument).\n"
+        << "Full flexibility is always ON (all torsional normal modes).\n\n"
+        << "Options:\n"
+        << "  -T <temp>     Temperature in Kelvin          (default: 300.0)\n"
+        << "  -r <cutoff>   Contact cutoff in Angstroms    (default: 9.0)\n"
+        << "  -k <k0>       Spring constant                (default: 1.0)\n"
+        << "  -o <prefix>   Output file prefix             (default: tencom)\n"
+        << "  -h            Print this help and exit\n\n"
+        << "Output:\n"
+        << "  <prefix>_mode_0.pdb   Reference structure with vibrational entropy\n"
+        << "  <prefix>_mode_N.pdb   Target N with differential ΔS_vib, ΔF_vib\n"
+        << "  Summary table         Printed to stdout\n\n";
+}
+
+static Options parse_args(int argc, char* argv[]) {
+    Options opts;
+
+    if (argc < 2) {
+        print_usage(argv[0]);
+        std::exit(1);
+    }
+
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+
+        if (arg == "-h" || arg == "--help") {
+            print_usage(argv[0]);
+            std::exit(0);
+        } else if (arg == "-T" && i + 1 < argc) {
+            opts.temperature = std::atof(argv[++i]);
+        } else if (arg == "-r" && i + 1 < argc) {
+            opts.cutoff = static_cast<float>(std::atof(argv[++i]));
+        } else if (arg == "-k" && i + 1 < argc) {
+            opts.k0 = static_cast<float>(std::atof(argv[++i]));
+        } else if (arg == "-o" && i + 1 < argc) {
+            opts.prefix = argv[++i];
+        } else if (arg[0] == '-') {
+            std::cerr << "Unknown option: " << arg << "\n";
+            print_usage(argv[0]);
+            std::exit(1);
+        } else {
+            opts.pdb_files.push_back(arg);
+        }
+    }
+
+    if (opts.pdb_files.empty()) {
+        std::cerr << "Error: reference PDB is required.\n";
+        print_usage(argv[0]);
+        std::exit(1);
+    }
+
+    return opts;
+}
+
+// ─── main ───────────────────────────────────────────────────────────────────
+
+int main(int argc, char* argv[]) {
+    Options opts = parse_args(argc, argv);
+
+    std::cout << "\n=== FlexAIDdS tENCoM — Vibrational Entropy Differential Tool ===\n";
+    std::cout << "Temperature: " << opts.temperature << " K\n";
+    std::cout << "Contact cutoff: " << opts.cutoff << " A\n";
+    std::cout << "Spring constant k0: " << opts.k0 << "\n";
+    std::cout << "Full flexibility: ON\n\n";
+
+    // ── Step 1: Read reference PDB ──────────────────────────────────────────
+    std::cout << "Reading reference: " << opts.pdb_files[0] << "\n";
+    tencom_pdb::CalphaStructure ref_struct;
+    try {
+        ref_struct = tencom_pdb::read_pdb_calpha(opts.pdb_files[0]);
+    } catch (const std::exception& e) {
+        std::cerr << "Error reading reference PDB: " << e.what() << "\n";
+        return 1;
+    }
+    std::cout << "  " << ref_struct.res_cnt << " residues (Calpha atoms)\n";
+
+    // ── Step 2: Build reference TorsionalENM ────────────────────────────────
+    std::cout << "Building reference TorsionalENM...\n";
+    tencm::TorsionalENM ref_enm;
+    ref_enm.build(ref_struct.atoms.data(), ref_struct.residues.data(),
+                  ref_struct.res_cnt, opts.cutoff, opts.k0);
+
+    if (!ref_enm.is_built()) {
+        std::cerr << "Error: failed to build reference ENM (need >= 3 residues).\n";
+        return 1;
+    }
+    std::cout << "  " << ref_enm.modes().size() << " normal modes computed\n";
+
+    // ── Step 3: Compute reference vibrational entropy ───────────────────────
+    auto ref_encom_modes = tencom_diff::to_encom_modes(ref_enm.modes());
+    auto ref_svib = encom::ENCoMEngine::compute_vibrational_entropy(
+        ref_encom_modes, opts.temperature, opts.eigenvalue_cutoff);
+
+    // Create reference FlexMode (mode 0)
+    tencom_output::FlexMode ref_mode;
+    ref_mode.mode_id = 0;
+    ref_mode.pdb_path = opts.pdb_files[0];
+    ref_mode.label = "reference";
+    ref_mode.S_vib = ref_svib.S_vib_kcal_mol_K;
+    ref_mode.delta_S_vib = 0.0;
+    ref_mode.delta_F_vib = 0.0;
+    ref_mode.bfactors = ref_enm.bfactors(static_cast<float>(opts.temperature));
+    ref_mode.n_modes = ref_svib.n_modes;
+    ref_mode.n_residues = ref_enm.n_residues();
+
+    // ── Step 4: Process target structures ───────────────────────────────────
+    tencom_output::FlexPopulation population;
+    population.temperature = opts.temperature;
+    population.output_prefix = opts.prefix;
+    population.modes.push_back(ref_mode);
+
+    std::vector<tencom_pdb::CalphaStructure> all_structures;
+    all_structures.push_back(std::move(ref_struct));
+
+    for (size_t t = 1; t < opts.pdb_files.size(); ++t) {
+        std::cout << "\nProcessing target " << t << ": " << opts.pdb_files[t] << "\n";
+
+        // Read target PDB
+        tencom_pdb::CalphaStructure tgt_struct;
+        try {
+            tgt_struct = tencom_pdb::read_pdb_calpha(opts.pdb_files[t]);
+        } catch (const std::exception& e) {
+            std::cerr << "  Error reading target PDB: " << e.what() << " — skipping.\n";
+            continue;
+        }
+        std::cout << "  " << tgt_struct.res_cnt << " residues (Calpha atoms)\n";
+
+        // Build target TorsionalENM
+        tencm::TorsionalENM tgt_enm;
+        tgt_enm.build(tgt_struct.atoms.data(), tgt_struct.residues.data(),
+                      tgt_struct.res_cnt, opts.cutoff, opts.k0);
+
+        if (!tgt_enm.is_built()) {
+            std::cerr << "  Warning: failed to build target ENM — skipping.\n";
+            continue;
+        }
+        std::cout << "  " << tgt_enm.modes().size() << " normal modes computed\n";
+
+        // Compute differential vs reference
+        auto diff = tencom_diff::compute_differential(
+            ref_enm, tgt_enm,
+            opts.pdb_files[0], opts.pdb_files[t],
+            opts.temperature, opts.eigenvalue_cutoff);
+
+        std::cout << "  Delta_S_vib = " << diff.delta_S_vib << " kcal/mol/K\n";
+        std::cout << "  Delta_F_vib = " << diff.delta_F_vib << " kcal/mol\n";
+
+        // Create target FlexMode
+        tencom_output::FlexMode tgt_mode;
+        tgt_mode.mode_id = static_cast<int>(t);
+        tgt_mode.pdb_path = opts.pdb_files[t];
+        tgt_mode.label = opts.pdb_files[t];
+        tgt_mode.S_vib = diff.svib_tgt.S_vib_kcal_mol_K;
+        tgt_mode.delta_S_vib = diff.delta_S_vib;
+        tgt_mode.delta_F_vib = diff.delta_F_vib;
+        tgt_mode.mode_data = std::move(diff.mode_comparisons);
+        tgt_mode.bfactors = std::move(diff.bfactors_tgt);
+        tgt_mode.delta_bfactors = std::move(diff.delta_bfactors);
+        tgt_mode.n_modes = diff.svib_tgt.n_modes;
+        tgt_mode.n_residues = tgt_enm.n_residues();
+
+        population.modes.push_back(std::move(tgt_mode));
+        all_structures.push_back(std::move(tgt_struct));
+    }
+
+    // ── Step 5: Sort by ΔF_vib and output ───────────────────────────────────
+    population.sort_by_free_energy();
+    population.output_all(all_structures);
+
+    return 0;
+}
