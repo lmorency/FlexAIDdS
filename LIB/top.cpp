@@ -36,7 +36,7 @@ int main(int argc, char **argv){
 	char tmp_end_strfile[MAX_PATH__];
 
 	int memchrom=0;
-  
+
 	time_t sta_timer,end_timer;
 	struct tm *sta,*end;
 	int sta_val[3],end_val[3];
@@ -66,7 +66,7 @@ int main(int argc, char **argv){
 		fprintf(stderr,"ERROR: Could not allocate memory for FA || GB || VC\n");
 		Terminate(2);
 	}
-	
+
 	memset(FA,0,sizeof(FA_Global));
 	memset(GB,0,sizeof(GB_Global));
 	memset(VC,0,sizeof(VC_Global));
@@ -97,9 +97,9 @@ int main(int argc, char **argv){
 	FA->MIN_ROTAMER_LIBRARY_SIZE = 155;
 	FA->MIN_ROTAMER = 1;
 	FA->MIN_FLEX_BONDS = 5;
-	FA->MIN_CLEFTGRID_POINTS = 250;  
-	FA->MIN_PAR = 6;  
-	FA->MIN_FLEX_RESIDUE = 5;  
+	FA->MIN_CLEFTGRID_POINTS = 250;
+	FA->MIN_PAR = 6;
+	FA->MIN_FLEX_RESIDUE = 5;
 	FA->MIN_NORMAL_GRID_POINTS = 250;
 	FA->MIN_OPTRES = 1;
 	FA->MIN_CONSTRAINTS = 1;
@@ -126,7 +126,6 @@ int main(int argc, char **argv){
 	FA->atm_cnt_real=0;
 	FA->res_cnt=0;
 	FA->nors=0;
-	//FA->natoms_rmsd=0;
 
 	FA->htpmode=false;
 	FA->nrg_suite=0;
@@ -135,8 +134,7 @@ int main(int argc, char **argv){
 	FA->refstructure=0;
 	FA->omit_buried=0;
 	FA->is_protein=1;
-	//FA->is_nucleicacid=0;
-	
+
 	FA->delta_angstron=0.25;
 	FA->delta_angle=5.0;
 	FA->delta_dihedral=5.0;
@@ -147,17 +145,17 @@ int main(int argc, char **argv){
 	FA->resligand = NULL;
 	FA->useacs = 0;
 	FA->acsweight = 1.0;
-	
+
 	GB->outgen=0;
 	FA->num_grd=0;
 	FA->exclude_het=0;
 	FA->remove_water=1;
 	FA->normalize_area=0;
-	
+
 	FA->recalci=0;
 	FA->skipped=0;
 	FA->clashed=0;
-	
+
 	FA->spacer_length=0.375;
 	FA->opt_grid=0;
 
@@ -166,7 +164,7 @@ int main(int argc, char **argv){
 
 	FA->rotobs=0;
 	FA->contributions=NULL;
-        FA->output_scored_only=0;
+	FA->output_scored_only=0;
 	FA->score_ligand_only=0;
 	FA->permeability=1.0;
 	FA->intramolecular=1;
@@ -176,20 +174,19 @@ int main(int argc, char **argv){
 
 	FA->useflexdee=0;
 	FA->num_constraints=0;
-	
+
 	FA->npar=0;
-	
+
 	FA->mov[0] = NULL;
 	FA->mov[1] = NULL;
 	strcpy(FA->clustering_algorithm,"CF");
-    strcpy(FA->vcontacts_self_consistency,"MAX");
+	strcpy(FA->vcontacts_self_consistency,"MAX");
 	FA->vcontacts_planedef = 'X';
-	
-	// Linux path
+
+	// ── Determine base path from executable location ──
 	pch=strrchr(argv[0],'\\');
-	if(pch==NULL) 
+	if(pch==NULL)
 	{
-		// Windows path
 		pch=strrchr(argv[0],'/');
 	}
 
@@ -201,8 +198,7 @@ int main(int argc, char **argv){
 		}
 	}else{
 		strcpy(FA->base_path,".");
-	}  
-
+	}
 #else
 	strcpy(FA->base_path,".");
 #endif //_WIN32

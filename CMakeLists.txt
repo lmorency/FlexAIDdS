@@ -129,6 +129,17 @@ if(FLEXAIDS_USE_EIGEN)
     endif()
 endif()
 
+# ─── nlohmann/json (header-only JSON parser, MIT license) ──────────────────
+include(FetchContent)
+FetchContent_Declare(
+    nlohmann_json
+    GIT_REPOSITORY https://github.com/nlohmann/json.git
+    GIT_TAG        v3.11.3
+    GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(nlohmann_json)
+message(STATUS "nlohmann/json fetched — JSON config support enabled")
+
 # ─── pybind11 (for Python bindings) ────────────────────────────────────────
 if(BUILD_PYTHON_BINDINGS)
     find_package(pybind11 CONFIG QUIET)
@@ -294,6 +305,9 @@ elseif(FLEXAIDS_USE_EIGEN AND EIGEN3_FOUND)
     target_compile_definitions(FlexAID PRIVATE FLEXAIDS_HAS_EIGEN)
 endif()
 
+# ─── nlohmann/json link ────────────────────────────────────────────────
+target_link_libraries(FlexAID PRIVATE nlohmann_json::nlohmann_json)
+
 # ─── OpenMP link ────────────────────────────────────────────────────────
 if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
     target_link_libraries(FlexAID PRIVATE OpenMP::OpenMP_CXX)
@@ -430,8 +444,9 @@ if(ENABLE_TENCOM_BENCHMARK)
     message(STATUS "TeNCoM benchmark enabled — build target: benchmark_tencom")
 endif()
 
-# ─── tENCoM vibrational entropy tool (standalone executable) ──────────────────
-option(ENABLE_TENCOM_TOOL "Build the tENCoM vibrational entropy differential tool" OFF)
+# ─── tENCoM: ultra-fast vibrational entropy tool (HPC-ready) ──────────────────
+# Enabled by default. Same LTO + native optimisation as FlexAIDdS.
+option(ENABLE_TENCOM_TOOL "Build the tENCoM vibrational entropy differential tool" ON)
 if(ENABLE_TENCOM_TOOL)
     add_executable(tENCoM
         LIB/tencom_main.cpp
@@ -446,9 +461,12 @@ if(ENABLE_TENCOM_TOOL)
     )
     target_include_directories(tENCoM PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
     if(MSVC)
-        target_compile_options(tENCoM PRIVATE /O2 /fp:fast)
+        target_compile_options(tENCoM PRIVATE /O2 /GL /fp:fast /DNDEBUG /MT)
+        target_link_options(tENCoM PRIVATE /LTCG)
     else()
-        target_compile_options(tENCoM PRIVATE -O3 -ffast-math)
+        target_compile_options(tENCoM PRIVATE
+            -O3 -ffast-math -march=native -flto -DNDEBUG)
+        target_link_options(tENCoM PRIVATE -flto -s)
     endif()
     flexaids_configure_simd(tENCoM)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
@@ -498,6 +516,65 @@ if(ENABLE_VCFBATCH_BENCHMARK)
         target_link_libraries(benchmark_vcfbatch PRIVATE OpenMP::OpenMP_CXX)
     endif()
     message(STATUS "VoronoiCFBatch benchmark enabled — build target: benchmark_vcfbatch")
+endif()
+
+# ─── FlexAIDdS: ultra-fast docking executable ─────────────────────────────
+# Build with: cmake .. -DBUILD_FLEXAIDDS_FAST=ON -DCMAKE_BUILD_TYPE=Release
+#             cmake --build . --target FlexAIDdS -j $(nproc)
+#
+# Differences from FlexAID:
+#   - LTO (link-time optimisation) for whole-program inlining
+#   - -march=native: tunes for the build machine's exact CPU
+#   - Stripped binary (-s): smaller on-disk footprint
+#   - NDEBUG: disables assert() overhead
+option(BUILD_FLEXAIDDS_FAST "Build ultra-fast FlexAIDdS docking executable (LTO + native)" ON)
+if(BUILD_FLEXAIDDS_FAST)
+    add_executable(FlexAIDdS "")
+    # Re-use the same source list as FlexAID
+    get_target_property(_flexaid_sources FlexAID SOURCES)
+    target_sources(FlexAIDdS PRIVATE ${_flexaid_sources})
+
+    target_include_directories(FlexAIDdS PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ShannonThermoStack
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/LigandRingFlex
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ChiralCenter
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect
+    )
+
+    if(MSVC)
+        target_compile_options(FlexAIDdS PRIVATE /O2 /GL /DNDEBUG /MT)
+        target_link_options(FlexAIDdS PRIVATE /LTCG)
+        target_compile_definitions(FlexAIDdS PRIVATE
+            _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES NOMINMAX)
+    else()
+        target_compile_options(FlexAIDdS PRIVATE
+            -O3 -ffast-math -march=native -flto -DNDEBUG)
+        target_link_options(FlexAIDdS PRIVATE -flto -s)
+    endif()
+
+    # SIMD
+    flexaids_configure_simd(FlexAIDdS)
+
+    # JSON config
+    target_link_libraries(FlexAIDdS PRIVATE nlohmann_json::nlohmann_json)
+
+    # Eigen3
+    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
+        target_link_libraries(FlexAIDdS PRIVATE Eigen3::Eigen)
+        target_compile_definitions(FlexAIDdS PRIVATE FLEXAIDS_HAS_EIGEN)
+    elseif(FLEXAIDS_USE_EIGEN AND EIGEN3_FOUND)
+        target_include_directories(FlexAIDdS PRIVATE ${EIGEN3_INCLUDE_DIRS})
+        target_compile_definitions(FlexAIDdS PRIVATE FLEXAIDS_HAS_EIGEN)
+    endif()
+
+    # OpenMP
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(FlexAIDdS PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+
+    message(STATUS "FlexAIDdS fast executable enabled — build with: cmake --build . --target FlexAIDdS")
 endif()
 
 # ─── Unit Tests (GoogleTest) ───────────────────────────────────────────────

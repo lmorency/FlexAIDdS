@@ -83,21 +83,38 @@ FlexAIDdS/
 
 ### Build Commands
 
+Both ultra-fast HPC binaries (`FlexAIDdS` + `tENCoM`) are built by default:
+
 ```bash
-git clone https://github.com/lmorency/FlexAIDdS.git
+git clone https://github.com/lmorency/FlexAIDdS
 cd FlexAIDdS
 mkdir build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release
-cmake --build . --target FlexAID -j $(nproc)
-```
-
-### With Tests
-
-```bash
-cmake .. -DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=Release
 cmake --build . -j $(nproc)
-ctest --test-dir .
 ```
+
+This produces three binaries:
+- **`FlexAID`** — standard docking executable
+- **`FlexAIDdS`** — ultra-fast docking (LTO + `-march=native` + stripped)
+- **`tENCoM`** — ultra-fast vibrational entropy tool (same optimizations)
+
+### HPC Deployment
+
+For cluster / HPC nodes, build once on the target architecture:
+
+| Option                    | Default | Description                              |
+|:--------------------------|:--------|:-----------------------------------------|
+| `FLEXAIDS_USE_CUDA`       | OFF     | CUDA GPU batch evaluation                |
+| `FLEXAIDS_USE_METAL`      | OFF     | Metal GPU acceleration (macOS only)      |
+| `FLEXAIDS_USE_AVX2`       | ON      | AVX2 SIMD acceleration                   |
+| `FLEXAIDS_USE_AVX512`     | OFF     | AVX-512 SIMD acceleration                |
+| `FLEXAIDS_USE_OPENMP`     | ON      | OpenMP thread parallelism                |
+| `FLEXAIDS_USE_EIGEN`      | ON      | Eigen3 vectorised linear algebra         |
+| `BUILD_PYTHON_BINDINGS`   | OFF     | Build pybind11 Python extension (`_core`)|
+| `BUILD_TESTING`           | OFF     | Build GoogleTest unit tests              |
+| `ENABLE_TENCOM_BENCHMARK` | OFF     | Build standalone tENCoM benchmark binary |
+| `ENABLE_TENCOM_TOOL`      | OFF     | Build tENCoM vibrational entropy tool    |
+| `ENABLE_VCFBATCH_BENCHMARK`| OFF    | Build VoronoiCFBatch benchmark binary    |
 
 ### With Python Bindings
 
@@ -108,53 +125,119 @@ cmake --build . -j $(nproc)
 
 ### CMake Options
 
-| Option                    | Default | Description                              |
-|:--------------------------|:--------|:-----------------------------------------|
-| `FLEXAIDS_USE_CUDA`       | OFF     | CUDA GPU batch evaluation                |
-| `FLEXAIDS_USE_METAL`      | OFF     | Metal GPU acceleration (macOS only)      |
-| `FLEXAIDS_USE_AVX2`       | ON      | AVX2 SIMD acceleration                   |
-| `FLEXAIDS_USE_AVX512`     | OFF     | AVX-512 SIMD acceleration                |
-| `FLEXAIDS_USE_OPENMP`     | ON      | OpenMP thread parallelism                |
-| `FLEXAIDS_USE_EIGEN`      | ON      | Eigen3 vectorised linear algebra         |
-| `BUILD_PYTHON_BINDINGS`   | OFF     | pybind11 Python extensions               |
-| `BUILD_TESTING`           | OFF     | GoogleTest unit tests                    |
-| `ENABLE_TENCOM_BENCHMARK` | OFF     | Build standalone TeNCoM benchmark binary |
+| Option                    | Default | Description                                          |
+|:--------------------------|:--------|:-----------------------------------------------------|
+| `BUILD_FLEXAIDDS_FAST`    | **ON**  | Ultra-fast FlexAIDdS binary (LTO + native)           |
+| `ENABLE_TENCOM_TOOL`      | **ON**  | Ultra-fast tENCoM vibrational entropy tool            |
+| `FLEXAIDS_USE_CUDA`       | OFF     | CUDA GPU batch evaluation                            |
+| `FLEXAIDS_USE_METAL`      | OFF     | Metal GPU acceleration (macOS only)                  |
+| `FLEXAIDS_USE_AVX2`       | ON      | AVX2 SIMD acceleration                               |
+| `FLEXAIDS_USE_AVX512`     | OFF     | AVX-512 SIMD acceleration                            |
+| `FLEXAIDS_USE_OPENMP`     | ON      | OpenMP thread parallelism                            |
+| `FLEXAIDS_USE_EIGEN`      | ON      | Eigen3 vectorised linear algebra                     |
+| `BUILD_PYTHON_BINDINGS`   | OFF     | pybind11 Python extensions                           |
+| `BUILD_TESTING`           | OFF     | GoogleTest unit tests                                |
+| `ENABLE_TENCOM_BENCHMARK` | OFF     | Build standalone TeNCoM benchmark binary             |
 
 ## Usage
 
-### Docking
+### New Mode: JSON Config (Recommended)
+
+Full flexibility is enabled by default (T=300K, ligand torsions, intramolecular scoring, Voronoi contacts):
 
 ```bash
-./FlexAID config.inp ga.inp output_prefix
+# Full flexibility dock — all defaults, entropy at 300K
+./FlexAIDdS receptor.pdb ligand.mol2
+
+# Override specific parameters via JSON config
+./FlexAIDdS receptor.pdb ligand.mol2 -c config.json
+
+# Fast rigid screening (no flexibility, no entropy)
+./FlexAIDdS receptor.pdb ligand.mol2 --rigid
+
+# Custom output prefix
+./FlexAIDdS receptor.pdb ligand.mol2 -o my_results
 ```
 
-| Argument        | Description                                              |
-|:----------------|:---------------------------------------------------------|
-| `config.inp`    | Docking configuration (receptor, ligand, scoring, etc.)  |
-| `ga.inp`        | Genetic algorithm parameters                             |
-| `output_prefix` | Base path for result files (`.cad`, `_0.pdb`, `_1.pdb`) |
+All parameters have built-in defaults in a single JSON schema. Override only what you need:
 
-All docking and GA parameters have built-in defaults. Your config files only need to specify values you want to change from their presets. For example, a minimal `config.inp` for Voronoi scoring at 300 K:
-
-```ini
-PDBNAM receptor.pdb
-INPLIG ligand.mol2
-COMPLF VCT
-TEMPER 300
+```json
+{
+  "thermodynamics": {
+    "temperature": 310,
+    "clustering_algorithm": "DP"
+  },
+  "ga": {
+    "num_chromosomes": 2000,
+    "num_generations": 1000
+  },
+  "flexibility": {
+    "ligand_torsions": true,
+    "ring_conformers": true
+  }
+}
 ```
 
-Everything else (grid spacing, clustering threshold, optimization steps, etc.) uses sensible defaults automatically. See [Configuration Reference](#configuration-reference) for all parameters and their defaults.
+## 📖 Usage Modes
 
-### Vibrational Entropy (tENCoM)
+### Python Results Inspection
+
+The `flexaidds` Python package can inspect existing docking results:
 
 ```bash
-tENCoM reference.pdb target1.pdb [target2.pdb ...] [-T temp] [-r cutoff] [-k k0] [-o prefix]
-```
+cd python && pip install -e .
 
-### Python API (Phase 2 — in progress)
+# Inspect result directory
+python -m flexaidds path/to/output_dir
+python -m flexaidds path/to/output_dir --json
+python -m flexaidds path/to/output_dir --csv results.csv
+python -m flexaidds path/to/output_dir --top 5
+```
 
 ```python
-import flexaidds
+import flexaidds as fd
+
+# Load and analyze existing results
+run = fd.load_results("path/to/output_dir")
+print(run.n_modes)
+print(run.binding_modes[0].best_cf)
+print(run.binding_modes[0].free_energy)
+
+# Thermodynamic analysis
+engine = fd.StatMechEngine(temperature=300.0)
+engine.add_sample(-7.5)
+engine.add_sample(-6.0)
+thermo = engine.compute()
+print("F =", thermo.free_energy)
+print("S =", thermo.entropy)
+```
+
+### Planned: Zero-Config CLI (Phase 2)
+
+> **Not yet implemented.** The following CLI and YAML config modes are planned for a future release.
+
+```bash
+# Planned zero-config interface
+./flexaids dock receptor.pdb ligand.mol2
+```
+
+```yaml
+# Planned YAML config format
+docking:
+  binding_site:
+    method: auto
+  flexible_sidechains: ["A:TYR123", "A:PHE456"]
+  temperature: 300.0
+genetic_algorithm:
+  population_size: 2000
+  max_generations: 100
+hardware:
+  backend: auto  # cuda, metal, avx512, openmp
+```
+
+### Planned: Python Docking API (Phase 2)
+
+> **Not yet implemented.** Live docking orchestration from Python is staged behind ongoing C++ integration.
 
 # High-level docking
 results = flexaidds.dock(
@@ -645,6 +728,7 @@ See [LICENSE](LICENSE) | [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)
 
 **Repository**: [github.com/lmorency/FlexAIDdS](https://github.com/lmorency/FlexAIDdS)
 **Issues**: [github.com/lmorency/FlexAIDdS/issues](https://github.com/lmorency/FlexAIDdS/issues)
+**Original FlexAID**: [github.com/NRGlab/FlexAID](https://github.com/NRGlab/FlexAID)
 **NRGlab**: [biophys.umontreal.ca/nrg](http://biophys.umontreal.ca/nrg) | [github.com/NRGlab](https://github.com/NRGlab)
 
 **Lead Developer**: Louis-Philippe Morency, PhD (Candidate)

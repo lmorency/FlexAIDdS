@@ -56,6 +56,17 @@ __all__ = [
     "kB_SI",
     # Availability flag
     "HAS_CORE_BINDINGS",
+    # Core types (C++ when available, pure-Python fallback otherwise)
+    "StatMechEngine",
+    "Thermodynamics",
+    "State",
+    "BoltzmannLUT",
+    "Replica",
+    "WHAMBin",
+    "TIPoint",
+    "ENCoMEngine",
+    "NormalMode",
+    "VibrationalEntropy",
 ]
 
 # C++-only modules (no pure-Python fallback)

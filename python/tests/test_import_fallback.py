@@ -1,8 +1,8 @@
 """Verify the flexaidds package imports gracefully without C++ bindings.
 
 The read-only result loading (models, io, results) must work even when the
-compiled _core extension is unavailable.  Only StatMechEngine should raise
-at *instantiation* time, not at import time.
+compiled _core extension is unavailable.  All public API types should be
+importable and instantiable via pure-Python fallback implementations.
 """
 
 import importlib
@@ -12,21 +12,33 @@ from pathlib import Path
 from unittest import mock
 
 
+_MODULES_TO_CLEAR = [
+    "flexaidds._core", "flexaidds", "flexaidds.thermodynamics",
+    "flexaidds.models", "flexaidds.io", "flexaidds.results",
+    "flexaidds.encom", "flexaidds._fallback_types",
+    "flexaidds.__version__",
+]
+
+
+def _reimport_without_core():
+    """Helper: force-reimport flexaidds with _core blocked."""
+    saved = {k: sys.modules.pop(k, None) for k in _MODULES_TO_CLEAR}
+    sys.modules["flexaidds._core"] = None  # triggers ImportError on import
+    return saved
+
+
+def _restore_modules(saved):
+    """Helper: restore saved module state."""
+    for k in list(saved.keys()):
+        sys.modules.pop(k, None)
+    for k, v in saved.items():
+        if v is not None:
+            sys.modules[k] = v
+
+
 def test_package_imports_without_core_extension():
     """Importing flexaidds must not crash when _core is missing."""
-    # Temporarily remove _core from sys.modules so the import fallback is
-    # exercised.  We patch it with a module that raises ImportError on
-    # attribute access, simulating an unbuilt extension.
-    saved = sys.modules.pop("flexaidds._core", None)
-    saved_pkg = sys.modules.pop("flexaidds", None)
-    saved_thermo = sys.modules.pop("flexaidds.thermodynamics", None)
-    saved_models = sys.modules.pop("flexaidds.models", None)
-    saved_io = sys.modules.pop("flexaidds.io", None)
-    saved_results = sys.modules.pop("flexaidds.results", None)
-
-    # Make _core raise ImportError when the package tries to import it
-    sys.modules["flexaidds._core"] = None  # triggers ImportError on import
-
+    saved = _reimport_without_core()
     try:
         import flexaidds
 
@@ -38,25 +50,74 @@ def test_package_imports_without_core_extension():
         assert hasattr(flexaidds, "Thermodynamics")
         assert hasattr(flexaidds, "StatMechEngine")
     finally:
-        # Restore original module state
-        sys.modules.pop("flexaidds._core", None)
-        sys.modules.pop("flexaidds", None)
-        sys.modules.pop("flexaidds.thermodynamics", None)
-        sys.modules.pop("flexaidds.models", None)
-        sys.modules.pop("flexaidds.io", None)
-        sys.modules.pop("flexaidds.results", None)
-        if saved is not None:
-            sys.modules["flexaidds._core"] = saved
-        if saved_thermo is not None:
-            sys.modules["flexaidds.thermodynamics"] = saved_thermo
-        if saved_models is not None:
-            sys.modules["flexaidds.models"] = saved_models
-        if saved_io is not None:
-            sys.modules["flexaidds.io"] = saved_io
-        if saved_results is not None:
-            sys.modules["flexaidds.results"] = saved_results
-        if saved_pkg is not None:
-            sys.modules["flexaidds"] = saved_pkg
+        _restore_modules(saved)
+
+
+def test_encom_fallback_types_available():
+    """ENCoMEngine, NormalMode, VibrationalEntropy should be usable without C++."""
+    saved = _reimport_without_core()
+    try:
+        import flexaidds
+
+        # ENCoM types should be actual classes, not None
+        assert flexaidds.ENCoMEngine is not None, "ENCoMEngine should not be None"
+        assert flexaidds.NormalMode is not None, "NormalMode should not be None"
+        assert flexaidds.VibrationalEntropy is not None, "VibrationalEntropy should not be None"
+
+        # Should be instantiable
+        mode = flexaidds.NormalMode(index=1, eigenvalue=0.5, frequency=0.7)
+        assert mode.index == 1
+        assert mode.eigenvalue == 0.5
+
+        vs = flexaidds.VibrationalEntropy(S_vib_kcal_mol_K=0.01, temperature=300.0)
+        assert vs.temperature == 300.0
+    finally:
+        _restore_modules(saved)
+
+
+def test_fallback_stub_types_available():
+    """WHAMBin, TIPoint, Replica, State, BoltzmannLUT should be usable without C++."""
+    saved = _reimport_without_core()
+    try:
+        import flexaidds
+
+        assert flexaidds.WHAMBin is not None, "WHAMBin should not be None"
+        assert flexaidds.TIPoint is not None, "TIPoint should not be None"
+        assert flexaidds.Replica is not None, "Replica should not be None"
+        assert flexaidds.State is not None, "State should not be None"
+        assert flexaidds.BoltzmannLUT is not None, "BoltzmannLUT should not be None"
+
+        # Should be instantiable
+        wbin = flexaidds.WHAMBin(coordinate=1.0, free_energy=-5.0)
+        assert wbin.coordinate == 1.0
+
+        ti = flexaidds.TIPoint(lambda_val=0.5, dH_dlambda=-2.0)
+        assert ti.lambda_val == 0.5
+
+        rep = flexaidds.Replica(temperature=400.0)
+        assert rep.temperature == 400.0
+
+        state = flexaidds.State(energy=-10.0, multiplicity=3)
+        assert state.multiplicity == 3
+
+        lut = flexaidds.BoltzmannLUT(temperature=300.0)
+        assert lut.temperature == 300.0
+    finally:
+        _restore_modules(saved)
+
+
+def test_all_exports_non_none():
+    """All types in __all__ should be non-None after import."""
+    saved = _reimport_without_core()
+    try:
+        import flexaidds
+
+        for name in flexaidds.__all__:
+            val = getattr(flexaidds, name, "MISSING")
+            assert val != "MISSING", f"{name} not found in flexaidds"
+            assert val is not None, f"{name} is None in flexaidds (missing fallback)"
+    finally:
+        _restore_modules(saved)
 
 
 def test_load_results_works_without_core(tmp_path: Path):
