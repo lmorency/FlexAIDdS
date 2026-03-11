@@ -591,6 +591,92 @@ class TestDockingResultToDataframeSuccess:
 
 
 # ===========================================================================
+# DockingResult.to_csv
+# ===========================================================================
+
+class TestDockingResultToCsv:
+    def _make_result(self) -> DockingResult:
+        poses = [_pose(path="p1.pdb", cf=-10.0), _pose(path="p2.pdb", cf=-9.0)]
+        modes = [
+            BindingModeResult(
+                mode_id=1, rank=1, poses=poses,
+                free_energy=-9.8, enthalpy=-9.5, entropy=0.001,
+                heat_capacity=0.05, std_energy=0.3,
+                best_cf=-10.0, temperature=300.0,
+            ),
+            BindingModeResult(
+                mode_id=2, rank=2, poses=[],
+                free_energy=None, best_cf=None, temperature=None,
+            ),
+        ]
+        return DockingResult(source_dir=Path("/tmp"), binding_modes=modes)
+
+    def test_returns_csv_string_when_no_path(self):
+        text = self._make_result().to_csv()
+        assert isinstance(text, str)
+        assert len(text) > 0
+
+    def test_csv_has_header_row(self):
+        import csv as csv_mod
+        import io
+        text = self._make_result().to_csv()
+        reader = csv_mod.DictReader(io.StringIO(text))
+        expected_cols = {
+            "mode_id", "rank", "n_poses", "free_energy", "enthalpy",
+            "entropy", "heat_capacity", "std_energy", "best_cf",
+            "temperature", "best_pose_path",
+        }
+        assert expected_cols == set(reader.fieldnames)
+
+    def test_csv_has_one_row_per_mode(self):
+        import csv as csv_mod
+        import io
+        text = self._make_result().to_csv()
+        reader = csv_mod.DictReader(io.StringIO(text))
+        rows = list(reader)
+        assert len(rows) == 2
+
+    def test_csv_values_mode1(self):
+        import csv as csv_mod
+        import io
+        text = self._make_result().to_csv()
+        reader = csv_mod.DictReader(io.StringIO(text))
+        row = next(reader)
+        assert row["mode_id"] == "1"
+        assert row["rank"] == "1"
+        assert row["n_poses"] == "2"
+        assert float(row["free_energy"]) == pytest.approx(-9.8)
+        assert float(row["best_cf"]) == pytest.approx(-10.0)
+        assert float(row["temperature"]) == pytest.approx(300.0)
+
+    def test_csv_none_values_for_empty_mode(self):
+        import csv as csv_mod
+        import io
+        text = self._make_result().to_csv()
+        reader = csv_mod.DictReader(io.StringIO(text))
+        rows = list(reader)
+        row2 = rows[1]
+        # CSV serialises None as empty string
+        assert row2["free_energy"] == ""
+        assert row2["best_cf"] == ""
+        assert row2["best_pose_path"] == ""
+
+    def test_to_csv_writes_file(self, tmp_path):
+        out = tmp_path / "result.csv"
+        ret = self._make_result().to_csv(path=out)
+        assert ret is None
+        text = out.read_text(encoding="utf-8")
+        assert "mode_id" in text
+        assert "-9.8" in text
+
+    def test_to_csv_empty_result(self):
+        result = DockingResult(source_dir=Path("/tmp"), binding_modes=[])
+        text = result.to_csv()
+        # Empty result has only a blank header line (no column names, no data rows)
+        assert text.strip() == ""
+
+
+# ===========================================================================
 # DockingResult.from_json
 # ===========================================================================
 
