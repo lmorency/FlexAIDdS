@@ -37,74 +37,70 @@ void FlexPopulation::write_mode_pdb(const FlexMode& mode,
         return;
     }
 
-    // ── REMARK section (mirrors BindingMode::output_BindingMode pattern) ────
-    ofs << "REMARK FlexAIDdS tENCoM vibrational entropy analysis\n";
+    // ── REMARK section — standardized KEY=VALUE format ─────────────────────
+    // All REMARK lines use consistent KEY=VALUE pairs for machine parsing.
+    ofs << "REMARK TENCOM_VERSION=1.0\n";
+    ofs << "REMARK TOOL=FlexAIDdS_tENCoM\n";
 
+    ofs << std::fixed;
+    ofs << "REMARK MODE_ID=" << mode.mode_id << "\n";
     if (mode.mode_id == 0) {
-        ofs << "REMARK Mode:0 (reference) Source:" << mode.pdb_path << "\n";
+        ofs << "REMARK MODE_TYPE=reference\n";
     } else {
-        ofs << "REMARK Mode:" << mode.mode_id
-            << " Source:" << mode.pdb_path << "\n";
+        ofs << "REMARK MODE_TYPE=target\n";
     }
+    ofs << "REMARK SOURCE=" << mode.pdb_path << "\n";
 
-    ofs << std::fixed << std::setprecision(6);
-    ofs << "REMARK S_vib = " << mode.S_vib << " kcal/mol/K\n";
-    ofs << "REMARK Delta_S_vib = " << mode.delta_S_vib << " kcal/mol/K\n";
+    ofs << std::setprecision(6);
+    ofs << "REMARK S_VIB=" << mode.S_vib << "\n";
+    ofs << "REMARK DELTA_S_VIB=" << mode.delta_S_vib << "\n";
 
     ofs << std::setprecision(4);
-    ofs << "REMARK Delta_F_vib = " << mode.delta_F_vib << " kcal/mol\n";
-    ofs << "REMARK N_modes = " << mode.n_modes
-        << "  N_residues = " << mode.n_residues
-        << "  Temperature = " << temperature << " K\n";
-    ofs << "REMARK Full_flexibility = ON\n";
+    ofs << "REMARK DELTA_F_VIB=" << mode.delta_F_vib << "\n";
+    ofs << "REMARK N_MODES=" << mode.n_modes << "\n";
+    ofs << "REMARK N_RESIDUES=" << mode.n_residues << "\n";
+    ofs << "REMARK TEMPERATURE=" << temperature << "\n";
+    ofs << "REMARK FULL_FLEXIBILITY=ON\n";
 
     // Eigenvalue summary (first few modes)
     if (!mode.mode_data.empty()) {
-        ofs << "REMARK Eigenvalue differentials (mode delta_eigenvalue overlap):\n";
         int n_show = std::min(static_cast<int>(mode.mode_data.size()), 10);
         for (int i = 0; i < n_show; ++i) {
             const auto& mc = mode.mode_data[i];
-            ofs << "REMARK   mode_" << mc.mode_index
-                << " delta_eig=" << std::setprecision(6) << mc.delta_eigenvalue;
+            ofs << "REMARK EIGENVALUE_DIFF MODE=" << mc.mode_index
+                << " DELTA_EIG=" << std::setprecision(6) << mc.delta_eigenvalue;
             if (!std::isnan(mc.overlap)) {
-                ofs << " overlap=" << std::setprecision(4) << mc.overlap;
+                ofs << " OVERLAP=" << std::setprecision(4) << mc.overlap;
             }
             ofs << "\n";
         }
         if (static_cast<int>(mode.mode_data.size()) > 10) {
-            ofs << "REMARK   ... (" << mode.mode_data.size() - 10 << " more modes)\n";
+            ofs << "REMARK EIGENVALUE_DIFF_REMAINING="
+                << mode.mode_data.size() - 10 << "\n";
         }
     }
 
     // B-factor summary (per-residue)
     if (!mode.bfactors.empty()) {
-        ofs << "REMARK B-factors (per-residue, Angstrom^2):\n";
-        ofs << "REMARK  ";
+        ofs << "REMARK BFACTORS";
         for (size_t i = 0; i < mode.bfactors.size(); ++i) {
             ofs << " " << std::setprecision(2) << mode.bfactors[i];
-            if ((i + 1) % 15 == 0 && i + 1 < mode.bfactors.size()) {
-                ofs << "\nREMARK  ";
-            }
         }
         ofs << "\n";
     }
 
     if (!mode.delta_bfactors.empty()) {
-        ofs << "REMARK Delta_B-factors (vs reference):\n";
-        ofs << "REMARK  ";
+        ofs << "REMARK DELTA_BFACTORS";
         for (size_t i = 0; i < mode.delta_bfactors.size(); ++i) {
             ofs << " " << std::setprecision(2) << mode.delta_bfactors[i];
-            if ((i + 1) % 15 == 0 && i + 1 < mode.delta_bfactors.size()) {
-                ofs << "\nREMARK  ";
-            }
         }
         ofs << "\n";
     }
 
-    // ── Composition summary ────────────────────────────────────────────────
+    // Composition summary
     if (structure.n_protein > 0 || structure.n_dna > 0 || structure.n_rna > 0) {
-        ofs << "REMARK Composition:";
-        if (structure.n_protein > 0) ofs << " protein=" << structure.n_protein;
+        ofs << "REMARK COMPOSITION";
+        if (structure.n_protein > 0) ofs << " PROTEIN=" << structure.n_protein;
         if (structure.n_dna > 0)     ofs << " DNA=" << structure.n_dna;
         if (structure.n_rna > 0)     ofs << " RNA=" << structure.n_rna;
         ofs << "\n";
@@ -223,6 +219,119 @@ void FlexPopulation::output_all(
 
     std::cout << "\ntENCoM analysis complete. "
               << modes.size() << " mode(s) written.\n";
+}
+
+// ─── FlexPopulation::write_json ──────────────────────────────────────────────
+
+void FlexPopulation::write_json(
+    const std::vector<tencom_pdb::CalphaStructure>& structures) const
+{
+    std::string outfile = output_prefix + "_results.json";
+    std::ofstream ofs(outfile);
+    if (!ofs.is_open()) {
+        std::cerr << "Error: cannot write to " << outfile << "\n";
+        return;
+    }
+
+    ofs << std::fixed;
+    ofs << "{\n";
+    ofs << "  \"tool\": \"FlexAIDdS_tENCoM\",\n";
+    ofs << "  \"version\": \"1.0\",\n";
+    ofs << "  \"temperature\": " << std::setprecision(1) << temperature << ",\n";
+    ofs << "  \"full_flexibility\": true,\n";
+    ofs << "  \"modes\": [\n";
+
+    for (size_t mi = 0; mi < modes.size(); ++mi) {
+        const auto& m = modes[mi];
+        ofs << "    {\n";
+        ofs << "      \"mode_id\": " << m.mode_id << ",\n";
+        ofs << "      \"source\": \"" << m.pdb_path << "\",\n";
+        ofs << "      \"label\": \"" << m.label << "\",\n";
+        ofs << "      \"type\": \"" << (m.mode_id == 0 ? "reference" : "target") << "\",\n";
+        ofs << "      \"S_vib\": " << std::setprecision(8) << m.S_vib << ",\n";
+        ofs << "      \"delta_S_vib\": " << std::setprecision(8) << m.delta_S_vib << ",\n";
+        ofs << "      \"delta_F_vib\": " << std::setprecision(6) << m.delta_F_vib << ",\n";
+        ofs << "      \"n_modes\": " << m.n_modes << ",\n";
+        ofs << "      \"n_residues\": " << m.n_residues << ",\n";
+
+        // Composition
+        if (mi < structures.size()) {
+            const auto& s = structures[mi];
+            ofs << "      \"composition\": {\"protein\": " << s.n_protein
+                << ", \"dna\": " << s.n_dna
+                << ", \"rna\": " << s.n_rna << "},\n";
+        }
+
+        // B-factors
+        ofs << "      \"bfactors\": [";
+        for (size_t i = 0; i < m.bfactors.size(); ++i) {
+            if (i > 0) ofs << ", ";
+            ofs << std::setprecision(4) << m.bfactors[i];
+        }
+        ofs << "],\n";
+
+        // Delta B-factors
+        ofs << "      \"delta_bfactors\": [";
+        for (size_t i = 0; i < m.delta_bfactors.size(); ++i) {
+            if (i > 0) ofs << ", ";
+            ofs << std::setprecision(4) << m.delta_bfactors[i];
+        }
+        ofs << "],\n";
+
+        // Mode comparisons
+        ofs << "      \"eigenvalue_diffs\": [";
+        int n_show = std::min(static_cast<int>(m.mode_data.size()), 20);
+        for (int i = 0; i < n_show; ++i) {
+            const auto& mc = m.mode_data[i];
+            if (i > 0) ofs << ", ";
+            ofs << "{\"mode\": " << mc.mode_index
+                << ", \"eig_ref\": " << std::setprecision(6) << mc.eigenvalue_ref
+                << ", \"eig_tgt\": " << mc.eigenvalue_tgt
+                << ", \"delta\": " << mc.delta_eigenvalue;
+            if (!std::isnan(mc.overlap)) {
+                ofs << ", \"overlap\": " << std::setprecision(4) << mc.overlap;
+            }
+            ofs << "}";
+        }
+        ofs << "]\n";
+
+        ofs << "    }" << (mi + 1 < modes.size() ? "," : "") << "\n";
+    }
+
+    ofs << "  ]\n";
+    ofs << "}\n";
+    ofs.close();
+
+    std::cout << "  Wrote: " << outfile << "\n";
+}
+
+// ─── FlexPopulation::write_csv ──────────────────────────────────────────────
+
+void FlexPopulation::write_csv() const {
+    std::string outfile = output_prefix + "_summary.csv";
+    std::ofstream ofs(outfile);
+    if (!ofs.is_open()) {
+        std::cerr << "Error: cannot write to " << outfile << "\n";
+        return;
+    }
+
+    // Header
+    ofs << "mode_id,source,type,S_vib,delta_S_vib,delta_F_vib,n_modes,n_residues\n";
+
+    ofs << std::fixed;
+    for (const auto& m : modes) {
+        ofs << m.mode_id << ","
+            << "\"" << m.pdb_path << "\","
+            << (m.mode_id == 0 ? "reference" : "target") << ","
+            << std::setprecision(8) << m.S_vib << ","
+            << std::setprecision(8) << m.delta_S_vib << ","
+            << std::setprecision(6) << m.delta_F_vib << ","
+            << m.n_modes << ","
+            << m.n_residues << "\n";
+    }
+
+    ofs.close();
+    std::cout << "  Wrote: " << outfile << "\n";
 }
 
 }  // namespace tencom_output

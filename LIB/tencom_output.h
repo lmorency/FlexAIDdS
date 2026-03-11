@@ -57,6 +57,12 @@ struct FlexPopulation {
 
     // Write all outputs: summary + PDB files
     void output_all(const std::vector<tencom_pdb::CalphaStructure>& structures) const;
+
+    // Write JSON results file
+    void write_json(const std::vector<tencom_pdb::CalphaStructure>& structures) const;
+
+    // Write CSV summary table
+    void write_csv() const;
 };
 
 }  // namespace tencom_output

@@ -39,6 +39,9 @@ struct Options {
     float  k0           = 1.0f;
     std::string prefix  = "tencom";
     double eigenvalue_cutoff = 1e-6;
+    bool   output_pdb   = true;
+    bool   output_json  = false;
+    bool   output_csv   = false;
 };
 
 static void print_usage(const char* progname) {
@@ -53,11 +56,13 @@ static void print_usage(const char* progname) {
         << "  -r <cutoff>   Contact cutoff in Angstroms    (default: 9.0)\n"
         << "  -k <k0>       Spring constant                (default: 1.0)\n"
         << "  -o <prefix>   Output file prefix             (default: tencom)\n"
+        << "  -f <format>   Output format: pdb, json, csv, all (default: pdb)\n"
         << "  -h            Print this help and exit\n\n"
         << "Output:\n"
-        << "  <prefix>_mode_0.pdb   Reference structure with vibrational entropy\n"
-        << "  <prefix>_mode_N.pdb   Target N with differential ΔS_vib, ΔF_vib\n"
-        << "  Summary table         Printed to stdout\n\n";
+        << "  <prefix>_mode_N.pdb    PDB files with REMARK thermodynamic metadata\n"
+        << "  <prefix>_results.json  Full results in JSON format (-f json|all)\n"
+        << "  <prefix>_summary.csv   Summary table as CSV (-f csv|all)\n"
+        << "  Summary table          Printed to stdout\n\n";
 }
 
 // Safe numeric parser — exits with clear error on invalid input
@@ -110,6 +115,25 @@ static Options parse_args(int argc, char* argv[]) {
                 std::exit(1);
             }
             opts.prefix = argv[++i];
+        } else if (arg == "-f") {
+            if (i + 1 >= argc) {
+                std::cerr << "Error: -f requires a format: pdb, json, csv, or all.\n";
+                std::exit(1);
+            }
+            std::string fmt = argv[++i];
+            if (fmt == "pdb") {
+                opts.output_pdb = true;
+            } else if (fmt == "json") {
+                opts.output_pdb = false; opts.output_json = true;
+            } else if (fmt == "csv") {
+                opts.output_pdb = false; opts.output_csv = true;
+            } else if (fmt == "all") {
+                opts.output_pdb = true; opts.output_json = true; opts.output_csv = true;
+            } else {
+                std::cerr << "Error: unknown format '" << fmt
+                          << "'. Use pdb, json, csv, or all.\n";
+                std::exit(1);
+            }
         } else if (arg[0] == '-') {
             std::cerr << "Unknown option: " << arg << "\n";
             print_usage(argv[0]);
@@ -264,7 +288,26 @@ int main(int argc, char* argv[]) {
 
     // ── Step 5: Sort by ΔF_vib and output ───────────────────────────────────
     population.sort_by_free_energy();
-    population.output_all(all_structures);
+
+    // Always print summary to stdout
+    population.print_summary();
+
+    // Write requested output formats
+    if (opts.output_pdb) {
+        int n = std::min(all_structures.size(), population.modes.size());
+        for (int i = 0; i < static_cast<int>(n); ++i) {
+            population.write_mode_pdb(population.modes[i], all_structures[i]);
+        }
+    }
+    if (opts.output_json) {
+        population.write_json(all_structures);
+    }
+    if (opts.output_csv) {
+        population.write_csv();
+    }
+
+    std::cout << "\ntENCoM analysis complete. "
+              << population.modes.size() << " mode(s) processed.\n";
 
     return 0;
 }
