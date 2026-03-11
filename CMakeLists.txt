@@ -744,6 +744,8 @@ if(BUILD_TESTING)
         LIB/NATURaL/NATURaLDualAssembly.cpp
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
+        LIB/hardware_dispatch.cpp
+        LIB/hardware_detect.cpp
     )
     target_include_directories(test_gaboom PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB

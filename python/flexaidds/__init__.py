@@ -17,11 +17,7 @@ try:
     HAS_CORE_BINDINGS = True
 except ImportError:
     # Fallback when C++ extension is not built
-    BoltzmannLUT = None
-    Replica = None
-    State = None
-    TIPoint = None
-    WHAMBin = None
+    from ._fallback_types import BoltzmannLUT, Replica, State, TIPoint, WHAMBin
     kB_kcal = 0.001987206   # kcal mol⁻¹ K⁻¹
     kB_SI = 1.380649e-23    # J K⁻¹
     HAS_CORE_BINDINGS = False

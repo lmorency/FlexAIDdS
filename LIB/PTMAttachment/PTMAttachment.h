@@ -12,9 +12,11 @@
 #pragma once
 
 #include "../flexaid.h"
+#include "../Vcontacts.h"
 #include <string>
 #include <vector>
 #include <map>
+#include <random>
 
 namespace ptm {
 

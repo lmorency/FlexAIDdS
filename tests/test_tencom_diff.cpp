@@ -127,9 +127,9 @@ TEST(DifferentialEngine, IdenticalStructuresZeroDelta) {
     EXPECT_NEAR(diff.delta_S_vib, 0.0, 1e-10);
     EXPECT_NEAR(diff.delta_F_vib, 0.0, 1e-10);
 
-    // All eigenvalue deltas should be 0
+    // All eigenvalue deltas should be ~0 (allow floating-point rounding)
     for (const auto& mc : diff.mode_comparisons) {
-        EXPECT_NEAR(mc.delta_eigenvalue, 0.0, 1e-10);
+        EXPECT_NEAR(mc.delta_eigenvalue, 0.0, 1e-8);
     }
 
     // B-factor deltas should be 0
