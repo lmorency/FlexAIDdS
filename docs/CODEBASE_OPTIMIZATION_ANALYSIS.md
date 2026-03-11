@@ -240,33 +240,55 @@ This linked-list representation of energy interpolation tables is cache-hostile.
 
 ## 7. Algorithmic Efficiency
 
-### 7.1 FOPTICS Clustering (`LIB/FOPTICS.cpp`)
+### 7.1 O(n²) Clustering with Dense RMSD Matrix
+
+**`DensityPeak_Cluster.cpp:85-117`** and **`cluster.cpp:90-143`**: Both clustering algorithms compute a full upper-triangular RMSD matrix — O(n²) memory and O(n²) expensive `calc_rmsd_chrom()` calls.
+
+For `num_chrom=1000`, the RMSD matrix alone is ~2 MB (`500K × 4 bytes`). Each RMSD comparison involves per-atom coordinate transforms. Neither loop is parallelized with OpenMP despite being the dominant bottleneck.
+
+**Recommendation**: Use spatial indexing (kd-tree or ball-tree) for O(n log n) nearest-neighbor queries. Parallelize with OpenMP as an immediate win.
+
+### 7.2 `pow(E, x)` Instead of `exp(x)`
+
+**`cluster.cpp:76`** and **`DensityPeak_Cluster.cpp:72`**:
+```cpp
+partition_function += pow(E, ((-1.0) * FA->beta * chrom[j].app_evalue));
+```
+
+`pow(E, x)` is 3-5× slower than `exp(x)` — trivial fix, called once per chromosome per clustering pass.
+
+### 7.3 Missing `inline` on Hot Geometry Functions
+
+**`geometry.cpp:26-75`**: Functions `distance2()`, `dot_prod()`, `cross_prod()`, `vec_sub()` are not marked `inline` despite being tiny (3-5 lines). Called billions of times in RMSD and Voronoi calculations. Missing `__restrict__` on pointer parameters also prevents auto-vectorization.
+
+### 7.4 GA Reproduction memcpy Overhead
+
+**`gaboom.cpp:637-715`**: Per-offspring `memcpy` of gene arrays during crossover. For hundreds of genes and many generations, this is a significant hot-path cost. Consider swap/move semantics instead.
+
+### 7.5 ClusterChrom Struct Bloat
+
+**`gaboom.h:118-134`**: `ClusterChrom` embeds `float Coord[3*MAX_ATM_HET]` (3×200×4 = 2400 bytes per instance). For 1000 chromosomes, this is 2.4 MB of coordinate storage inline. Should reference an external coordinate pool.
+
+### 7.6 FOPTICS Clustering (`LIB/FOPTICS.cpp`)
 
 - **Complexity**: O(N × minPoints × nDimensions) for random projections
 - **Issue** (line 115): `std::vector<float> vChrom(this->Vectorized_Cartesian_Coordinates(i));` — copy constructor inside loop. Should use move semantics or pre-allocate.
 - **Issue** (line 125): `std::make_pair((chromosome*)&chrom[i], vChrom)` — copies the vector again into the pair. Use `std::move(vChrom)`.
 
-### 7.2 Voronoi Contact Scoring (`LIB/Vcontacts.cpp`)
+### 7.7 Voronoi Contact Scoring (`LIB/Vcontacts.cpp`)
 
 - 1843 lines — the largest scoring module
 - All-pairs atom contact computation: O(N_lig × N_rec) per evaluation
 - GPU-accelerated via CUDA/Metal for batch evaluation
 - CPU path uses OpenMP parallelization
 
-### 7.3 Genetic Algorithm (`LIB/gaboom.cpp`)
-
-- 2305 lines — the main GA engine
-- Population evaluation parallelized with OpenMP `schedule(dynamic)`
-- RMSD computation uses `schedule(static)` — appropriate for uniform work
-- Selection, crossover, mutation are sequential — appropriate (small relative cost)
-
-### 7.4 Statistical Mechanics (`LIB/statmech.cpp`)
+### 7.8 Statistical Mechanics (`LIB/statmech.cpp`)
 
 - Uses log-sum-exp with numerical stability (x_max subtraction)
 - OpenMP threshold at N≥4096 — appropriate
 - Eigen vectorization for N≥16 — appropriate
 
-### 7.5 Global RNG (`LIB/FOPTICS.cpp:8-9`)
+### 7.9 Global RNG (`LIB/FOPTICS.cpp:8-9`)
 
 ```cpp
 std::random_device rd;
@@ -436,49 +458,60 @@ Covers Volta through Hopper. Good coverage, but binary size grows with each targ
 
 ## 11. Prioritized Recommendations
 
+### Critical / Trivial Effort
+
+| # | Recommendation | Files | Expected Impact |
+|---|---------------|-------|-----------------|
+| 1 | Replace `pow(E, x)` with `exp(x)` | `cluster.cpp:76`, `DensityPeak_Cluster.cpp:72` | 3-5× faster per call (trivial fix) |
+| 2 | Add `inline` to hot geometry functions | `geometry.cpp:26-75` | Eliminates call overhead on billions of invocations |
+| 3 | Add `__restrict__` to geometry pointer params | `geometry.cpp` | Enables auto-vectorization of dot/cross products |
+
 ### High Impact, Low Effort
 
 | # | Recommendation | Files | Expected Impact |
 |---|---------------|-------|-----------------|
-| 1 | Consolidate CUDA output memcpy (3→1) | `cuda_eval.cu:300-302` | Reduces sync overhead ~66% |
-| 2 | Add ccache to CI | `.github/workflows/ci.yml` | ~50-80% CI build time reduction |
-| 3 | Use `std::move()` for vector in FOPTICS | `FOPTICS.cpp:115,125` | Eliminates unnecessary copies |
-| 4 | Add LTO build option | `CMakeLists.txt` | ~5-15% runtime improvement |
-| 5 | Make RNG thread-local | `FOPTICS.cpp:8-9` | Fixes thread-safety bug |
-| 6 | Cache numpy coords in Python properties | `io.py:302,315,477` | Eliminates repeated array creation |
-| 7 | Fix O(n²) chain ID dedup to use set | `io.py:330-335` | O(n) instead of O(n²) |
+| 4 | Consolidate CUDA output memcpy (3→1) | `cuda_eval.cu:300-302` | Reduces sync overhead ~66% |
+| 5 | Add ccache to CI | `.github/workflows/ci.yml` | ~50-80% CI build time reduction |
+| 6 | Use `std::move()` for vector in FOPTICS | `FOPTICS.cpp:115,125` | Eliminates unnecessary copies |
+| 7 | Add LTO build option | `CMakeLists.txt` | ~5-15% runtime improvement |
+| 8 | Make RNG thread-local | `FOPTICS.cpp:8-9` | Fixes thread-safety bug |
+| 9 | Cache numpy coords in Python properties | `io.py:302,315,477` | Eliminates repeated array creation |
+| 10 | Fix O(n²) chain ID dedup to use set | `io.py:330-335` | O(n) instead of O(n²) |
 
 ### High Impact, Medium Effort
 
 | # | Recommendation | Files | Expected Impact |
 |---|---------------|-------|-----------------|
-| 8 | Replace Metal `waitUntilCompleted` with async | `metal_eval.mm:342` | Enables GPU-CPU pipelining |
-| 9 | Replace manual SIMD gathers with native gather | `CavityDetect.cpp:92-98` | ~15-20% SIMD throughput gain |
-| 10 | Use zero-copy buffers in pybind11 `to_numpy()` | `core_bindings.cpp:27-29` | Eliminates memory duplication |
-| 11 | Batch `add_samples()` via `py::array_t<double>` | `thermodynamics.py:195-204`, bindings | Eliminates per-sample Python overhead |
-| 12 | Add runtime CPU dispatch | New file + CMakeLists.txt | Portable AVX2/AVX-512 binaries |
-| 13 | Split `atom_struct` hot/cold | `flexaid.h:175-203` | ~2-5× cache efficiency in scoring |
-| 14 | Add CI caching (apt, brew, ccache) | `.github/workflows/ci.yml` | Major CI time savings |
+| 11 | Parallelize RMSD matrix with OpenMP | `DensityPeak_Cluster.cpp:101-117`, `cluster.cpp:90-143` | Near-linear speedup on multi-core |
+| 12 | Replace Metal `waitUntilCompleted` with async | `metal_eval.mm:342` | Enables GPU-CPU pipelining |
+| 13 | Replace manual SIMD gathers with native gather | `CavityDetect.cpp:92-98` | ~15-20% SIMD throughput gain |
+| 14 | Use zero-copy buffers in pybind11 `to_numpy()` | `core_bindings.cpp:27-29` | Eliminates memory duplication |
+| 15 | Batch `add_samples()` via `py::array_t<double>` | `thermodynamics.py:195-204`, bindings | Eliminates per-sample Python overhead |
+| 16 | Add runtime CPU dispatch | New file + CMakeLists.txt | Portable AVX2/AVX-512 binaries |
+| 17 | Split `atom_struct` hot/cold | `flexaid.h:175-203` | ~2-5× cache efficiency in scoring |
+| 18 | Add CI caching (apt, brew, ccache) | `.github/workflows/ci.yml` | Major CI time savings |
 
 ### Medium Impact, Higher Effort
 
 | # | Recommendation | Files | Expected Impact |
 |---|---------------|-------|-----------------|
-| 15 | Fuse Shannon histogram + entropy on GPU | `shannon_cuda.cu`, `shannon_metal.metal` | Eliminates CPU readback |
-| 16 | Replace energy_values linked list with array | `flexaid.h:131-135`, `read_emat.cpp` | Cache-friendly interpolation |
-| 17 | Add sanitizer CI builds (ASan, UBSan) | `.github/workflows/ci.yml` | Bug prevention |
-| 18 | SoA data layout for atom coordinates | `flexaid.h`, scoring functions | Optimal vectorization |
-| 19 | Replace `NEW`/`FREE` macros with RAII | `flexaid.h:70-75`, all callers | Memory safety |
+| 19 | Use spatial indexing for clustering | `DensityPeak_Cluster.cpp`, `cluster.cpp` | O(n log n) vs O(n²) for large populations |
+| 20 | Move ClusterChrom coords to external pool | `gaboom.h:118-134` | Saves 2.4 MB per 1000 chromosomes |
+| 21 | Fuse Shannon histogram + entropy on GPU | `shannon_cuda.cu`, `shannon_metal.metal` | Eliminates CPU readback |
+| 22 | Replace energy_values linked list with array | `flexaid.h:131-135`, `read_emat.cpp` | Cache-friendly interpolation |
+| 23 | Add sanitizer CI builds (ASan, UBSan) | `.github/workflows/ci.yml` | Bug prevention |
+| 24 | SoA data layout for atom coordinates | `flexaid.h`, scoring functions | Optimal vectorization |
+| 25 | Replace `NEW`/`FREE` macros with RAII | `flexaid.h:70-75`, all callers | Memory safety |
 
 ### Low Priority / Future
 
 | # | Recommendation | Files | Expected Impact |
 |---|---------------|-------|-----------------|
-| 20 | Re-enable Sugar Pucker AVX-512 | `SugarPucker.cpp:91-94` | Marginal (5-element arrays) |
-| 21 | Add PGO support | `CMakeLists.txt` | Requires profiling workflow |
-| 22 | pybind11 GIL release guards | `python/bindings/` | Python threading performance |
-| 23 | Add pytest-xdist for parallel tests | `python/tests/` | ~4-8× test suite speedup |
-| 24 | Standardize OpenMP schedules | Multiple files | Minor load-balance improvement |
+| 26 | Re-enable Sugar Pucker AVX-512 | `SugarPucker.cpp:91-94` | Marginal (5-element arrays) |
+| 27 | Add PGO support | `CMakeLists.txt` | Requires profiling workflow |
+| 28 | pybind11 GIL release guards | `python/bindings/` | Python threading performance |
+| 29 | Add pytest-xdist for parallel tests | `python/tests/` | ~4-8× test suite speedup |
+| 30 | Standardize OpenMP schedules | Multiple files | Minor load-balance improvement |
 
 ---
 
