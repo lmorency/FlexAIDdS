@@ -62,6 +62,14 @@ class PoseResult:
     temperature: Optional[float] = None
     remarks: Dict[str, Any] = field(default_factory=dict)
 
+    def __repr__(self) -> str:
+        score = self.cf if self.cf is not None else self.cf_app
+        parts = [f"mode={self.mode_id}", f"rank={self.pose_rank}"]
+        if score is not None:
+            parts.append(f"cf={score:.2f}")
+        parts.append(f"path={self.path.name!r}")
+        return f"<PoseResult {' '.join(parts)}>"
+
 
 @dataclass(frozen=True)
 class BindingModeResult:
@@ -107,6 +115,14 @@ class BindingModeResult:
     def n_poses(self) -> int:
         """Number of poses in this binding mode."""
         return len(self.poses)
+
+    def __repr__(self) -> str:
+        parts = [f"mode_id={self.mode_id}", f"n_poses={self.n_poses}"]
+        if self.free_energy is not None:
+            parts.append(f"F={self.free_energy:.2f}")
+        if self.best_cf is not None:
+            parts.append(f"best_cf={self.best_cf:.2f}")
+        return f"<BindingModeResult {' '.join(parts)}>"
 
     def best_pose(self) -> Optional[PoseResult]:
         """Return the pose with the lowest CF (or cf_app) score.
@@ -157,6 +173,13 @@ class DockingResult:
     def n_modes(self) -> int:
         """Number of binding modes in this result."""
         return len(self.binding_modes)
+
+    def __repr__(self) -> str:
+        parts = [f"n_modes={self.n_modes}"]
+        if self.temperature is not None:
+            parts.append(f"T={self.temperature:.0f}K")
+        parts.append(f"source={self.source_dir.name!r}")
+        return f"<DockingResult {' '.join(parts)}>"
 
     def top_mode(self) -> Optional[BindingModeResult]:
         """Return the binding mode with the lowest free energy.
