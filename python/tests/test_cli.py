@@ -58,6 +58,14 @@ class TestBuildParser:
         parser = build_parser()
         assert "flexaidds" in parser.prog
 
+    def test_version_flag(self, capsys):
+        parser = build_parser()
+        with pytest.raises(SystemExit, match="0"):
+            parser.parse_args(["--version"])
+        out = capsys.readouterr().out
+        from flexaidds.__version__ import __version__
+        assert __version__ in out
+
 
 # ===========================================================================
 # main() – human-readable output
