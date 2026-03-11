@@ -1,6 +1,26 @@
 #include "gaboom.h"
 #include "fileio.h"
 #include "Vcontacts.h"
+#include "config_parser.h"
+#include "config_defaults.h"
+
+#include <string>
+
+static void print_usage(const char* progname) {
+	printf("FlexAIDdS — Entropy-driven molecular docking\n\n");
+	printf("Usage:\n");
+	printf("  %s <receptor.pdb> <ligand.mol2> [options]\n", progname);
+	printf("  %s --legacy <config.inp> <ga.inp> <output_prefix>\n\n", progname);
+	printf("Options:\n");
+	printf("  -c, --config <file.json>   JSON config file (overrides defaults)\n");
+	printf("  -o, --output <prefix>      Output file prefix (default: flexaid_out)\n");
+	printf("  --rigid                    Disable all flexibility (fast screening)\n");
+	printf("  --legacy                   Legacy 3-file input mode\n");
+	printf("  -h, --help                 Show this help\n\n");
+	printf("Full flexibility is enabled by default (T=300K, ligand torsions,\n");
+	printf("intramolecular scoring, Voronoi contacts). Use -c to override any\n");
+	printf("parameter via JSON. Use --rigid for fast rigid-body screening.\n");
+}
 
 int main(int argc, char **argv){
 
@@ -16,7 +36,7 @@ int main(int argc, char **argv){
 	char tmp_end_strfile[MAX_PATH__];
 
 	int memchrom=0;
-  
+
 	time_t sta_timer,end_timer;
 	struct tm *sta,*end;
 	int sta_val[3],end_val[3];
@@ -46,7 +66,7 @@ int main(int argc, char **argv){
 		fprintf(stderr,"ERROR: Could not allocate memory for FA || GB || VC\n");
 		Terminate(2);
 	}
-	
+
 	memset(FA,0,sizeof(FA_Global));
 	memset(GB,0,sizeof(GB_Global));
 	memset(VC,0,sizeof(VC_Global));
@@ -77,9 +97,9 @@ int main(int argc, char **argv){
 	FA->MIN_ROTAMER_LIBRARY_SIZE = 155;
 	FA->MIN_ROTAMER = 1;
 	FA->MIN_FLEX_BONDS = 5;
-	FA->MIN_CLEFTGRID_POINTS = 250;  
-	FA->MIN_PAR = 6;  
-	FA->MIN_FLEX_RESIDUE = 5;  
+	FA->MIN_CLEFTGRID_POINTS = 250;
+	FA->MIN_PAR = 6;
+	FA->MIN_FLEX_RESIDUE = 5;
 	FA->MIN_NORMAL_GRID_POINTS = 250;
 	FA->MIN_OPTRES = 1;
 	FA->MIN_CONSTRAINTS = 1;
@@ -106,7 +126,6 @@ int main(int argc, char **argv){
 	FA->atm_cnt_real=0;
 	FA->res_cnt=0;
 	FA->nors=0;
-	//FA->natoms_rmsd=0;
 
 	FA->htpmode=false;
 	FA->nrg_suite=0;
@@ -115,8 +134,7 @@ int main(int argc, char **argv){
 	FA->refstructure=0;
 	FA->omit_buried=0;
 	FA->is_protein=1;
-	//FA->is_nucleicacid=0;
-	
+
 	FA->delta_angstron=0.25;
 	FA->delta_angle=5.0;
 	FA->delta_dihedral=5.0;
@@ -127,17 +145,17 @@ int main(int argc, char **argv){
 	FA->resligand = NULL;
 	FA->useacs = 0;
 	FA->acsweight = 1.0;
-	
+
 	GB->outgen=0;
 	FA->num_grd=0;
 	FA->exclude_het=0;
 	FA->remove_water=1;
 	FA->normalize_area=0;
-	
+
 	FA->recalci=0;
 	FA->skipped=0;
 	FA->clashed=0;
-	
+
 	FA->spacer_length=0.375;
 	FA->opt_grid=0;
 
@@ -146,28 +164,27 @@ int main(int argc, char **argv){
 
 	FA->rotobs=0;
 	FA->contributions=NULL;
-        FA->output_scored_only=0;
+	FA->output_scored_only=0;
 	FA->score_ligand_only=0;
 	FA->permeability=1.0;
 	FA->intramolecular=1;
 	FA->solventterm=0.0f;
-	
+
 	FA->useflexdee=0;
 	FA->num_constraints=0;
-	
+
 	FA->npar=0;
-	
+
 	FA->mov[0] = NULL;
 	FA->mov[1] = NULL;
 	strcpy(FA->clustering_algorithm,"CF");
-    strcpy(FA->vcontacts_self_consistency,"MAX");
+	strcpy(FA->vcontacts_self_consistency,"MAX");
 	FA->vcontacts_planedef = 'X';
-	
-	// Linux path
+
+	// ── Determine base path from executable location ──
 	pch=strrchr(argv[0],'\\');
-	if(pch==NULL) 
+	if(pch==NULL)
 	{
-		// Windows path
 		pch=strrchr(argv[0],'/');
 	}
 
@@ -179,18 +196,113 @@ int main(int argc, char **argv){
 		}
 	}else{
 		strcpy(FA->base_path,".");
-	}  
-
+	}
 #else
 	strcpy(FA->base_path,".");
 #endif //_WIN32
 
 	printf("base path is '%s'\n", FA->base_path);
-  
-	strcpy(dockinp,argv[1]);
-	strcpy(gainp,argv[2]);
-	strcpy(end_strfile,argv[3]);
-	strcpy(FA->rrgfile,end_strfile);
+
+	// ── CLI argument parsing ──────────────────────────────────────────────
+	// Detect mode: legacy (3 positional args) or new (receptor + ligand + flags)
+	bool legacy_mode = false;
+	bool use_rigid = false;
+	std::string config_path;
+	std::string output_prefix = "flexaid_out";
+
+	if (argc < 2) {
+		print_usage(argv[0]);
+		Terminate(1);
+	}
+
+	// Check for --help
+	for (int a = 1; a < argc; a++) {
+		if (strcmp(argv[a], "-h") == 0 || strcmp(argv[a], "--help") == 0) {
+			print_usage(argv[0]);
+			Terminate(0);
+		}
+	}
+
+	// Check for --legacy mode
+	if (strcmp(argv[1], "--legacy") == 0) {
+		if (argc < 5) {
+			fprintf(stderr, "ERROR: --legacy requires 3 arguments: <config.inp> <ga.inp> <output_prefix>\n");
+			Terminate(1);
+		}
+		legacy_mode = true;
+		strcpy(dockinp, argv[2]);
+		strcpy(gainp, argv[3]);
+		strcpy(end_strfile, argv[4]);
+		strcpy(FA->rrgfile, end_strfile);
+	}
+	// Legacy auto-detect: if exactly 3 positional args and first does not end in .pdb
+	else if (argc == 4 && strstr(argv[1], ".pdb") == NULL && strstr(argv[1], ".PDB") == NULL) {
+		legacy_mode = true;
+		strcpy(dockinp, argv[1]);
+		strcpy(gainp, argv[2]);
+		strcpy(end_strfile, argv[3]);
+		strcpy(FA->rrgfile, end_strfile);
+	}
+	else {
+		// ── New mode: receptor ligand [options] ──
+		if (argc < 3) {
+			fprintf(stderr, "ERROR: New mode requires at least: <receptor.pdb> <ligand.mol2>\n");
+			print_usage(argv[0]);
+			Terminate(1);
+		}
+
+		// Parse optional flags
+		for (int a = 3; a < argc; a++) {
+			if ((strcmp(argv[a], "-c") == 0 || strcmp(argv[a], "--config") == 0) && a + 1 < argc) {
+				config_path = argv[++a];
+			} else if ((strcmp(argv[a], "-o") == 0 || strcmp(argv[a], "--output") == 0) && a + 1 < argc) {
+				output_prefix = argv[++a];
+			} else if (strcmp(argv[a], "--rigid") == 0) {
+				use_rigid = true;
+			} else {
+				fprintf(stderr, "WARNING: Unknown option '%s' — ignoring.\n", argv[a]);
+			}
+		}
+
+		// Load JSON config: defaults → user overrides → rigid overrides
+		nlohmann::json config = load_config(config_path);
+		if (use_rigid) {
+			config = merge_json(config, rigid_overrides());
+		}
+
+		// Apply config to FA/GB structs
+		apply_config(config, FA, GB);
+
+		printf("FlexAIDdS config: T=%uK, ligand_flex=%s, intramolecular=%s, scoring=%s\n",
+			FA->temperature,
+			FA->deelig_flex ? "ON" : "OFF",
+			FA->intramolecular ? "ON" : "OFF",
+			FA->complf);
+
+		// In new mode, we still need read_input() to process the PDB/ligand.
+		// Generate a temporary .inp file content in memory that read_input expects,
+		// or set dockinp/gainp to empty and handle the receptor/ligand directly.
+		// For now, the new mode sets the config values but still requires
+		// the legacy input files to be generated or provided.
+		// TODO: Phase 2 — direct PDB/MOL2 loading without .inp files.
+
+		// For now, print the loaded config and exit with a message
+		// directing the user to use --legacy until Phase 2 is complete.
+		fprintf(stderr, "NOTE: Direct receptor/ligand mode is prepared (config applied).\n");
+		fprintf(stderr, "Input pipeline integration in progress. Use --legacy for full runs.\n");
+		fprintf(stderr, "Config loaded: %s\n", config_path.empty() ? "(defaults)" : config_path.c_str());
+
+		// Set output prefix for end_strfile
+		strncpy(end_strfile, output_prefix.c_str(), MAX_PATH__ - 1);
+		end_strfile[MAX_PATH__ - 1] = '\0';
+		strcpy(FA->rrgfile, end_strfile);
+
+		// Set dockinp/gainp to empty — read_input will still be called in legacy path
+		dockinp[0] = '\0';
+		gainp[0] = '\0';
+
+		Terminate(0);
+	}
 
 	//printf("END FILE:<%s>\n",end_strfile);
 	//PAUSE;

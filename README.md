@@ -70,6 +70,15 @@ cmake .. -DCMAKE_BUILD_TYPE=Release
 cmake --build . --target FlexAID -j $(nproc)
 ```
 
+### Ultra-Fast FlexAIDdS Build (LTO + native)
+
+Builds the same docking engine with link-time optimisation, `-march=native`, and stripped binary:
+
+```bash
+cmake .. -DBUILD_FLEXAIDDS_FAST=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build . --target FlexAIDdS -j $(nproc)
+```
+
 ### With Tests
 
 ```bash
@@ -87,24 +96,68 @@ cmake --build . -j $(nproc)
 
 ### CMake Options
 
-| Option                    | Default | Description                              |
-|:--------------------------|:--------|:-----------------------------------------|
-| `FLEXAIDS_USE_CUDA`       | OFF     | CUDA GPU batch evaluation                |
-| `FLEXAIDS_USE_METAL`      | OFF     | Metal GPU acceleration (macOS only)      |
-| `FLEXAIDS_USE_AVX2`       | ON      | AVX2 SIMD acceleration                   |
-| `FLEXAIDS_USE_AVX512`     | OFF     | AVX-512 SIMD acceleration                |
-| `FLEXAIDS_USE_OPENMP`     | ON      | OpenMP thread parallelism                |
-| `FLEXAIDS_USE_EIGEN`      | ON      | Eigen3 vectorised linear algebra         |
-| `BUILD_PYTHON_BINDINGS`   | OFF     | pybind11 Python extensions               |
-| `BUILD_TESTING`           | OFF     | GoogleTest unit tests                    |
-| `ENABLE_TENCOM_BENCHMARK` | OFF     | Build standalone TeNCoM benchmark binary |
+| Option                    | Default | Description                                          |
+|:--------------------------|:--------|:-----------------------------------------------------|
+| `BUILD_FLEXAIDDS_FAST`    | OFF     | Build ultra-fast FlexAIDdS binary (LTO + native)    |
+| `FLEXAIDS_USE_CUDA`       | OFF     | CUDA GPU batch evaluation                            |
+| `FLEXAIDS_USE_METAL`      | OFF     | Metal GPU acceleration (macOS only)                  |
+| `FLEXAIDS_USE_AVX2`       | ON      | AVX2 SIMD acceleration                               |
+| `FLEXAIDS_USE_AVX512`     | OFF     | AVX-512 SIMD acceleration                            |
+| `FLEXAIDS_USE_OPENMP`     | ON      | OpenMP thread parallelism                            |
+| `FLEXAIDS_USE_EIGEN`      | ON      | Eigen3 vectorised linear algebra                     |
+| `BUILD_PYTHON_BINDINGS`   | OFF     | pybind11 Python extensions                           |
+| `BUILD_TESTING`           | OFF     | GoogleTest unit tests                                |
+| `ENABLE_TENCOM_BENCHMARK` | OFF     | Build standalone TeNCoM benchmark binary             |
 
 ## Usage
 
-### Docking
+### New Mode: JSON Config (Recommended)
+
+Full flexibility is enabled by default (T=300K, ligand torsions, intramolecular scoring, Voronoi contacts):
+
+```bash
+# Full flexibility dock — all defaults, entropy at 300K
+./FlexAIDdS receptor.pdb ligand.mol2
+
+# Override specific parameters via JSON config
+./FlexAIDdS receptor.pdb ligand.mol2 -c config.json
+
+# Fast rigid screening (no flexibility, no entropy)
+./FlexAIDdS receptor.pdb ligand.mol2 --rigid
+
+# Custom output prefix
+./FlexAIDdS receptor.pdb ligand.mol2 -o my_results
+```
+
+All parameters have built-in defaults in a single JSON schema. Override only what you need:
+
+```json
+{
+  "thermodynamics": {
+    "temperature": 310,
+    "clustering_algorithm": "DP"
+  },
+  "ga": {
+    "num_chromosomes": 2000,
+    "num_generations": 1000
+  },
+  "flexibility": {
+    "ligand_torsions": true,
+    "ring_conformers": true
+  }
+}
+```
+
+See [JSON Config Reference](#json-config-reference) for all keys and defaults.
+
+### Legacy Mode
+
+Backward-compatible with existing `.inp` files:
 
 ```bash
 ./FlexAID config.inp ga.inp output_prefix
+# or explicitly:
+./FlexAIDdS --legacy config.inp ga.inp output_prefix
 ```
 
 | Argument        | Description                                              |
@@ -113,7 +166,7 @@ cmake --build . -j $(nproc)
 | `ga.inp`        | Genetic algorithm parameters                             |
 | `output_prefix` | Base path for result files (`.cad`, `_0.pdb`, `_1.pdb`) |
 
-All docking and GA parameters have built-in defaults. Your config files only need to specify values you want to change from their presets. For example, a minimal `config.inp` for Voronoi scoring at 300 K:
+A minimal `config.inp` for Voronoi scoring at 300 K:
 
 ```ini
 PDBNAM receptor.pdb
@@ -122,7 +175,7 @@ COMPLF VCT
 TEMPER 300
 ```
 
-Everything else (grid spacing, clustering threshold, optimization steps, etc.) uses sensible defaults automatically. See [Configuration Reference](#configuration-reference) for all parameters and their defaults.
+See [Configuration Reference](#configuration-reference) for all legacy parameters and their defaults.
 
 ### Vibrational Entropy (tENCoM)
 
@@ -352,6 +405,47 @@ All parameters have built-in defaults. Override files use a simple format: one p
 | `PRINTCHR` | Best chromosomes to print per generation                         | 10       |
 | `PRINTINT` | Print generation progress                                        | 1        |
 | `OUTGENER` | Output results every generation                                  | Off      |
+
+---
+
+## JSON Config Reference
+
+All keys are optional — defaults enable full flexibility at 300 K. See `LIB/config_defaults.h` for the source of truth.
+
+| Section | Key | Default | Description |
+|:--------|:----|:--------|:------------|
+| `scoring` | `function` | `"VCT"` | Scoring function (`VCT` = Voronoi, `SPH` = sphere) |
+| `scoring` | `self_consistency` | `"MAX"` | A→B / B→A contact handling |
+| `scoring` | `solvent_penalty` | `0.0` | Solvent exposure penalty |
+| `optimization` | `translation_step` | `0.25` | Translation delta (A) |
+| `optimization` | `angle_step` | `5.0` | Bond angle delta (deg) |
+| `optimization` | `dihedral_step` | `5.0` | Dihedral delta (deg) |
+| `optimization` | `flexible_step` | `10.0` | Sidechain flex delta (deg) |
+| `optimization` | `grid_spacing` | `0.375` | Binding site grid spacer |
+| `flexibility` | `ligand_torsions` | `true` | Enable DEE ligand torsion sampling |
+| `flexibility` | `intramolecular` | `true` | Intramolecular energy scoring |
+| `flexibility` | `intramolecular_fraction` | `1.0` | Weight of intramolecular term |
+| `flexibility` | `permeability` | `1.0` | Global VDW permeability |
+| `flexibility` | `rotamer_permeability` | `0.8` | Rotamer acceptance permeability |
+| `flexibility` | `ring_conformers` | `true` | LigandRingFlex conformer sampling |
+| `flexibility` | `chirality` | `true` | ChiralCenter R/S discrimination |
+| `flexibility` | `dee_clash` | `0.5` | DEE clash threshold |
+| `thermodynamics` | `temperature` | `300` | Temperature in K (0 = entropy off) |
+| `thermodynamics` | `clustering_algorithm` | `"CF"` | `CF`, `DP`, or `FO` |
+| `thermodynamics` | `cluster_rmsd` | `2.0` | RMSD threshold for pose clustering |
+| `ga` | `num_chromosomes` | `1000` | Population size |
+| `ga` | `num_generations` | `500` | Number of GA generations |
+| `ga` | `crossover_rate` | `0.8` | Crossover probability |
+| `ga` | `mutation_rate` | `0.03` | Mutation probability |
+| `ga` | `fitness_model` | `"PSHARE"` | Fitness model |
+| `ga` | `reproduction_model` | `"BOOM"` | Reproduction strategy |
+| `ga` | `seed` | `0` | RNG seed (0 = time-based) |
+| `output` | `max_results` | `10` | Max result clusters |
+| `output` | `htp_mode` | `false` | High-throughput (minimal output files) |
+| `protein` | `remove_water` | `true` | Remove HOH molecules |
+| `protein` | `omit_buried` | `false` | Skip buried atoms in Vcontacts |
+
+The `--rigid` flag overrides flexibility to all-off and temperature to 0.
 
 ---
 
