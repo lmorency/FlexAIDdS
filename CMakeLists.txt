@@ -532,7 +532,22 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME TENCoMDiffTests COMMAND test_tencom_diff)
 
-    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_tencom_diff")
+    # test_ga_validation — Voronoi geometry & GA validation tests
+    add_executable(test_ga_validation
+        tests/test_ga_validation.cpp
+        LIB/Vcontacts.cpp
+        LIB/fileio.cpp
+    )
+    target_include_directories(test_ga_validation PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_ga_validation PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_ga_validation PRIVATE /O2)
+    else()
+        target_compile_options(test_ga_validation PRIVATE -O2)
+    endif()
+    add_test(NAME GAValidationTests COMMAND test_ga_validation)
+
+    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_tencom_diff, test_ga_validation")
 endif()
 
 # ─── Swift Bridge (macOS only) ────────────────────────────────────────────
