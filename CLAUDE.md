@@ -20,6 +20,9 @@ FlexAIDdS/
 │   ├── BindingMode.cpp/h    # Pose clustering & thermodynamic integration
 │   ├── encom.cpp/h          # Elastic network contact model (vibrational entropy)
 │   ├── tencm.cpp/h          # Torsional ENCoM backbone flexibility
+│   ├── Mol2Reader.cpp/h     # MOL2 file reader
+│   ├── SdfReader.cpp/h      # SDF file reader
+│   ├── CleftDetector.cpp/h  # Binding-site cleft detection
 │   ├── ShannonThermoStack/  # Shannon configurational entropy + HW acceleration
 │   ├── LigandRingFlex/      # Non-aromatic ring & sugar pucker sampling
 │   ├── ChiralCenter/        # R/S stereocenter discrimination
@@ -29,10 +32,11 @@ FlexAIDdS/
 ├── tests/                  # C++ unit tests (GoogleTest)
 ├── python/                 # Python package & bindings
 │   ├── flexaidds/           # Python package (API, models, CLI)
-│   ├── bindings/            # pybind11 C++ bridge
+│   ├── bindings/            # pybind11 C++ bridge (core_bindings.cpp)
 │   ├── tests/               # Pytest test suite
-│   ├── setup.py             # setuptools config
-│   └── pyproject.toml       # Python project metadata
+│   ├── setup.py             # setuptools + pybind11 (builds statmech & encom only)
+│   └── pyproject.toml       # Python project metadata (setuptools backend)
+├── pymol_plugin/           # PyMOL integration (GUI, visualization, results adapter)
 ├── docs/                   # Documentation (architecture, implementation, licensing)
 ├── cmake/                  # CMake helpers
 ├── .github/workflows/      # CI/CD (GitHub Actions)
@@ -79,6 +83,9 @@ cmake --build . -j $(nproc)
 | `FLEXAIDS_USE_EIGEN` | ON | Eigen3 linear algebra |
 | `BUILD_PYTHON_BINDINGS` | OFF | pybind11 extensions |
 | `BUILD_TESTING` | OFF | GoogleTest unit tests |
+| `ENABLE_TENCOM_BENCHMARK` | OFF | tENCoM benchmark binary |
+| `ENABLE_TENCOM_TOOL` | OFF | tENCoM vibrational entropy tool |
+| `ENABLE_VCFBATCH_BENCHMARK` | OFF | VoronoiCFBatch benchmark binary |
 
 ## Testing
 
@@ -94,6 +101,8 @@ Key test files in `tests/`:
 - `test_statmech.cpp` — StatMechEngine correctness
 - `test_binding_mode_statmech.cpp` — BindingMode ↔ StatMechEngine integration
 - `test_ga_validation.cpp` — Genetic algorithm validation
+- `test_hardware_dispatch.cpp` — ShannonThermoStack hardware dispatch layer
+- `test_tencom_diff.cpp` — tENCoM differential engine
 
 ### Python Tests (pytest)
 
@@ -108,6 +117,16 @@ Key test files in `python/tests/`:
 - `test_results_loader_models.py` — Data model tests (pure Python)
 - `test_statmech.py` — StatMechEngine accuracy (requires C++ bindings)
 - `test_statmech_smoke.py` — Smoke test for CI
+- `test_cli.py` — CLI entry point tests
+- `test_docking.py` — High-level docking interface
+- `test_encom.py` — ENCoM normal-mode analysis
+- `test_io.py` — PDB I/O and REMARK parsing
+- `test_thermodynamics.py` / `test_thermodynamics_dataclass.py` — Thermodynamics module
+- `test_models.py` — Data model validation
+- `test_py_statmech.py` — Pure-Python StatMech fallback
+- `test_import_fallback.py` — Graceful import without C++ bindings
+- `test_results.py` — Result loading integration
+- `test_version.py` — Version string checks
 
 **Marker**: `@requires_core` — marks tests that need the compiled C++ `_core` extension. These skip gracefully if bindings are not built.
 
@@ -137,7 +156,10 @@ Key test files in `python/tests/`:
 - Python >= 3.9
 - Package: `flexaidds`
 - Key exports: `StatMechEngine`, `Thermodynamics`, `ENCoMEngine`, `load_results()`
+- Conditional exports (require C++ `_core`): `State`, `BoltzmannLUT`, `Replica`, `WHAMBin`, `TIPoint`, `NormalMode`, `VibrationalEntropy`
 - Data classes: `PoseResult`, `BindingModeResult`, `DockingResult`
+- Constants: `kB_kcal`, `kB_SI`, `HAS_CORE_BINDINGS`
+- Modules: `models.py`, `results.py`, `thermodynamics.py`, `docking.py`, `encom.py`, `io.py`, `visualization.py`
 
 ### Licensing Rules
 
@@ -177,7 +199,15 @@ Key test files in `python/tests/`:
 | `LIB/Vcontacts.cpp` | Voronoi contact scoring |
 | `LIB/BindingMode.cpp` | Pose clustering + thermodynamics |
 | `python/flexaidds/__init__.py` | Python API surface |
-| `python/bindings/` | pybind11 bridge code |
+| `LIB/Mol2Reader.cpp` | MOL2 molecular file reader |
+| `LIB/SdfReader.cpp` | SDF molecular file reader |
+| `LIB/CleftDetector.cpp` | Binding-site cleft detection |
+| `python/flexaidds/docking.py` | High-level docking interface |
+| `python/flexaidds/encom.py` | ENCoM normal-mode analysis |
+| `python/flexaidds/io.py` | PDB I/O and REMARK parsing |
+| `python/flexaidds/visualization.py` | PyMOL integration helpers |
+| `python/bindings/core_bindings.cpp` | pybind11 bridge code |
+| `pymol_plugin/` | PyMOL plugin (GUI, visualization, results adapter) |
 | `CMakeLists.txt` | Build configuration (all targets, options) |
 | `.github/workflows/ci.yml` | CI pipeline definition |
 
