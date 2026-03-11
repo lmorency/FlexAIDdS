@@ -13,12 +13,16 @@ import pytest
 
 # ── C++ availability guard ────────────────────────────────────────────────────
 
-_CORE_AVAILABLE = False
-try:
-    import flexaidds._core  # noqa: F401
-    _CORE_AVAILABLE = True
-except ImportError:
-    pass
+def _real_core_available():
+    """Check if the real C++ _core (not the test stub) is usable."""
+    try:
+        import flexaidds._core as c
+        c.StatMechEngine(300.0)
+        return True
+    except Exception:
+        return False
+
+_CORE_AVAILABLE = _real_core_available()
 
 needs_core = pytest.mark.skipif(not _CORE_AVAILABLE,
                                 reason="C++ _core module not built")
