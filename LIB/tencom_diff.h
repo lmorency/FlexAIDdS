@@ -43,6 +43,12 @@ struct DifferentialResult {
     std::vector<float> bfactors_tgt;
     std::vector<float> delta_bfactors;
 
+    // Per-residue vibrational entropy decomposition
+    // S_vib_i = Σ_k (v_ki² × S_mode_k) where v_ki is residue i's component
+    std::vector<double> per_residue_svib_ref;
+    std::vector<double> per_residue_svib_tgt;
+    std::vector<double> per_residue_delta_svib;
+
     double temperature;
 };
 

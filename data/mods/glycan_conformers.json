@@ -1,0 +1,47 @@
+{
+  "NMan9": {
+    "description": "High-mannose N-glycan (Man9GlcNAc2) — N-linked via ASN ND2",
+    "attach_to": "ASN",
+    "bond_atom": "ND2",
+    "conformers": [
+      { "phi": -75.0, "psi": 135.0, "omega": 60.0, "weight": 0.45 },
+      { "phi": -60.0, "psi": 180.0, "omega": -60.0, "weight": 0.35 },
+      { "phi": -90.0, "psi": 120.0, "omega": 60.0, "weight": 0.20 }
+    ]
+  },
+  "ComplexBi": {
+    "description": "Complex biantennary N-glycan — N-linked via ASN ND2",
+    "attach_to": "ASN",
+    "bond_atom": "ND2",
+    "conformers": [
+      { "phi": -70.0, "psi": 150.0, "weight": 0.55 },
+      { "phi": -80.0, "psi": 140.0, "weight": 0.45 }
+    ]
+  },
+  "OGalNAc": {
+    "description": "Core-1 O-GalNAc (Tn antigen) — O-linked via SER OG / THR OG1",
+    "attach_to": ["SER", "THR"],
+    "bond_atom": { "SER": "OG", "THR": "OG1" },
+    "conformers": [
+      { "phi": 60.0, "psi": -120.0, "weight": 0.60 },
+      { "phi": 75.0, "psi": -110.0, "weight": 0.40 }
+    ]
+  },
+  "Sialic": {
+    "description": "Sialic acid (Neu5Ac) cap — terminal on N- or O-glycans",
+    "attach_to": "any",
+    "bond_atom": "O6",
+    "conformers": [
+      { "phi": -65.0, "psi": 140.0, "omega": 180.0, "weight": 0.50 },
+      { "phi": -55.0, "psi": 150.0, "omega": 180.0, "weight": 0.50 }
+    ]
+  },
+  "Phosphate": {
+    "description": "Phosphorylation — SER OG / THR OG1 / TYR OH",
+    "attach_to": ["SER", "THR", "TYR"],
+    "bond_atom": { "SER": "OG", "THR": "OG1", "TYR": "OH" },
+    "conformers": [
+      { "phi": 180.0, "psi": 180.0, "weight": 1.0 }
+    ]
+  }
+}

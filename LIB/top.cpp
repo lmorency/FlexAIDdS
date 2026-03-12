@@ -171,6 +171,8 @@ int main(int argc, char **argv){
 	FA->permeability=1.0;
 	FA->intramolecular=1;
 	FA->solventterm=0.0f;
+	FA->use_elec=0;
+	FA->dielectric=4.0f;
 
 	FA->useflexdee=0;
 	FA->num_constraints=0;
@@ -206,7 +208,6 @@ int main(int argc, char **argv){
 	printf("base path is '%s'\n", FA->base_path);
 
 	// ── CLI argument parsing ──────────────────────────────────────────────
-	// Detect mode: legacy (3 positional args) or new (receptor + ligand + flags)
 	bool legacy_mode = false;
 	bool use_rigid = false;
 	bool use_folded = false;
@@ -270,9 +271,14 @@ int main(int argc, char **argv){
 		}
 
 		// Load JSON config: defaults → user overrides → rigid/folded overrides
-		nlohmann::json config = load_config(config_path);
+		json::Value config = load_config(config_path);
 		if (use_rigid) {
-			config = merge_json(config, rigid_overrides());
+			config = json::merge(config, flexaid_rigid_overrides());
+		}
+		if (use_folded) {
+			using V = json::Value;
+			using O = json::Object;
+			config = json::merge(config, V(O{{"advanced", V(O{{"assume_folded", V(true)}})}}));
 		}
 		if (use_folded) {
 			config = merge_json(config, nlohmann::json{{"advanced", {{"assume_folded", true}}}});
@@ -287,15 +293,9 @@ int main(int argc, char **argv){
 			FA->intramolecular ? "ON" : "OFF",
 			FA->complf);
 
-		// In new mode, we still need read_input() to process the PDB/ligand.
-		// Generate a temporary .inp file content in memory that read_input expects,
-		// or set dockinp/gainp to empty and handle the receptor/ligand directly.
 		// For now, the new mode sets the config values but still requires
 		// the legacy input files to be generated or provided.
 		// TODO: Phase 2 — direct PDB/MOL2 loading without .inp files.
-
-		// For now, print the loaded config and exit with a message
-		// directing the user to use --legacy until Phase 2 is complete.
 		fprintf(stderr, "NOTE: Direct receptor/ligand mode is prepared (config applied).\n");
 		fprintf(stderr, "Input pipeline integration in progress. Use --legacy for full runs.\n");
 		fprintf(stderr, "Config loaded: %s\n", config_path.empty() ? "(defaults)" : config_path.c_str());
@@ -305,7 +305,6 @@ int main(int argc, char **argv){
 		end_strfile[MAX_PATH__ - 1] = '\0';
 		strcpy(FA->rrgfile, end_strfile);
 
-		// Set dockinp/gainp to empty — read_input will still be called in legacy path
 		dockinp[0] = '\0';
 		gainp[0] = '\0';
 

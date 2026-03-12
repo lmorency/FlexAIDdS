@@ -1,110 +1,136 @@
-#pragma once
-
-#include <nlohmann/json.hpp>
-
-// Single source of truth for all FlexAIDdS parameters.
-// Every key here has a sensible default — the user only needs to override
+// config_defaults.h — Single source of truth for all FlexAIDdS parameters
+//
+// Every key has a sensible default — the user only needs to override
 // what they want to change via a JSON config file (-c flag).
 //
 // Design principle: FULL FLEXIBILITY ON by default.
 // Use --rigid to disable all flexibility for fast screening.
+//
+// Copyright 2024-2026 Louis-Philippe Morency / NRGlab, Universite de Montreal
+// SPDX-License-Identifier: Apache-2.0
+#pragma once
 
-inline nlohmann::json flexaid_default_config() {
-    return {
+#include "json_value.h"
+
+inline json::Value flexaid_default_config() {
+    using V = json::Value;
+    using O = json::Object;
+    using A = json::Array;
+
+    return V(O{
         // ── Scoring ──────────────────────────────────────────────
-        {"scoring", {
-            {"function", "VCT"},              // Voronoi contact scoring (best accuracy)
-            {"self_consistency", "MAX"},       // A→B and B→A contact self-consistency
-            {"plane_definition", "X"},         // plane definition mode
-            {"normalize_area", false},
-            {"accessible_surface", false},     // ACS weighting
-            {"acs_weight", 1.0},
-            {"solvent_penalty", 0.0f}
-        }},
+        {"scoring", V(O{
+            {"function",         V("VCT")},     // Voronoi contact scoring (best accuracy)
+            {"self_consistency", V("MAX")},      // A→B and B→A contact self-consistency
+            {"plane_definition", V("X")},        // plane definition mode
+            {"normalize_area",   V(false)},
+            {"accessible_surface", V(false)},    // ACS weighting
+            {"acs_weight",       V(1.0)},
+            {"solvent_penalty",  V(0.0)},
+        })},
 
         // ── Optimization step sizes ──────────────────────────────
-        {"optimization", {
-            {"translation_step", 0.25},       // Angstroms
-            {"angle_step", 5.0},              // degrees
-            {"dihedral_step", 5.0},           // degrees
-            {"flexible_step", 10.0},          // degrees for ligand flex bonds
-            {"grid_spacing", 0.375}           // grid spacer length
-        }},
+        {"optimization", V(O{
+            {"translation_step", V(0.25)},       // Angstroms
+            {"angle_step",       V(5.0)},        // degrees
+            {"dihedral_step",    V(5.0)},        // degrees
+            {"flexible_step",    V(10.0)},       // degrees for ligand flex bonds
+            {"grid_spacing",     V(0.375)},      // grid spacer length
+        })},
 
         // ── Flexibility (FULL by default) ────────────────────────
-        {"flexibility", {
-            {"ligand_torsions", true},         // DEEFLX: dead-end elimination for ligand flex
-            {"intramolecular", true},          // consider intramolecular forces
-            {"intramolecular_fraction", 1.0},
-            {"permeability", 1.0},             // atom permeability
-            {"rotamer_permeability", 0.8},     // rotamer acceptance VDW permeability
-            {"ring_conformers", true},         // LigandRingFlex sampling
-            {"chirality", true},               // ChiralCenter R/S discrimination
-            {"binding_site_conformations", 1}, // pbloops
-            {"bonded_loops", 2},               // bloops: exclude interactions n bonds away
-            {"use_flexdee", false},            // dead-end elimination for sidechains
-            {"dee_clash", 0.5}
-        }},
+        {"flexibility", V(O{
+            {"ligand_torsions",             V(true)},   // DEEFLX: dead-end elimination for ligand flex
+            {"intramolecular",              V(true)},   // consider intramolecular forces
+            {"intramolecular_fraction",     V(1.0)},
+            {"permeability",                V(1.0)},    // atom permeability
+            {"rotamer_permeability",        V(0.8)},    // rotamer acceptance VDW permeability
+            {"ring_conformers",             V(true)},   // LigandRingFlex sampling
+            {"chirality",                   V(true)},   // ChiralCenter R/S discrimination
+            {"binding_site_conformations",  V(1)},      // pbloops
+            {"bonded_loops",                V(2)},      // bloops: exclude interactions n bonds away
+            {"use_flexdee",                 V(false)},  // dead-end elimination for sidechains
+            {"dee_clash",                   V(0.5)},
+        })},
 
         // ── Thermodynamics ───────────────────────────────────────
-        {"thermodynamics", {
-            {"temperature", 300},              // Kelvin (0 = entropy off)
-            {"clustering_algorithm", "CF"},    // CF, DP, or FO
-            {"cluster_rmsd", 2.0}              // RMSD threshold for clustering
-        }},
+        {"thermodynamics", V(O{
+            {"temperature",           V(300)},   // Kelvin (0 = entropy off)
+            {"clustering_algorithm",  V("CF")},  // CF, DP, or FO
+            {"cluster_rmsd",          V(2.0)},   // RMSD threshold for clustering
+        })},
 
         // ── Genetic Algorithm ────────────────────────────────────
-        {"ga", {
-            {"num_chromosomes", 1000},
-            {"num_generations", 500},
-            {"crossover_rate", 0.8},
-            {"mutation_rate", 0.03},
-            {"fitness_model", "PSHARE"},
-            {"reproduction_model", "BOOM"},
-            {"boom_fraction", 1.0},
-            {"population_init", "RANDOM"},
-            {"seed", 0},                       // 0 = time-based
-            {"adaptive", false},
-            {"adaptive_k", {1.0, 0.5, 1.0, 0.5}},
-            {"sharing_alpha", 1.0},
-            {"sharing_peaks", 5.0},
-            {"sharing_scale", 10.0},
-            {"intragenes", false},
-            {"duplicates", false},
-            {"initial_mutation_prob", 0.0},
-            {"end_mutation_prob", 0.0},
-            {"steady_state_num", 0}
-        }},
+        {"ga", V(O{
+            {"num_chromosomes",      V(1000)},
+            {"num_generations",      V(500)},
+            {"crossover_rate",       V(0.8)},
+            {"mutation_rate",        V(0.03)},
+            {"fitness_model",        V("PSHARE")},
+            {"reproduction_model",   V("BOOM")},
+            {"boom_fraction",        V(1.0)},
+            {"population_init",      V("RANDOM")},
+            {"seed",                 V(0)},          // 0 = time-based
+            {"adaptive",             V(false)},
+            {"adaptive_k",           V(A{V(1.0), V(0.5), V(1.0), V(0.5)})},
+            {"sharing_alpha",        V(1.0)},
+            {"sharing_peaks",        V(5.0)},
+            {"sharing_scale",        V(10.0)},
+            {"intragenes",           V(false)},
+            {"duplicates",           V(false)},
+            {"initial_mutation_prob", V(0.0)},
+            {"end_mutation_prob",    V(0.0)},
+            {"steady_state_num",     V(0)},
+        })},
 
         // ── Output ───────────────────────────────────────────────
-        {"output", {
-            {"max_results", 10},
-            {"scored_only", false},
-            {"score_ligand_only", false},
-            {"htp_mode", false},
-            {"print_chromosomes", 10},
-            {"print_interval", 1},
-            {"rrg_skip", 0},
-            {"output_generations", false},
-            {"output_range", false},
-            {"rotamer_output", false}
-        }},
+        {"output", V(O{
+            {"max_results",        V(10)},
+            {"scored_only",        V(false)},
+            {"score_ligand_only",  V(false)},
+            {"htp_mode",           V(false)},
+            {"print_chromosomes",  V(10)},
+            {"print_interval",     V(1)},
+            {"rrg_skip",           V(0)},
+            {"output_generations", V(false)},
+            {"output_range",       V(false)},
+            {"rotamer_output",     V(false)},
+        })},
 
         // ── Protein ──────────────────────────────────────────────
-        {"protein", {
-            {"is_protein", true},
-            {"exclude_het", false},
-            {"remove_water", true},
-            {"omit_buried", false}
-        }},
+        {"protein", V(O{
+            {"is_protein",   V(true)},
+            {"exclude_het",  V(false)},
+            {"remove_water", V(true)},
+            {"omit_buried",  V(false)},
+        })},
 
         // ── Advanced ─────────────────────────────────────────────
-        {"advanced", {
-            {"vcontacts_index", false},
-            {"supernode", false},
-            {"force_interaction", false},
-            {"interaction_factor", 5.0},
-            {"assume_folded", false}        // skip NATURaL co-translational chain growth
-        }}
-    };
+        {"advanced", V(O{
+            {"vcontacts_index",    V(false)},
+            {"supernode",          V(false)},
+            {"force_interaction",  V(false)},
+            {"interaction_factor", V(5.0)},
+            {"assume_folded",      V(false)},  // skip NATURaL co-translational chain growth
+        })},
+    });
+}
+
+inline json::Value flexaid_rigid_overrides() {
+    using V = json::Value;
+    using O = json::Object;
+    return V(O{
+        {"flexibility", V(O{
+            {"ligand_torsions",      V(false)},
+            {"intramolecular",       V(false)},
+            {"ring_conformers",      V(false)},
+            {"chirality",            V(false)},
+            {"use_flexdee",          V(false)},
+            {"permeability",         V(1.0)},
+            {"rotamer_permeability", V(1.0)},
+        })},
+        {"thermodynamics", V(O{
+            {"temperature", V(0)},
+        })},
+    });
 }

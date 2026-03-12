@@ -143,7 +143,17 @@ FlexAIDdS/
 - **Required**: C++20 compiler (GCC >= 10, Clang >= 10, MSVC), CMake >= 3.18
 - **Optional**: Eigen3 (`libeigen3-dev`), OpenMP, CUDA Toolkit, Metal framework (macOS), pybind11
 
-### Output Binaries
+### Build Commands
+
+Both ultra-fast HPC binaries (`FlexAIDdS` + `tENCoM`) are built by default:
+
+```bash
+git clone https://github.com/lmorency/FlexAIDdS
+cd FlexAIDdS
+mkdir build && cd build
+cmake .. -DCMAKE_BUILD_TYPE=Release
+cmake --build . -j $(nproc)
+```
 
 | Binary | Description |
 |:-------|:------------|
@@ -153,20 +163,21 @@ FlexAIDdS/
 
 ### HPC Deployment
 
-```bash
-cmake .. -DCMAKE_BUILD_TYPE=Release \
-         -DFLEXAIDS_USE_AVX512=ON \
-         -DFLEXAIDS_USE_OPENMP=ON
-cmake --build . -j $(nproc)
-```
+For cluster / HPC nodes, build once on the target architecture:
 
-### With Tests
-
-```bash
-cmake .. -DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=Release
-cmake --build . -j $(nproc)
-ctest --test-dir .
-```
+| Option                    | Default | Description                              |
+|:--------------------------|:--------|:-----------------------------------------|
+| `FLEXAIDS_USE_CUDA`       | OFF     | CUDA GPU batch evaluation                |
+| `FLEXAIDS_USE_METAL`      | OFF     | Metal GPU acceleration (macOS only)      |
+| `FLEXAIDS_USE_AVX2`       | ON      | AVX2 SIMD acceleration                   |
+| `FLEXAIDS_USE_AVX512`     | OFF     | AVX-512 SIMD acceleration                |
+| `FLEXAIDS_USE_OPENMP`     | ON      | OpenMP thread parallelism                |
+| `FLEXAIDS_USE_EIGEN`      | ON      | Eigen3 vectorised linear algebra         |
+| `BUILD_PYTHON_BINDINGS`   | OFF     | Build pybind11 Python extension (`_core`)|
+| `BUILD_TESTING`           | OFF     | Build GoogleTest unit tests              |
+| `ENABLE_TENCOM_BENCHMARK` | OFF     | Build standalone tENCoM benchmark binary |
+| `ENABLE_TENCOM_TOOL`      | OFF     | Build tENCoM vibrational entropy tool    |
+| `ENABLE_VCFBATCH_BENCHMARK`| OFF    | Build VoronoiCFBatch benchmark binary    |
 
 ### With Python Bindings
 
@@ -238,15 +249,20 @@ All parameters have built-in defaults in a single JSON schema. Override only wha
 }
 ```
 
-<details>
-<summary><strong>📜 Legacy Mode</strong></summary>
+## 📖 Usage Modes
 
-Backward-compatible with existing `.inp` files:
+### Python Results Inspection
+
+The `flexaidds` Python package can inspect existing docking results:
 
 ```bash
-./FlexAID config.inp ga.inp output_prefix
-# or explicitly:
-./FlexAIDdS --legacy config.inp ga.inp output_prefix
+cd python && pip install -e .
+
+# Inspect result directory
+python -m flexaidds path/to/output_dir
+python -m flexaidds path/to/output_dir --json
+python -m flexaidds path/to/output_dir --csv results.csv
+python -m flexaidds path/to/output_dir --top 5
 ```
 
 | Argument        | Description                                              |
@@ -274,8 +290,7 @@ See [Configuration Reference](#-configuration-reference) for all legacy paramete
 tENCoM reference.pdb target1.pdb [target2.pdb ...] [-T temp] [-r cutoff] [-k k0] [-o prefix]
 ```
 
-<details>
-<summary><strong>🧬 Co-Translational / Co-Transcriptional Docking (NATURaL)</strong></summary>
+### Co-Translational / Co-Transcriptional Docking (NATURaL)
 
 NATURaL mode activates **automatically** when the system involves nucleotide ligands or nucleic acid receptors — no special flags needed. Simply dock as usual:
 
@@ -299,17 +314,59 @@ Supported organisms: *E. coli* K-12 and Human HEK293 (codon-specific tRNA abunda
 To **skip** co-translational/co-transcriptional chain growth and treat the receptor as fully folded, use the `--folded` flag:
 
 ```bash
+# Nucleotide system, but dock against the fully folded receptor
 ./FlexAIDdS ribosome.pdb atp_analog.mol2 --folded
 ```
 
 Or via JSON config: `"advanced": { "assume_folded": true }`
 
-</details>
+### Python API (Phase 2)
 
-### 🐍 Python API
 
 ```python
-import flexaidds
+import flexaidds as fd
+
+# Load and analyze existing results
+run = fd.load_results("path/to/output_dir")
+print(run.n_modes)
+print(run.binding_modes[0].best_cf)
+print(run.binding_modes[0].free_energy)
+
+# Thermodynamic analysis
+engine = fd.StatMechEngine(temperature=300.0)
+engine.add_sample(-7.5)
+engine.add_sample(-6.0)
+thermo = engine.compute()
+print("F =", thermo.free_energy)
+print("S =", thermo.entropy)
+```
+
+### Planned: Zero-Config CLI (Phase 2)
+
+> **Not yet implemented.** The following CLI and YAML config modes are planned for a future release.
+
+```bash
+# Planned zero-config interface
+./flexaids dock receptor.pdb ligand.mol2
+```
+
+```yaml
+# Planned YAML config format
+docking:
+  binding_site:
+    method: auto
+  flexible_sidechains: ["A:TYR123", "A:PHE456"]
+  temperature: 300.0
+genetic_algorithm:
+  population_size: 2000
+  max_generations: 100
+hardware:
+  backend: auto  # cuda, metal, avx512, openmp
+```
+
+### Planned: Python Docking API (Phase 2)
+
+> **Not yet implemented.** Live docking orchestration from Python is staged behind ongoing C++ integration.
 
 # High-level docking
 results = flexaidds.dock(
@@ -337,7 +394,35 @@ encom = ENCoMEngine()
 delta_s = encom.compute_delta_s('apo.pdb', 'holo.pdb')
 ```
 
-### 🌡️ Vibrational Entropy Integration (Phase 3)
+### Vibrational Entropy Integration (Phase 3)
+
+Phase 3 integrates ENCoM vibrational entropy directly into the docking free energy:
+
+```python
+from flexaidds import TorsionalENM, run_shannon_thermo_stack
+
+# Build torsional elastic network from receptor
+tenm = TorsionalENM()
+tenm.build_from_pdb('receptor.pdb')
+print(f"Built {tenm.n_modes} torsional modes from {tenm.n_residues} residues")
+
+# Full thermodynamic stack: Shannon entropy + torsional vibrational entropy
+result = run_shannon_thermo_stack(
+    energies=pose_energies,
+    tencm_model=tenm,
+    base_deltaG=-12.5,
+    temperature_K=300.0,
+)
+print(f"ΔG = {result.deltaG:.4f} kcal/mol")
+print(f"Shannon entropy = {result.shannonEntropy:.4f} bits")
+print(f"Torsional S_vib = {result.torsionalVibEntropy:.6f} kcal/(mol·K)")
+print(result.report)
+```
+
+In the C++ engine, vibrational corrections are automatically applied to BindingMode
+free energies when the TorsionalENM model is built during docking.
+
+**Available modules**: `docking`, `encom`, `tencm`, `io`, `models`, `results`, `thermodynamics`, `visualization`
 
 ```python
 from flexaidds import TorsionalENM, run_shannon_thermo_stack
@@ -451,6 +536,8 @@ Tests marked with `@requires_core` need the compiled C++ `_core` extension and s
 ---
 
 ## 🔬 Scientific Background
+
+### Scoring: Contact Function (CF) vs NATURaL 2-Term Potential
 
 ### Scoring: Contact Function (CF) vs NATURaL 2-Term Potential
 
@@ -720,8 +807,6 @@ All keys are optional — defaults enable full flexibility at 300 K. See `LIB/co
 The `--rigid` flag overrides flexibility to all-off and temperature to 0.
 The `--folded` flag sets `advanced.assume_folded = true`, treating the receptor as fully folded and skipping NATURaL co-translational/co-transcriptional chain growth even when nucleotide ligands or nucleic acid receptors are detected.
 
-</details>
-
 ---
 
 ## 🧩 Modules
@@ -731,7 +816,7 @@ The `--folded` flag sets `advanced.assume_folded = true`, treating the receptor 
 
 Implements the torsional variant of the **Elastic Network Contact Model** (ENCoM; Frappier et al. 2015) for protein backbone flexibility, using torsional degrees of freedom from the ENM formalism of Delarue & Sanejouand (2002) and Yang, Song & Cui (2009). Builds a spring network over Cα contacts within a cutoff radius, computes torsional normal modes via Jacobi diagonalisation, and samples Boltzmann-weighted backbone perturbations during the GA without rebuilding the rotamer library every generation.
 
-Supports both protein (Cα) and nucleic acid (C4' backbone) chains for RNA/DNA flexibility.
+Implements the torsional variant of the **Elastic Network Contact Model** (ENCoM; Frappier et al. 2015) for protein backbone flexibility, using torsional degrees of freedom from the ENM formalism of Delarue & Sanejouand (2002) and Yang, Song & Cui (2009). Builds a spring network over C-alpha contacts within a cutoff radius, computes torsional normal modes via Jacobi diagonalisation, and samples Boltzmann-weighted backbone perturbations during the GA without rebuilding the rotamer library every generation.
 
 </details>
 
@@ -892,7 +977,12 @@ See [LICENSE](LICENSE) | [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)
 
 ---
 
-## 🔗 Links
+## Links
+
+**Repository**: [github.com/lmorency/FlexAIDdS](https://github.com/lmorency/FlexAIDdS)
+**Issues**: [github.com/lmorency/FlexAIDdS/issues](https://github.com/lmorency/FlexAIDdS/issues)
+**Original FlexAID**: [github.com/NRGlab/FlexAID](https://github.com/NRGlab/FlexAID)
+**NRGlab**: [biophys.umontreal.ca/nrg](http://biophys.umontreal.ca/nrg) | [github.com/NRGlab](https://github.com/NRGlab)
 
 | | |
 |:--|:--|

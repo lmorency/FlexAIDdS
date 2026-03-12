@@ -15,6 +15,14 @@
 !*.c
 !*.h
 !*.hpp
+!*.mm
+!*.swift
+!*.ts
+!*.tsx
+!*.metal
+# data files (PTM/glycan libraries, charge parameters)
+!data
+!data/**
 # test suite
 !tests
 !tests/**
@@ -30,12 +38,21 @@
 !THIRD_PARTY_LICENSES.md
 !docs
 !docs/**
+# swift package
+!swift
+!swift/**
+# typescript package
+!typescript
+!typescript/**
+typescript/**/node_modules
+typescript/**/dist
 # python package
 !python
 !python/**
 python/**/__pycache__
 python/__pycache__
 python/**/*.egg-info
+python/**/*.egg-info/**
 python/**/*.so
 # dependencies files
 !*.def

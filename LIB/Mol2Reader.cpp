@@ -274,6 +274,7 @@ int read_mol2_ligand(FA_Global* FA, atom** atoms, resid** residue,
 
         a.type = sybyl_to_flexaid_type(tmp_atoms[ai].sybyl);
         a.radius = sybyl_radius(tmp_atoms[ai].sybyl);
+        a.charge = tmp_atoms[ai].charge; // propagate MOL2 partial charge
         a.ofres = FA->res_cnt;
         a.recs = 'f'; // flexible by default
         a.bond[0] = 0;

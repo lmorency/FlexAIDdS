@@ -14,6 +14,7 @@ from .__version__ import __version__ as __version__
 # Pure-Python thermodynamics (always available)
 from .thermodynamics import StatMechEngine, Thermodynamics, kB_kcal, kB_SI
 
+# C++ extension — optional: pure-Python helpers work without it
 try:
     from ._core import (
         BoltzmannLUT,
@@ -32,12 +33,13 @@ try:
     from ._core import VibrationalEntropy as _CppVibrationalEntropy  # noqa: F811
     HAS_CORE_BINDINGS = True
 except ImportError:
-    BoltzmannLUT = None
-    Replica = None
-    State = None
-    TIPoint = None
-    WHAMBin = None
+    # Fallback when C++ extension is not built
+    from ._fallback_types import BoltzmannLUT, Replica, State, TIPoint, WHAMBin
+    kB_kcal = 0.001987206   # kcal mol⁻¹ K⁻¹
+    kB_SI = 1.380649e-23    # J K⁻¹
     HAS_CORE_BINDINGS = False
+
+from .tencom_results import FlexModeResult, FlexPopulationResult, parse_tencom_pdb, parse_tencom_json
 
 
 def dock(
@@ -110,7 +112,6 @@ def dock(
     docking = Docking(str(cfg_path))
     return docking.run(binary=binary, timeout=timeout)
 
-
 __all__ = [
     # High-level API
     "dock",
@@ -130,6 +131,11 @@ __all__ = [
     "ENCoMEngine",
     "NormalMode",
     "VibrationalEntropy",
+    # tENCoM results (always available, pure Python)
+    "FlexModeResult",
+    "FlexPopulationResult",
+    "parse_tencom_pdb",
+    "parse_tencom_json",
     # TorsionalENM / ShannonThermoStack (always available — pure Python or C++)
     "TorsionalENM",
     "TorsionalNormalMode",
@@ -143,6 +149,17 @@ __all__ = [
     "kB_SI",
     # Availability flag
     "HAS_CORE_BINDINGS",
+    # Core types (C++ when available, pure-Python fallback otherwise)
+    "StatMechEngine",
+    "Thermodynamics",
+    "State",
+    "BoltzmannLUT",
+    "Replica",
+    "WHAMBin",
+    "TIPoint",
+    "ENCoMEngine",
+    "NormalMode",
+    "VibrationalEntropy",
 ]
 
 # C++ core extras (only available when compiled)

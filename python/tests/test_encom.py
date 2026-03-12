@@ -13,14 +13,16 @@ import pytest
 
 # ── C++ availability guard ────────────────────────────────────────────────────
 
-_CORE_AVAILABLE = False
-try:
-    import flexaidds._core as _c
-    # Verify it's the real C++ extension, not the conftest stub
-    _c.StatMechEngine(300.0)
-    _CORE_AVAILABLE = True
-except Exception:
-    pass
+def _real_core_available():
+    """Check if the real C++ _core (not the test stub) is usable."""
+    try:
+        import flexaidds._core as c
+        c.StatMechEngine(300.0)
+        return True
+    except Exception:
+        return False
+
+_CORE_AVAILABLE = _real_core_available()
 
 needs_core = pytest.mark.skipif(not _CORE_AVAILABLE,
                                 reason="C++ _core module not built")
@@ -265,19 +267,25 @@ class TestENCoMEngineCpp:
 # ── Python-level ENCoM smoke test (no C++ needed) ────────────────────────────
 
 class TestENCoMPythonFallback:
-    """Verify that the ENCoM symbols are None (not missing) when C++ absent."""
+    """Verify that ENCoM symbols are always available (pure-Python fallback)."""
 
     def test_encom_symbols_accessible(self):
         import flexaidds as fds
-        # Should be importable either as a class or None
+        # Should always be importable as usable classes (never None)
         assert hasattr(fds, "ENCoMEngine")
         assert hasattr(fds, "NormalMode")
         assert hasattr(fds, "VibrationalEntropy")
 
-    def test_encom_symbols_none_when_no_core(self):
+    def test_encom_symbols_fallback_when_no_core(self):
         if _CORE_AVAILABLE:
-            pytest.skip("C++ core is built; checking None path not applicable")
+            pytest.skip("C++ core is built; checking fallback path not applicable")
         import flexaidds as fds
-        assert fds.ENCoMEngine is None
-        assert fds.NormalMode is None
-        assert fds.VibrationalEntropy is None
+        from flexaidds.encom import ENCoMEngine, NormalMode, VibrationalEntropy
+        assert fds.ENCoMEngine is ENCoMEngine
+        assert fds.NormalMode is NormalMode
+        assert fds.VibrationalEntropy is VibrationalEntropy
+        # Verify they are actually usable
+        mode = fds.NormalMode(index=1, eigenvalue=2.0)
+        assert mode.eigenvalue == 2.0
+        vs = fds.ENCoMEngine.total_entropy(0.003, 0.001)
+        assert abs(vs - 0.004) < 1e-15
