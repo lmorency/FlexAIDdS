@@ -22,13 +22,21 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install pytest numpy
-      - name: Run read-only loader tests
+      - name: Run pure-Python tests (no C++ extension needed)
         run: |
           PYTHONPATH=python pytest -q \
             python/tests/test_results_io.py \
             python/tests/test_results_loader_models.py \
             python/tests/test_pdb_io.py \
-            python/tests/test_import_fallback.py
+            python/tests/test_import_fallback.py \
+            python/tests/test_py_statmech.py \
+            python/tests/test_thermodynamics_dataclass.py \
+            python/tests/test_models.py \
+            python/tests/test_version.py \
+            python/tests/test_io.py \
+            python/tests/test_cli.py \
+            python/tests/test_docking.py \
+            python/tests/test_results.py
 
   cxx_core_build:
     name: C++ core (${{ matrix.name }})
@@ -96,7 +104,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build
           python -m pip install --upgrade pip
-          python -m pip install 'pybind11[global]' pytest
+          python -m pip install 'pybind11[global]' pytest numpy
       - name: Configure Python bindings
         run: |
           cmake -S . -B build-python -G Ninja \
@@ -114,4 +122,6 @@ jobs:
         run: |
           PYTHONPATH=python pytest -q \
             python/tests/test_statmech_smoke.py \
-            python/tests/test_statmech.py
+            python/tests/test_statmech.py \
+            python/tests/test_thermodynamics.py \
+            python/tests/test_encom.py

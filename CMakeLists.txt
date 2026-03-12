@@ -727,5 +727,10 @@ if(BUILD_TESTING)
     target_link_libraries(test_ga_core PRIVATE flexaid_testlib GTest::gtest GTest::gtest_main)
     add_test(NAME GACoreTests COMMAND test_ga_core)
 
-    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_tencom_diff, test_encom, test_ring_conformer_library, test_sugar_pucker, test_chiral_center, test_cavity_detect, test_binding_mode_statmech, test_binding_mode_advanced, test_ga_core")
+    # test_ga_validation — CF scoring functions, eval_span clamping, batch result structure
+    add_executable(test_ga_validation tests/test_ga_validation.cpp)
+    target_link_libraries(test_ga_validation PRIVATE flexaid_testlib GTest::gtest GTest::gtest_main)
+    add_test(NAME GAValidationTests COMMAND test_ga_validation)
+
+    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_tencom_diff, test_encom, test_ring_conformer_library, test_sugar_pucker, test_chiral_center, test_cavity_detect, test_binding_mode_statmech, test_binding_mode_advanced, test_ga_core, test_ga_validation")
 endif()
