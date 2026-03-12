@@ -527,6 +527,213 @@ TEST(BackendDetection, EigenTagInReport) {
 #endif
 
 // ===========================================================================
+// DISPATCH EDGE CASES — UNIFIED DISPATCH LAYER COVERAGE
+// ===========================================================================
+
+// --- Shannon entropy: single bin always returns zero ---
+
+TEST(ShannonEntropyEdge, SingleBinReturnsZero) {
+    // num_bins=1 → all values in one bin → p=1.0 → H = -1*log2(1) = 0
+    std::mt19937 rng(55);
+    std::normal_distribution<double> dist(0.0, 10.0);
+    std::vector<double> values(200);
+    for (auto& v : values) v = dist(rng);
+
+    double H = compute_shannon_entropy(values, 1);
+    EXPECT_DOUBLE_EQ(H, 0.0);
+}
+
+// --- Shannon entropy: more bins than data points ---
+
+TEST(ShannonEntropyEdge, MoreBinsThanSamples) {
+    // 5 distinct values spread into 1000 bins → most bins empty, H still valid
+    std::vector<double> values = {1.0, 2.0, 3.0, 4.0, 5.0};
+    double H = compute_shannon_entropy(values, 1000);
+    EXPECT_TRUE(std::isfinite(H));
+    EXPECT_GE(H, 0.0);
+    // With 5 values in 1000 bins, at most 5 bins occupied → H <= log2(5)
+    EXPECT_LE(H, std::log2(5.0) + 0.01);
+}
+
+// --- Shannon entropy: very large number of bins ---
+
+TEST(ShannonEntropyEdge, LargeBinCount) {
+    // Stress test all dispatch paths with a large bin count
+    std::mt19937 rng(88);
+    std::uniform_real_distribution<double> dist(0.0, 100.0);
+    std::vector<double> values(2000);
+    for (auto& v : values) v = dist(rng);
+
+    double H = compute_shannon_entropy(values, 500);
+    EXPECT_TRUE(std::isfinite(H));
+    EXPECT_GE(H, 0.0);
+    EXPECT_LE(H, std::log2(500.0) + EPSILON);
+}
+
+// --- Shannon entropy discrete: all-zero counts ---
+
+TEST(ShannonEntropyDiscreteEdge, AllZeroCounts) {
+    std::vector<int> counts = {0, 0, 0, 0};
+    EXPECT_DOUBLE_EQ(compute_shannon_entropy_discrete(counts), 0.0);
+}
+
+// --- Shannon entropy discrete: single non-zero bin ---
+
+TEST(ShannonEntropyDiscreteEdge, SingleNonZeroBin) {
+    std::vector<int> counts = {0, 0, 500, 0, 0};
+    EXPECT_DOUBLE_EQ(compute_shannon_entropy_discrete(counts), 0.0);
+}
+
+// --- Shannon entropy discrete: very large counts ---
+
+TEST(ShannonEntropyDiscreteEdge, VeryLargeCounts) {
+    // Ensure no integer overflow in total computation
+    std::vector<int> counts = {1000000, 1000000, 1000000};
+    double H = compute_shannon_entropy_discrete(counts);
+    EXPECT_NEAR(H, std::log2(3.0), 0.01);
+}
+
+// --- ShannonEnergyMatrix: boundary indices ---
+
+TEST(ShannonEnergyMatrixEdge, BoundaryIndices) {
+    auto& mat = ShannonEnergyMatrix::instance();
+    mat.initialise();
+
+    // First and last valid indices
+    EXPECT_TRUE(std::isfinite(mat.lookup(0, 0)));
+    EXPECT_TRUE(std::isfinite(mat.lookup(SHANNON_BINS - 1, SHANNON_BINS - 1)));
+    EXPECT_TRUE(std::isfinite(mat.lookup(0, SHANNON_BINS - 1)));
+    EXPECT_TRUE(std::isfinite(mat.lookup(SHANNON_BINS - 1, 0)));
+}
+
+// --- ShannonEnergyMatrix: symmetry check ---
+
+TEST(ShannonEnergyMatrixEdge, AsymmetricByDesign) {
+    // E[i][j] = -kT * p_i * log2(p_j) ≠ E[j][i] in general
+    // because p_i and p_j come from independent distributions
+    auto& mat = ShannonEnergyMatrix::instance();
+    mat.initialise();
+
+    // Just verify both are finite; they need not be equal
+    double v_ij = mat.lookup(10, 50);
+    double v_ji = mat.lookup(50, 10);
+    EXPECT_TRUE(std::isfinite(v_ij));
+    EXPECT_TRUE(std::isfinite(v_ji));
+}
+
+// --- Full stack: very low temperature ---
+
+TEST(ShannonThermoStackEdge, VeryLowTemperature) {
+    // Near 0 K: entropy contribution should be small (−T·S → 0)
+    statmech::StatMechEngine eng(1.0);  // 1 K
+    eng.add_sample(-10.0);
+    eng.add_sample(-5.0);
+    eng.add_sample(-8.0);
+    tencm::TorsionalENM tencm;
+
+    auto result = run_shannon_thermo_stack(eng, tencm, -10.0, 1.0);
+    EXPECT_TRUE(std::isfinite(result.deltaG));
+    EXPECT_TRUE(std::isfinite(result.shannonEntropy));
+    // At very low T, entropy contribution magnitude should be small
+    EXPECT_LT(std::abs(result.entropyContribution), 1.0);
+}
+
+// --- Full stack: high temperature ---
+
+TEST(ShannonThermoStackEdge, HighTemperature) {
+    statmech::StatMechEngine eng(1000.0);
+    eng.add_sample(-10.0);
+    eng.add_sample(-5.0);
+    eng.add_sample(-8.0);
+    tencm::TorsionalENM tencm;
+
+    auto result = run_shannon_thermo_stack(eng, tencm, -10.0, 1000.0);
+    EXPECT_TRUE(std::isfinite(result.deltaG));
+    EXPECT_TRUE(std::isfinite(result.shannonEntropy));
+    // At high T, entropy contribution should be larger in magnitude
+    // compared to standard temperature (298.15 K)
+    auto result_std = run_shannon_thermo_stack(eng, tencm, -10.0, 298.15);
+    EXPECT_LE(result.entropyContribution, result_std.entropyContribution);
+}
+
+// --- Full stack: two-sample ensemble ---
+
+TEST(ShannonThermoStackEdge, TwoSampleEnsemble) {
+    // Minimal non-trivial ensemble
+    statmech::StatMechEngine eng(298.15);
+    eng.add_sample(-10.0);
+    eng.add_sample(-5.0);
+    tencm::TorsionalENM tencm;
+
+    auto result = run_shannon_thermo_stack(eng, tencm, -7.5);
+    EXPECT_TRUE(std::isfinite(result.deltaG));
+    EXPECT_NEAR(result.deltaG, -7.5 + result.entropyContribution, EPSILON);
+}
+
+// --- Full stack: highly degenerate large ensemble ---
+
+TEST(ShannonThermoStackEdge, HighlyDegenerateEnsemble) {
+    // 1000 samples at -10.0, 1 outlier at -5.0
+    // Shannon entropy should be very low (dominated by one energy)
+    statmech::StatMechEngine eng(298.15);
+    for (int i = 0; i < 1000; ++i)
+        eng.add_sample(-10.0);
+    eng.add_sample(-5.0);
+    tencm::TorsionalENM tencm;
+
+    auto result = run_shannon_thermo_stack(eng, tencm, -10.0);
+    EXPECT_TRUE(std::isfinite(result.deltaG));
+    EXPECT_TRUE(std::isfinite(result.shannonEntropy));
+    // Entropy should be near zero since almost all weights are identical
+    EXPECT_LT(result.shannonEntropy, 1.0);
+}
+
+// --- Full stack: wide energy spread ---
+
+TEST(ShannonThermoStackEdge, WideEnergySpread) {
+    // Energies spanning a huge range: numerical stability test
+    statmech::StatMechEngine eng(298.15);
+    eng.add_sample(-100.0);
+    eng.add_sample(-50.0);
+    eng.add_sample(0.0);
+    eng.add_sample(50.0);
+    eng.add_sample(100.0);
+    tencm::TorsionalENM tencm;
+
+    auto result = run_shannon_thermo_stack(eng, tencm, -10.0);
+    EXPECT_TRUE(std::isfinite(result.deltaG));
+    EXPECT_TRUE(std::isfinite(result.shannonEntropy));
+    EXPECT_GE(result.shannonEntropy, 0.0);
+}
+
+// --- Torsional vibrational entropy: single valid mode ---
+
+TEST(TorsionalVibEntropyEdge, SingleValidMode) {
+    // 7 modes: first 6 skipped, only mode[6] counted
+    std::vector<tencm::NormalMode> modes(7);
+    for (int i = 0; i < 7; ++i)
+        modes[i].eigenvalue = 1.0;
+
+    double S = compute_torsional_vibrational_entropy(modes, 298.15);
+    EXPECT_GT(S, 0.0);
+    EXPECT_TRUE(std::isfinite(S));
+}
+
+// --- Torsional vibrational entropy: mixed valid/invalid modes ---
+
+TEST(TorsionalVibEntropyEdge, MixedValidInvalidModes) {
+    // Some modes above threshold, some below
+    std::vector<tencm::NormalMode> modes(12);
+    for (int i = 0; i < 12; ++i)
+        modes[i].eigenvalue = (i % 2 == 0) ? 1e-9 : 1.0;
+
+    double S = compute_torsional_vibrational_entropy(modes, 298.15);
+    EXPECT_TRUE(std::isfinite(S));
+    // Only 3 valid modes (indices 7, 9, 11) should contribute
+    EXPECT_GT(S, 0.0);
+}
+
+// ===========================================================================
 // MAIN
 // ===========================================================================
 

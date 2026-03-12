@@ -1,10 +1,12 @@
 #include "gaboom.h"
 #include "Vcontacts.h"
 #include "fileio.h"
+#include "hardware_dispatch.h"
 
 #include <random>
 #include <functional>
 #include <cstdint>
+#include <vector>
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -15,7 +17,6 @@
 #endif
 
 #ifdef FLEXAIDS_USE_CUDA
-#include <vector>
 #include "cuda_eval.cuh"
 #endif
 
@@ -24,6 +25,8 @@
 #endif
 
 #include "statmech.h"
+#include "tencm.h"
+#include "ShannonThermoStack/ShannonThermoStack.h"
 #include "NATURaL/NATURaLDualAssembly.h"
 
 // in milliseconds
@@ -410,11 +413,33 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		printf("  Mean energy          <E>  = %10.4f kcal/mol\n", td.mean_energy);
 		printf("  Energy std dev        σ_E = %10.4f kcal/mol\n", td.std_energy);
 		printf("  Heat capacity         C_v = %10.4f kcal/(mol·K)\n", td.heat_capacity);
-		printf("  Entropy               S   = %10.6f kcal/(mol·K)\n", td.entropy);
+		printf("  Entropy (conf)        S   = %10.6f kcal/(mol·K)\n", td.entropy);
+
+		// ── Phase 3: TorsionalENM vibrational entropy ────────────────
+		tencm::TorsionalENM tencm_model;
+		if (FA->is_protein && FA->res_cnt > 6) {
+			tencm_model.build(atoms, residue, FA->res_cnt);
+			if (tencm_model.is_built()) {
+				// Store mode count on FA for BindingMode vibrational correction
+				FA->normal_modes = static_cast<int>(tencm_model.modes().size());
+
+				// Run full ShannonThermoStack: Shannon conf entropy + torsional vib entropy
+				shannon_thermo::FullThermoResult ftr =
+					shannon_thermo::run_shannon_thermo_stack(
+						sme, tencm_model, td.free_energy, T_K);
+
+				printf("--- ShannonThermoStack (vibrational entropy integration) ---\n");
+				printf("  Shannon conf entropy    = %10.4f bits\n", ftr.shannonEntropy);
+				printf("  Torsional vib entropy   = %10.6f kcal/(mol·K)\n", ftr.torsionalVibEntropy);
+				printf("  Entropy contribution    = %10.4f kcal/mol (-TΔS)\n", ftr.entropyContribution);
+				printf("  Total ΔG (F + vib corr) = %10.4f kcal/mol\n", ftr.deltaG);
+			}
+		}
 	}
 
 	// NATURaL co-translational / co-transcriptional DualAssembly analysis
-	if (FA->resligand && FA->resligand->fatm && FA->resligand->latm) {
+	// Skipped when --folded flag or advanced.assume_folded=true (receptor is fully folded)
+	if (!FA->assume_folded && FA->resligand && FA->resligand->fatm && FA->resligand->latm) {
 		int lig_start   = FA->resligand->fatm[0];
 		int lig_end     = FA->resligand->latm[0];
 		int n_lig_atoms = lig_end - lig_start + 1;
@@ -895,8 +920,11 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 	int i;
 
 	// ── Chromosome evaluation ────────────────────────────────────────────────
-	// Priority order: CUDA GPU → Metal GPU → OpenMP CPU (thread-safe).
+	// Runtime dispatch: CUDA GPU → Metal GPU → OpenMP CPU (thread-safe).
+	// All compiled-in backends are available simultaneously; select_backend()
+	// picks the best one at runtime based on detected hardware.
 
+#if defined(FLEXAIDS_USE_CUDA) || defined(FLEXAIDS_USE_METAL)
 	// Helper lambda: sample each energy-matrix density function at n_samples
 	// evenly-spaced x values in [0, 1] and pack into a flat float array
 	// [n_types × n_types × n_samples] for GPU upload.
@@ -935,8 +963,77 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 		return out;
 	};
 
+	// Helper lambda: pack gene internal coordinates into a flat array for GPU.
+	auto pack_genes_batch = [&](int n_genes) -> std::vector<double> {
+		std::vector<double> h_genes(pop_size * n_genes, 0.0);
+		for (int c = 0; c < pop_size; ++c)
+			for (int g = 0; g < n_genes; ++g)
+				h_genes[c * n_genes + g] = chrom[c].genes[g].to_ic;
+		return h_genes;
+	};
+
+	// Helper lambda: unpack GPU batch results into chromosome CF structures.
+	auto unpack_gpu_results = [&](const std::vector<double>& h_com,
+	                              const std::vector<double>& h_wal,
+	                              const std::vector<double>& h_sas) {
+		for (int c = 0; c < pop_size; ++c) {
+			if (chrom[c].status != 'n') {
+				chrom[c].cf.com    = h_com[c];
+				chrom[c].cf.wal    = h_wal[c];
+				chrom[c].cf.sas    = h_sas[c];
+				chrom[c].cf.con    = 0.0;
+				chrom[c].cf.totsas = 0.0;
+				chrom[c].cf.rclash = (h_wal[c] > 1e4) ? 1 : 0;
+				chrom[c].evalue     = get_cf_evalue(&chrom[c].cf);
+				chrom[c].app_evalue = get_apparent_cf_evalue(&chrom[c].cf);
+				chrom[c].status    = 'n';
+			}
+		}
+	};
+
+	// Helper lambda: prepare GPU atom data arrays from the atoms array.
+	struct GPUAtomData {
+		std::vector<float> xyz;
+		std::vector<int>   type;
+		std::vector<float> radius;
+		int lig_first;
+		int lig_last;
+	};
+	auto prepare_gpu_atoms = [&]() -> GPUAtomData {
+		const int n_atoms = FA->atm_cnt_real;
+		GPUAtomData d;
+		d.xyz.resize(n_atoms * 3);
+		d.type.resize(n_atoms);
+		d.radius.resize(n_atoms);
+		for (int a = 0; a < n_atoms; ++a) {
+			d.xyz[a*3+0] = atoms[a].coor[0];
+			d.xyz[a*3+1] = atoms[a].coor[1];
+			d.xyz[a*3+2] = atoms[a].coor[2];
+			d.type[a]    = atoms[a].type - 1;  // 1-based → 0-based
+			d.radius[a]  = atoms[a].radius;
+		}
+		d.lig_first = (FA->resligand && FA->resligand->fatm)
+		            ? FA->resligand->fatm[0] : 0;
+		d.lig_last  = (FA->resligand && FA->resligand->latm)
+		            ? FA->resligand->latm[0] : 0;
+		return d;
+	};
+#endif  // FLEXAIDS_USE_CUDA || FLEXAIDS_USE_METAL
+
+	// Log dispatch decision on first call.
+	static bool dispatch_logged = false;
+	[[maybe_unused]] const auto backend = flexaids::select_backend();
+	if (!dispatch_logged) {
+		auto report = flexaids::get_dispatch_report();
+		fprintf(stderr, "[FlexAIDdS] Hardware dispatch: %s (%s)\n",
+		        flexaids::backend_name(report.selected), report.reason.c_str());
+		dispatch_logged = true;
+	}
+
+	[[maybe_unused]] bool gpu_handled = false;
+
 #ifdef FLEXAIDS_USE_CUDA
-	{
+	if (backend == flexaids::HardwareBackend::CUDA) {
 		// Persistent CUDA context: atom data uploaded once; re-init only when
 		// the system geometry changes (different run or atom count changes).
 		static CudaEvalCtx* s_cuda_ctx    = nullptr;
@@ -951,59 +1048,29 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 		if (!s_cuda_ctx || s_cuda_natom != n_atoms || s_cuda_ntype != n_types) {
 			if (s_cuda_ctx) cuda_eval_shutdown(s_cuda_ctx);
 
-			std::vector<float> h_xyz(n_atoms * 3);
-			std::vector<int>   h_type(n_atoms);
-			std::vector<float> h_radius(n_atoms);
-			for (int a = 0; a < n_atoms; ++a) {
-				h_xyz[a*3+0] = atoms[a].coor[0];
-				h_xyz[a*3+1] = atoms[a].coor[1];
-				h_xyz[a*3+2] = atoms[a].coor[2];
-				h_type[a]    = atoms[a].type - 1;  // 1-based → 0-based
-				h_radius[a]  = atoms[a].radius;
-			}
+			auto ad = prepare_gpu_atoms();
 			std::vector<float> h_emat = build_emat_sampled(n_types, ns);
 
-			const int lig_first = (FA->resligand && FA->resligand->fatm)
-			                    ? FA->resligand->fatm[0] : 0;
-			const int lig_last  = (FA->resligand && FA->resligand->latm)
-			                    ? FA->resligand->latm[0] : 0;
-
 			s_cuda_ctx    = cuda_eval_init(n_atoms, n_types, MAX_NUM_CHROM,
-			                               n_genes, lig_first, lig_last,
+			                               n_genes, ad.lig_first, ad.lig_last,
 			                               FA->permeability,
-			                               h_xyz.data(), h_type.data(),
-			                               h_radius.data(), h_emat.data());
+			                               ad.xyz.data(), ad.type.data(),
+			                               ad.radius.data(), h_emat.data());
 			s_cuda_natom  = n_atoms;
 			s_cuda_ntype  = n_types;
 		}
 
-		// Build gene array for this batch.
-		std::vector<double> h_genes(pop_size * n_genes, 0.0);
-		for (int c = 0; c < pop_size; ++c)
-			for (int g = 0; g < n_genes; ++g)
-				h_genes[c * n_genes + g] = chrom[c].genes[g].to_ic;
-
+		std::vector<double> h_genes = pack_genes_batch(n_genes);
 		std::vector<double> h_com(pop_size), h_wal(pop_size), h_sas(pop_size);
 		cuda_eval_batch(s_cuda_ctx, pop_size, n_genes, h_genes.data(),
 		                h_com.data(), h_wal.data(), h_sas.data());
-
-		for (int c = 0; c < pop_size; ++c) {
-			if (chrom[c].status != 'n') {
-				chrom[c].cf.com    = h_com[c];
-				chrom[c].cf.wal    = h_wal[c];
-				chrom[c].cf.sas    = h_sas[c];
-				chrom[c].cf.con    = 0.0;
-				chrom[c].cf.totsas = 0.0;
-				chrom[c].cf.rclash = (h_wal[c] > 1e4) ? 1 : 0;
-				chrom[c].evalue     = get_cf_evalue(&chrom[c].cf);
-				chrom[c].app_evalue = get_apparent_cf_evalue(&chrom[c].cf);
-				chrom[c].status    = 'n';
-			}
-		}
+		unpack_gpu_results(h_com, h_wal, h_sas);
+		gpu_handled = true;
 	}
+#endif
 
-#elif defined(FLEXAIDS_USE_METAL)
-	{
+#ifdef FLEXAIDS_USE_METAL
+	if (!gpu_handled && backend == flexaids::HardwareBackend::METAL) {
 		// Persistent Metal context (same caching strategy as CUDA).
 		static MetalEvalCtx* s_metal_ctx   = nullptr;
 		static int            s_metal_natom = 0;
@@ -1017,57 +1084,29 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 		if (!s_metal_ctx || s_metal_natom != n_atoms || s_metal_ntype != n_types) {
 			if (s_metal_ctx) metal_eval_shutdown(s_metal_ctx);
 
-			std::vector<float> h_xyz(n_atoms * 3);
-			std::vector<int>   h_type(n_atoms);
-			std::vector<float> h_radius(n_atoms);
-			for (int a = 0; a < n_atoms; ++a) {
-				h_xyz[a*3+0] = atoms[a].coor[0];
-				h_xyz[a*3+1] = atoms[a].coor[1];
-				h_xyz[a*3+2] = atoms[a].coor[2];
-				h_type[a]    = atoms[a].type - 1;
-				h_radius[a]  = atoms[a].radius;
-			}
+			auto ad = prepare_gpu_atoms();
 			std::vector<float> h_emat = build_emat_sampled(n_types, ns);
 
-			const int lig_first = (FA->resligand && FA->resligand->fatm)
-			                    ? FA->resligand->fatm[0] : 0;
-			const int lig_last  = (FA->resligand && FA->resligand->latm)
-			                    ? FA->resligand->latm[0] : 0;
-
 			s_metal_ctx   = metal_eval_init(n_atoms, n_types, MAX_NUM_CHROM,
-			                                lig_first, lig_last, FA->permeability,
-			                                h_xyz.data(), h_type.data(),
-			                                h_radius.data(), h_emat.data(), ns);
+			                                ad.lig_first, ad.lig_last,
+			                                FA->permeability,
+			                                ad.xyz.data(), ad.type.data(),
+			                                ad.radius.data(), h_emat.data(), ns);
 			s_metal_natom = n_atoms;
 			s_metal_ntype = n_types;
 		}
 
-		std::vector<double> h_genes(pop_size * n_genes, 0.0);
-		for (int c = 0; c < pop_size; ++c)
-			for (int g = 0; g < n_genes; ++g)
-				h_genes[c * n_genes + g] = chrom[c].genes[g].to_ic;
-
+		std::vector<double> h_genes = pack_genes_batch(n_genes);
 		std::vector<double> h_com(pop_size), h_wal(pop_size), h_sas(pop_size);
 		metal_eval_batch(s_metal_ctx, pop_size, n_genes, h_genes.data(),
 		                 h_com.data(), h_wal.data(), h_sas.data());
-
-		for (int c = 0; c < pop_size; ++c) {
-			if (chrom[c].status != 'n') {
-				chrom[c].cf.com    = h_com[c];
-				chrom[c].cf.wal    = h_wal[c];
-				chrom[c].cf.sas    = h_sas[c];
-				chrom[c].cf.con    = 0.0;
-				chrom[c].cf.totsas = 0.0;
-				chrom[c].cf.rclash = (h_wal[c] > 1e4) ? 1 : 0;
-				chrom[c].evalue     = get_cf_evalue(&chrom[c].cf);
-				chrom[c].app_evalue = get_apparent_cf_evalue(&chrom[c].cf);
-				chrom[c].status    = 'n';
-			}
-		}
+		unpack_gpu_results(h_com, h_wal, h_sas);
+		gpu_handled = true;
 	}
+#endif
 
-#else
-	// ── Thread-safe OpenMP CPU path ─────────────────────────────────────────
+	if (!gpu_handled) {
+	// ── Thread-safe CPU path (AVX-512 / AVX2 / OpenMP / scalar) ─────────
 	// Each OpenMP thread receives its own private copies of every data
 	// structure that Vcontacts/vcfunction/ic2cf writes to:
 	//   • atoms[]        – internal coords (dis/ang/dih) and Cartesian (coor)
@@ -1184,7 +1223,7 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 			chrom[ii].status     = 'n';
 		}
 	}
-#endif  // FLEXAIDS_USE_CUDA / FLEXAIDS_USE_METAL / CPU
+	}  // !gpu_handled
 
 	QuickSort(chrom,0,pop_size-1,true);
 

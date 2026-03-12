@@ -47,76 +47,100 @@ class Pose:
 
 class BindingMode:
     """Binding mode: cluster of docked poses with thermodynamic scoring.
-    
+
     A binding mode represents a distinct local minimum on the binding energy
     landscape, characterized by an ensemble of similar poses.
-    
+
     Example:
         >>> mode = results.binding_modes[0]  # top-ranked mode
         >>> thermo = mode.get_thermodynamics()
         >>> print(f"ΔG = {thermo.free_energy:.2f} kcal/mol")
         >>> print(f"ΔH = {thermo.mean_energy:.2f}, TΔS = {thermo.entropy_term:.2f}")
     """
-    
-    def __init__(self, cpp_binding_mode=None):
-        """Initialize from C++ BindingMode object (internal use)."""
+
+    def __init__(self, cpp_binding_mode=None, temperature: float = 300.0):
+        """Initialize binding mode.
+
+        Args:
+            cpp_binding_mode: C++ BindingMode object (internal use, optional).
+            temperature: Temperature in Kelvin for thermodynamic calculations.
+        """
         self._cpp_mode = cpp_binding_mode
         self._poses: List[Pose] = []
-    
+        self._temperature: float = temperature
+        self._cached_thermo: Optional[Thermodynamics] = None
+
+    def _invalidate_cache(self) -> None:
+        self._cached_thermo = None
+
+    def _compute_python_thermo(self) -> Thermodynamics:
+        """Compute thermodynamics from pose energies using StatMechEngine."""
+        if self._cached_thermo is not None:
+            return self._cached_thermo
+        if not self._poses:
+            return Thermodynamics(
+                temperature=self._temperature, log_Z=0.0,
+                free_energy=float('inf'), mean_energy=float('inf'),
+                mean_energy_sq=float('inf'), heat_capacity=0.0,
+                entropy=0.0, std_energy=0.0,
+            )
+        engine = StatMechEngine(self._temperature)
+        for pose in self._poses:
+            engine.add_sample(pose.energy)
+        self._cached_thermo = engine.compute()
+        return self._cached_thermo
+
     def get_thermodynamics(self) -> Thermodynamics:
         """Get full thermodynamic properties of this binding mode.
-        
+
         Returns:
             Thermodynamics object with F, S, H, Cv, etc.
         """
-        if self._cpp_mode is None:
-            raise RuntimeError("C++ binding mode not initialized")
-        thermo_cpp = self._cpp_mode.get_thermodynamics()
-        return Thermodynamics(
-            temperature=thermo_cpp.temperature,
-            log_Z=thermo_cpp.log_Z,
-            free_energy=thermo_cpp.free_energy,
-            mean_energy=thermo_cpp.mean_energy,
-            mean_energy_sq=thermo_cpp.mean_energy_sq,
-            heat_capacity=thermo_cpp.heat_capacity,
-            entropy=thermo_cpp.entropy,
-            std_energy=thermo_cpp.std_energy,
-        )
-    
+        if self._cpp_mode is not None:
+            thermo_cpp = self._cpp_mode.get_thermodynamics()
+            return Thermodynamics(
+                temperature=thermo_cpp.temperature,
+                log_Z=thermo_cpp.log_Z,
+                free_energy=thermo_cpp.free_energy,
+                mean_energy=thermo_cpp.mean_energy,
+                mean_energy_sq=thermo_cpp.mean_energy_sq,
+                heat_capacity=thermo_cpp.heat_capacity,
+                entropy=thermo_cpp.entropy,
+                std_energy=thermo_cpp.std_energy,
+            )
+        return self._compute_python_thermo()
+
     @property
     def free_energy(self) -> float:
-        """Helmholtz free energy F = H - TS (kcal/mol)."""
+        """Helmholtz free energy F = -kT ln Z (kcal/mol)."""
         if self._cpp_mode:
             return self._cpp_mode.get_free_energy()
-        # Python-only path: use best pose energy as proxy
-        if self._poses:
-            return min(p.energy for p in self._poses)
-        return float('inf')
-    
+        return self._compute_python_thermo().free_energy
+
     @property
     def enthalpy(self) -> float:
         """Boltzmann-weighted average energy ⟨E⟩ (kcal/mol)."""
         if self._cpp_mode:
             return self._cpp_mode.compute_enthalpy()
-        return float('inf')
-    
+        return self._compute_python_thermo().mean_energy
+
     @property
     def entropy(self) -> float:
         """Configurational entropy S (kcal mol⁻¹ K⁻¹)."""
         if self._cpp_mode:
             return self._cpp_mode.compute_entropy()
-        return 0.0
-    
+        return self._compute_python_thermo().entropy
+
     @property
     def n_poses(self) -> int:
         """Number of poses in this binding mode."""
         if self._cpp_mode:
             return self._cpp_mode.get_BindingMode_size()
         return len(self._poses)
-    
+
     def __len__(self) -> int:
         return self.n_poses
-    
+
     def __repr__(self) -> str:
         return (f"<BindingMode n_poses={self.n_poses} "
                 f"F={self.free_energy:.2f} H={self.enthalpy:.2f} "
@@ -144,15 +168,17 @@ class BindingPopulation:
     
     def compute_global_thermodynamics(self) -> Thermodynamics:
         """Compute thermodynamics over all binding modes.
-        
+
+        Aggregates all pose energies from all modes into a single
+        canonical ensemble.
+
         Returns:
             Global ensemble thermodynamics
         """
         engine = StatMechEngine(self._temperature)
         for mode in self._modes:
-            # Aggregate all pose energies from all modes
-            for _ in range(mode.n_poses):
-                engine.add_sample(mode.enthalpy)  # Simplified: use mode average
+            for pose in mode._poses:
+                engine.add_sample(pose.energy)
         return engine.compute()
     
     @property
@@ -366,7 +392,7 @@ class Docking:
                 continue
             mode_idx, pose = mode_info
             if mode_idx not in seen_modes:
-                seen_modes[mode_idx] = BindingMode()
+                seen_modes[mode_idx] = BindingMode(temperature=float(temperature))
             seen_modes[mode_idx]._poses.append(pose)
 
         # Sort modes by free energy (ascending → most favourable first)

@@ -13,12 +13,16 @@ import pytest
 
 # ── C++ availability guard ────────────────────────────────────────────────────
 
-_CORE_AVAILABLE = False
-try:
-    import flexaidds._core  # noqa: F401
-    _CORE_AVAILABLE = True
-except ImportError:
-    pass
+def _real_core_available():
+    """Check if the real C++ _core (not the test stub) is usable."""
+    try:
+        import flexaidds._core as c
+        c.StatMechEngine(300.0)
+        return True
+    except Exception:
+        return False
+
+_CORE_AVAILABLE = _real_core_available()
 
 needs_core = pytest.mark.skipif(not _CORE_AVAILABLE,
                                 reason="C++ _core module not built")
@@ -179,8 +183,8 @@ class TestNormalModeCpp:
 @needs_core
 class TestVibrationalEntropyCpp:
     def _make(self, s_vib=0.01, dG_vib=-3.0, temperature=300.0):
-        from flexaidds import VibrationalEntropy
-        return VibrationalEntropy(
+        import flexaidds._core as _core
+        return _core.VibrationalEntropy(
             S_vib_kcal_mol_K=s_vib,
             dG_vib_kcal_mol=dG_vib,
             temperature=temperature,
@@ -208,42 +212,42 @@ class TestVibrationalEntropyCpp:
 @needs_core
 class TestENCoMEngineCpp:
     def test_default_cutoff(self):
-        from flexaidds import ENCoMEngine
-        eng = ENCoMEngine()
+        import flexaidds._core as _core
+        eng = _core.ENCoMEngine()
         # Default eigenvalue_cutoff should be small positive
         assert eng.eigenvalue_cutoff > 0.0
 
     def test_custom_cutoff(self):
-        from flexaidds import ENCoMEngine
-        eng = ENCoMEngine(eigenvalue_cutoff=1e-5)
+        import flexaidds._core as _core
+        eng = _core.ENCoMEngine(eigenvalue_cutoff=1e-5)
         assert abs(eng.eigenvalue_cutoff - 1e-5) < 1e-12
 
     def test_compute_with_empty_modes_zero(self):
         """No modes -> zero vibrational entropy."""
-        from flexaidds import ENCoMEngine
-        eng = ENCoMEngine()
+        import flexaidds._core as _core
+        eng = _core.ENCoMEngine()
         result = eng.compute_vibrational_entropy([], temperature=300.0)
         assert result.S_vib_kcal_mol_K == 0.0
 
     def test_compute_with_positive_eigenvalues(self):
         """Positive eigenvalues -> positive vibrational entropy."""
-        from flexaidds import ENCoMEngine, NormalMode
-        eng = ENCoMEngine()
+        import flexaidds._core as _core
+        eng = _core.ENCoMEngine()
         modes = [
-            NormalMode(eigenvalue=1.0, frequency=100.0),
-            NormalMode(eigenvalue=2.0, frequency=141.4),
-            NormalMode(eigenvalue=0.5, frequency=70.7),
+            _core.NormalMode(eigenvalue=1.0, frequency=100.0),
+            _core.NormalMode(eigenvalue=2.0, frequency=141.4),
+            _core.NormalMode(eigenvalue=0.5, frequency=70.7),
         ]
         result = eng.compute_vibrational_entropy(modes, temperature=300.0)
         assert result.S_vib_kcal_mol_K >= 0.0
 
     def test_more_modes_higher_entropy(self):
         """Adding more vibrational modes should not decrease entropy."""
-        from flexaidds import ENCoMEngine, NormalMode
-        eng = ENCoMEngine()
+        import flexaidds._core as _core
+        eng = _core.ENCoMEngine()
 
         def make_modes(n):
-            return [NormalMode(eigenvalue=float(i + 1), frequency=float((i + 1) * 50))
+            return [_core.NormalMode(eigenvalue=float(i + 1), frequency=float((i + 1) * 50))
                     for i in range(n)]
 
         s3 = eng.compute_vibrational_entropy(make_modes(3), 300.0).S_vib_kcal_mol_K
@@ -263,19 +267,25 @@ class TestENCoMEngineCpp:
 # ── Python-level ENCoM smoke test (no C++ needed) ────────────────────────────
 
 class TestENCoMPythonFallback:
-    """Verify that the ENCoM symbols are None (not missing) when C++ absent."""
+    """Verify that ENCoM symbols are always available (pure-Python fallback)."""
 
     def test_encom_symbols_accessible(self):
         import flexaidds as fds
-        # Should be importable either as a class or None
+        # Should always be importable as usable classes (never None)
         assert hasattr(fds, "ENCoMEngine")
         assert hasattr(fds, "NormalMode")
         assert hasattr(fds, "VibrationalEntropy")
 
-    def test_encom_symbols_none_when_no_core(self):
+    def test_encom_symbols_fallback_when_no_core(self):
         if _CORE_AVAILABLE:
-            pytest.skip("C++ core is built; checking None path not applicable")
+            pytest.skip("C++ core is built; checking fallback path not applicable")
         import flexaidds as fds
-        assert fds.ENCoMEngine is None
-        assert fds.NormalMode is None
-        assert fds.VibrationalEntropy is None
+        from flexaidds.encom import ENCoMEngine, NormalMode, VibrationalEntropy
+        assert fds.ENCoMEngine is ENCoMEngine
+        assert fds.NormalMode is NormalMode
+        assert fds.VibrationalEntropy is VibrationalEntropy
+        # Verify they are actually usable
+        mode = fds.NormalMode(index=1, eigenvalue=2.0)
+        assert mode.eigenvalue == 2.0
+        vs = fds.ENCoMEngine.total_entropy(0.003, 0.001)
+        assert abs(vs - 0.004) < 1e-15

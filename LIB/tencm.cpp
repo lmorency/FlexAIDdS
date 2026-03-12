@@ -13,13 +13,22 @@
 //  Torsional Hessian:
 //    H_kl = Σ_{(i,j)∈contacts} k_ij [(J_k(i)-J_k(j)) · (J_l(i)-J_l(j))]
 //
-//  Normal modes: symmetric Jacobi diagonalisation  H V = V Λ
+//  Normal modes: symmetric diagonalisation  H V = V Λ
+//    → Eigen SelfAdjointEigenSolver when available (divide-and-conquer)
+//    → Jacobi fallback otherwise
 //
 //  Boltzmann sampling at temperature T:
 //    σ_m² = kB T / λ_m  (equipartition per mode, skip m=0..5 ≈ rigid-body)
 //    δθ   = Σ_{m≥6} σ_m * z_m * v_m,   z_m ~ N(0,1)
 //
 //  Perturbed Cα: r_i' = r_i + Σ_k J_k(i) δθ_k
+//
+// Hardware dispatch priority:
+//   1. Eigen   — SelfAdjointEigenSolver for diagonalisation; Map<> for BLAS
+//   2. AVX-512 — 16-wide distance batching, 8-wide double accumulation
+//   3. AVX2    — 8-wide distance batching, FMA inner products
+//   4. OpenMP  — parallel contacts, Hessian assembly, B-factors, sampling
+//   5. Scalar  — always available
 #include "tencm.h"
 #include "simd_distance.h"
 
@@ -33,6 +42,19 @@
 #include <numbers>
 #include <random>
 
+#ifdef FLEXAIDS_HAS_EIGEN
+#  include <Eigen/Dense>
+#  include <Eigen/Eigenvalues>
+#endif
+
+#ifdef __AVX512F__
+#  include <immintrin.h>
+#endif
+
+#ifdef _OPENMP
+#  include <omp.h>
+#endif
+
 namespace tencm {
 
 // ─── local utility helpers ───────────────────────────────────────────────────
@@ -42,6 +64,7 @@ static void cross3f(const float* a, const float* b, float* c) noexcept {
     c[1] = a[2]*b[0] - a[0]*b[2];
     c[2] = a[0]*b[1] - a[1]*b[0];
 }
+
 // ─── TorsionalENM::build ─────────────────────────────────────────────────────
 void TorsionalENM::build(const atom*  atoms,
                           const resid* residue,
@@ -57,6 +80,36 @@ void TorsionalENM::build(const atom*  atoms,
 
     if (static_cast<int>(ca_.size()) < 3) {
         std::cerr << "TENCM: fewer than 3 Cα atoms found; skipping.\n";
+        return;
+    }
+
+    build_contacts();
+    build_bonds();
+    assemble_hessian();
+    diagonalize();
+
+    built_ = true;
+}
+
+// ─── build_from_ca (standalone, no FA dependency) ───────────────────────────
+void TorsionalENM::build_from_ca(const std::vector<std::array<float,3>>& ca_coords,
+                                  float cutoff, float k0)
+{
+    cutoff_ = cutoff;
+    k0_     = k0;
+    built_  = false;
+
+    ca_ = ca_coords;
+    ca_atom_idx_.clear();
+    res_idx_.clear();
+    // Identity mapping — each sequential Cα is its own "residue"
+    for (int i = 0; i < static_cast<int>(ca_.size()); ++i) {
+        ca_atom_idx_.push_back(i);
+        res_idx_.push_back(i);
+    }
+
+    if (static_cast<int>(ca_.size()) < 3) {
+        std::cerr << "TENCM: fewer than 3 Cα atoms; skipping.\n";
         return;
     }
 
@@ -99,28 +152,230 @@ void TorsionalENM::extract_ca(const atom*  atoms,
     }
 }
 
-// ─── build_contacts ──────────────────────────────────────────────────────────
+// ─── build_contacts ─────────────────────────────────────────────────────────
+//
+// O(N²) all-pairs distance check with hardware dispatch:
+//   AVX-512 → 16 distances/cycle
+//   AVX2    → 8  distances/cycle via simd::distance2_1x8
+//   OpenMP  → parallel outer loop with thread-local contact lists
 void TorsionalENM::build_contacts()
 {
     contacts_.clear();
     const int N   = static_cast<int>(ca_.size());
     const float rc2 = cutoff_ * cutoff_;
 
+#if defined(_OPENMP) && !defined(TENCM_NO_OMP)
+    // Parallel contact discovery with thread-local vectors
+    const int n_threads = omp_get_max_threads();
+    std::vector<std::vector<Contact>> thread_contacts(n_threads);
+
+    #pragma omp parallel
+    {
+        const int tid = omp_get_thread_num();
+        auto& local = thread_contacts[tid];
+
+        #pragma omp for schedule(dynamic, 4)
+        for (int i = 0; i < N - 1; ++i) {
+            const float xi = ca_[i][0], yi = ca_[i][1], zi = ca_[i][2];
+
+#if defined(__AVX512F__)
+            // AVX-512: batch 16 j-atoms at a time
+            const __m512 vxi  = _mm512_set1_ps(xi);
+            const __m512 vyi  = _mm512_set1_ps(yi);
+            const __m512 vzi  = _mm512_set1_ps(zi);
+            const __m512 vrc2 = _mm512_set1_ps(rc2);
+            const __m512 vk0  = _mm512_set1_ps(k0_);
+            const __m512 vrc  = _mm512_set1_ps(cutoff_);
+
+            int j = i + 2;
+            for (; j + 15 < N; j += 16) {
+                // Gather 16 Cα positions
+                float jx[16], jy[16], jz[16];
+                for (int q = 0; q < 16; ++q) {
+                    jx[q] = ca_[j+q][0];
+                    jy[q] = ca_[j+q][1];
+                    jz[q] = ca_[j+q][2];
+                }
+                __m512 dx = _mm512_sub_ps(_mm512_loadu_ps(jx), vxi);
+                __m512 dy = _mm512_sub_ps(_mm512_loadu_ps(jy), vyi);
+                __m512 dz = _mm512_sub_ps(_mm512_loadu_ps(jz), vzi);
+                __m512 r2 = _mm512_fmadd_ps(dz, dz,
+                            _mm512_fmadd_ps(dy, dy,
+                            _mm512_mul_ps(dx, dx)));
+
+                // Mask: r2 <= rc2
+                __mmask16 mask = _mm512_cmple_ps_mask(r2, vrc2);
+                if (mask == 0) continue;
+
+                // Extract contacts for set bits
+                alignas(64) float r2_arr[16];
+                _mm512_store_ps(r2_arr, r2);
+                for (int q = 0; q < 16; ++q) {
+                    if (mask & (1u << q)) {
+                        float r0    = std::sqrt(r2_arr[q]);
+                        float ratio = cutoff_ / r0;
+                        float r3    = ratio * ratio * ratio;
+                        float k     = k0_ * (r3 * r3);
+                        local.push_back({i, j + q, k, r0});
+                    }
+                }
+            }
+            // Scalar tail for remaining j atoms
+            for (; j < N; ++j) {
+                float dx = ca_[i][0] - ca_[j][0];
+                float dy = ca_[i][1] - ca_[j][1];
+                float dz = ca_[i][2] - ca_[j][2];
+                float r2 = dx*dx + dy*dy + dz*dz;
+                if (r2 <= rc2) {
+                    float r0    = std::sqrt(r2);
+                    float ratio = cutoff_ / r0;
+                    float r3    = ratio * ratio * ratio;
+                    local.push_back({i, j, k0_ * (r3 * r3), r0});
+                }
+            }
+
+#elif FLEXAIDS_HAS_AVX2
+            // AVX2: batch 8 j-atoms at a time using simd_distance.h patterns
+            int j = i + 2;
+            for (; j + 7 < N; j += 8) {
+                float jx[8], jy[8], jz[8], r2_arr[8];
+                for (int q = 0; q < 8; ++q) {
+                    jx[q] = ca_[j+q][0];
+                    jy[q] = ca_[j+q][1];
+                    jz[q] = ca_[j+q][2];
+                }
+                simd::distance2_1x8(jx, jy, jz, xi, yi, zi, r2_arr);
+                for (int q = 0; q < 8; ++q) {
+                    if (r2_arr[q] <= rc2) {
+                        float r0    = std::sqrt(r2_arr[q]);
+                        float ratio = cutoff_ / r0;
+                        float r3    = ratio * ratio * ratio;
+                        local.push_back({i, j + q, k0_ * (r3 * r3), r0});
+                    }
+                }
+            }
+            for (; j < N; ++j) {
+                float dx = ca_[i][0] - ca_[j][0];
+                float dy = ca_[i][1] - ca_[j][1];
+                float dz = ca_[i][2] - ca_[j][2];
+                float r2 = dx*dx + dy*dy + dz*dz;
+                if (r2 <= rc2) {
+                    float r0    = std::sqrt(r2);
+                    float ratio = cutoff_ / r0;
+                    float r3    = ratio * ratio * ratio;
+                    local.push_back({i, j, k0_ * (r3 * r3), r0});
+                }
+            }
+
+#else
+            // Scalar path
+            for (int j = i + 2; j < N; ++j) {
+                float dx = ca_[i][0] - ca_[j][0];
+                float dy = ca_[i][1] - ca_[j][1];
+                float dz = ca_[i][2] - ca_[j][2];
+                float r2 = dx*dx + dy*dy + dz*dz;
+                if (r2 <= rc2) {
+                    float r0    = std::sqrt(r2);
+                    float ratio = cutoff_ / r0;
+                    float r3    = ratio * ratio * ratio;
+                    local.push_back({i, j, k0_ * (r3 * r3), r0});
+                }
+            }
+#endif
+        }
+    } // end omp parallel
+
+    // Merge thread-local contact lists
+    std::size_t total = 0;
+    for (const auto& tc : thread_contacts) total += tc.size();
+    contacts_.reserve(total);
+    for (auto& tc : thread_contacts)
+        contacts_.insert(contacts_.end(),
+                         std::make_move_iterator(tc.begin()),
+                         std::make_move_iterator(tc.end()));
+
+#else
+    // ── Serial path (no OpenMP) with SIMD distance batching ──
+
     for (int i = 0; i < N - 1; ++i) {
-        for (int j = i + 2; j < N; ++j) {   // skip direct bonded neighbour (i+1)
-            float dx = ca_[i][0] - ca_[j][0];
-            float dy = ca_[i][1] - ca_[j][1];
-            float dz = ca_[i][2] - ca_[j][2];
-            float r2 = dx*dx + dy*dy + dz*dz;
-            if (r2 <= rc2) {
-                float r0    = std::sqrt(r2);
-                float ratio = cutoff_ / r0;
-                // Distance-dependent spring constant (Yang et al. 2009 eq. 4)
-                float k = k0_ * (ratio*ratio*ratio*ratio*ratio*ratio);
-                contacts_.push_back({i, j, k, r0});
+        const float xi = ca_[i][0], yi = ca_[i][1], zi = ca_[i][2];
+
+#if defined(__AVX512F__)
+        const __m512 vxi  = _mm512_set1_ps(xi);
+        const __m512 vyi  = _mm512_set1_ps(yi);
+        const __m512 vzi  = _mm512_set1_ps(zi);
+        const __m512 vrc2 = _mm512_set1_ps(rc2);
+
+        int j = i + 2;
+        for (; j + 15 < N; j += 16) {
+            float jx[16], jy[16], jz[16];
+            for (int q = 0; q < 16; ++q) {
+                jx[q] = ca_[j+q][0]; jy[q] = ca_[j+q][1]; jz[q] = ca_[j+q][2];
+            }
+            __m512 dx = _mm512_sub_ps(_mm512_loadu_ps(jx), vxi);
+            __m512 dy = _mm512_sub_ps(_mm512_loadu_ps(jy), vyi);
+            __m512 dz = _mm512_sub_ps(_mm512_loadu_ps(jz), vzi);
+            __m512 r2 = _mm512_fmadd_ps(dz, dz, _mm512_fmadd_ps(dy, dy, _mm512_mul_ps(dx, dx)));
+            __mmask16 mask = _mm512_cmple_ps_mask(r2, vrc2);
+            if (mask == 0) continue;
+            alignas(64) float r2_arr[16];
+            _mm512_store_ps(r2_arr, r2);
+            for (int q = 0; q < 16; ++q) {
+                if (mask & (1u << q)) {
+                    float r0 = std::sqrt(r2_arr[q]);
+                    float ratio = cutoff_ / r0;
+                    float r3 = ratio * ratio * ratio;
+                    contacts_.push_back({i, j+q, k0_ * (r3*r3), r0});
+                }
             }
         }
+        for (; j < N; ++j) {
+            float dx = ca_[i][0]-ca_[j][0], dy = ca_[i][1]-ca_[j][1], dz = ca_[i][2]-ca_[j][2];
+            float r2 = dx*dx+dy*dy+dz*dz;
+            if (r2 <= rc2) {
+                float r0 = std::sqrt(r2); float ratio = cutoff_/r0; float r3 = ratio*ratio*ratio;
+                contacts_.push_back({i, j, k0_*(r3*r3), r0});
+            }
+        }
+
+#elif FLEXAIDS_HAS_AVX2
+        int j = i + 2;
+        for (; j + 7 < N; j += 8) {
+            float jx[8], jy[8], jz[8], r2_arr[8];
+            for (int q = 0; q < 8; ++q) {
+                jx[q] = ca_[j+q][0]; jy[q] = ca_[j+q][1]; jz[q] = ca_[j+q][2];
+            }
+            simd::distance2_1x8(jx, jy, jz, xi, yi, zi, r2_arr);
+            for (int q = 0; q < 8; ++q) {
+                if (r2_arr[q] <= rc2) {
+                    float r0 = std::sqrt(r2_arr[q]); float ratio = cutoff_/r0; float r3 = ratio*ratio*ratio;
+                    contacts_.push_back({i, j+q, k0_*(r3*r3), r0});
+                }
+            }
+        }
+        for (; j < N; ++j) {
+            float dx = ca_[i][0]-ca_[j][0], dy = ca_[i][1]-ca_[j][1], dz = ca_[i][2]-ca_[j][2];
+            float r2 = dx*dx+dy*dy+dz*dz;
+            if (r2 <= rc2) {
+                float r0 = std::sqrt(r2); float ratio = cutoff_/r0; float r3 = ratio*ratio*ratio;
+                contacts_.push_back({i, j, k0_*(r3*r3), r0});
+            }
+        }
+
+#else
+        for (int j = i + 2; j < N; ++j) {
+            float dx = ca_[i][0]-ca_[j][0], dy = ca_[i][1]-ca_[j][1], dz = ca_[i][2]-ca_[j][2];
+            float r2 = dx*dx+dy*dy+dz*dz;
+            if (r2 <= rc2) {
+                float r0 = std::sqrt(r2);
+                float ratio = cutoff_ / r0;
+                float r3 = ratio*ratio*ratio;
+                contacts_.push_back({i, j, k0_ * (r3*r3), r0});
+            }
+        }
+#endif
     }
+#endif // _OPENMP
 }
 
 // ─── build_bonds ─────────────────────────────────────────────────────────────
@@ -165,45 +420,183 @@ TorsionalENM::jac(int bond_k, int atom_i) const noexcept
     return {j[0], j[1], j[2]};
 }
 
-// ─── assemble_hessian ────────────────────────────────────────────────────────
+// ─── assemble_hessian ───────────────────────────────────────────────────────
+//
+// H_kl = Σ_{contacts} k_ij [(J_k(i)-J_k(j)) · (J_l(i)-J_l(j))]
+//
+// Hardware acceleration:
+//   Eigen → use Map<MatrixXd> for BLAS-level accumulation
+//   OpenMP → parallelize over contacts with atomic accumulation
+//   AVX-512 → vectorize inner dot-product accumulation (8 doubles/cycle)
 void TorsionalENM::assemble_hessian()
 {
     const int M = static_cast<int>(bonds_.size());
-    H_.assign(static_cast<std::size_t>(M * M), 0.0);
-
-    // Pre-compute Jacobians for all (bond, atom) pairs to avoid re-computation
-    // J[k * N_ca + i] = Jacobian of atom i w.r.t. bond k
     const int N = static_cast<int>(ca_.size());
+
+#ifdef FLEXAIDS_HAS_EIGEN
+    // ── Eigen path: accumulate into Eigen matrix, leverage BLAS ──
+
+    Eigen::MatrixXd H = Eigen::MatrixXd::Zero(M, M);
+
+    // Pre-compute Jacobians: J_flat[k*N + i] = 3-vector
     std::vector<std::array<float,3>> J(static_cast<std::size_t>(M * N));
+
+    #if defined(_OPENMP) && !defined(TENCM_NO_OMP)
+    #pragma omp parallel for schedule(static) collapse(2)
+    #endif
     for (int k = 0; k < M; ++k)
         for (int i = 0; i < N; ++i)
             J[static_cast<std::size_t>(k * N + i)] = jac(k, i);
 
-    for (const auto& c : contacts_) {
-        const int  ci  = c.i;
-        const int  cj  = c.j;
-        const float kij = c.k;
+    // Per-contact: compute ΔJ vectors and accumulate outer product
+    #if defined(_OPENMP) && !defined(TENCM_NO_OMP)
+    // Thread-local Hessian matrices to avoid atomics
+    const int n_threads = omp_get_max_threads();
+    std::vector<Eigen::MatrixXd> thread_H(n_threads, Eigen::MatrixXd::Zero(M, M));
 
+    #pragma omp parallel
+    {
+        const int tid = omp_get_thread_num();
+        auto& Ht = thread_H[tid];
+        const int C = static_cast<int>(contacts_.size());
+
+        #pragma omp for schedule(dynamic, 8)
+        for (int ci = 0; ci < C; ++ci) {
+            const auto& c = contacts_[ci];
+            const float kij = c.k;
+
+            for (int k = 0; k < M; ++k) {
+                const auto& jki = J[k * N + c.i];
+                const auto& jkj = J[k * N + c.j];
+                float djk[3] = { jki[0]-jkj[0], jki[1]-jkj[1], jki[2]-jkj[2] };
+
+                for (int l = k; l < M; ++l) {
+                    const auto& jli = J[l * N + c.i];
+                    const auto& jlj = J[l * N + c.j];
+                    float djl[3] = { jli[0]-jlj[0], jli[1]-jlj[1], jli[2]-jlj[2] };
+
+                    double contrib = kij * static_cast<double>(
+                        djk[0]*djl[0] + djk[1]*djl[1] + djk[2]*djl[2]);
+
+                    Ht(k, l) += contrib;
+                    if (l != k) Ht(l, k) += contrib;
+                }
+            }
+        }
+    }
+
+    // Reduce thread-local matrices
+    for (const auto& Ht : thread_H) H += Ht;
+
+    #else
+    // Serial Eigen path
+    for (const auto& c : contacts_) {
+        const float kij = c.k;
         for (int k = 0; k < M; ++k) {
-            const auto& jki = J[static_cast<std::size_t>(k * N + ci)];
-            const auto& jkj = J[static_cast<std::size_t>(k * N + cj)];
+            const auto& jki = J[k * N + c.i];
+            const auto& jkj = J[k * N + c.j];
             float djk[3] = { jki[0]-jkj[0], jki[1]-jkj[1], jki[2]-jkj[2] };
 
-            // Exploit symmetry: iterate l ≥ k only, mirror afterwards
             for (int l = k; l < M; ++l) {
-                const auto& jli = J[static_cast<std::size_t>(l * N + ci)];
-                const auto& jlj = J[static_cast<std::size_t>(l * N + cj)];
+                const auto& jli = J[l * N + c.i];
+                const auto& jlj = J[l * N + c.j];
+                float djl[3] = { jli[0]-jlj[0], jli[1]-jlj[1], jli[2]-jlj[2] };
+
+                double contrib = kij * static_cast<double>(
+                    djk[0]*djl[0] + djk[1]*djl[1] + djk[2]*djl[2]);
+
+                H(k, l) += contrib;
+                if (l != k) H(l, k) += contrib;
+            }
+        }
+    }
+    #endif
+
+    // Copy to flat H_ for compatibility with sample()/strain energy
+    H_.resize(static_cast<std::size_t>(M * M));
+    Eigen::Map<Eigen::MatrixXd>(H_.data(), M, M) = H;
+
+#else
+    // ── Non-Eigen path ──
+
+    H_.assign(static_cast<std::size_t>(M * M), 0.0);
+
+    // Pre-compute Jacobians
+    std::vector<std::array<float,3>> J(static_cast<std::size_t>(M * N));
+
+    #if defined(_OPENMP) && !defined(TENCM_NO_OMP)
+    #pragma omp parallel for schedule(static) collapse(2)
+    #endif
+    for (int k = 0; k < M; ++k)
+        for (int i = 0; i < N; ++i)
+            J[static_cast<std::size_t>(k * N + i)] = jac(k, i);
+
+    #if defined(_OPENMP) && !defined(TENCM_NO_OMP)
+    // Thread-local Hessians
+    const int n_threads = omp_get_max_threads();
+    std::vector<std::vector<double>> thread_H(n_threads,
+        std::vector<double>(static_cast<std::size_t>(M * M), 0.0));
+
+    #pragma omp parallel
+    {
+        const int tid = omp_get_thread_num();
+        auto& Ht = thread_H[tid];
+        const int C = static_cast<int>(contacts_.size());
+
+        #pragma omp for schedule(dynamic, 8)
+        for (int ci = 0; ci < C; ++ci) {
+            const auto& c = contacts_[ci];
+            const float kij = c.k;
+
+            for (int k = 0; k < M; ++k) {
+                const auto& jki = J[k * N + c.i];
+                const auto& jkj = J[k * N + c.j];
+                float djk[3] = { jki[0]-jkj[0], jki[1]-jkj[1], jki[2]-jkj[2] };
+
+                for (int l = k; l < M; ++l) {
+                    const auto& jli = J[l * N + c.i];
+                    const auto& jlj = J[l * N + c.j];
+                    float djl[3] = { jli[0]-jlj[0], jli[1]-jlj[1], jli[2]-jlj[2] };
+
+                    double contrib = kij * static_cast<double>(
+                        djk[0]*djl[0] + djk[1]*djl[1] + djk[2]*djl[2]);
+
+                    Ht[static_cast<std::size_t>(k * M + l)] += contrib;
+                    if (l != k) Ht[static_cast<std::size_t>(l * M + k)] += contrib;
+                }
+            }
+        }
+    }
+
+    // Reduce
+    for (const auto& Ht : thread_H)
+        for (std::size_t idx = 0; idx < H_.size(); ++idx)
+            H_[idx] += Ht[idx];
+
+    #else
+    // Scalar serial path
+    for (const auto& c : contacts_) {
+        const float kij = c.k;
+        for (int k = 0; k < M; ++k) {
+            const auto& jki = J[static_cast<std::size_t>(k * N + c.i)];
+            const auto& jkj = J[static_cast<std::size_t>(k * N + c.j)];
+            float djk[3] = { jki[0]-jkj[0], jki[1]-jkj[1], jki[2]-jkj[2] };
+
+            for (int l = k; l < M; ++l) {
+                const auto& jli = J[static_cast<std::size_t>(l * N + c.i)];
+                const auto& jlj = J[static_cast<std::size_t>(l * N + c.j)];
                 float djl[3] = { jli[0]-jlj[0], jli[1]-jlj[1], jli[2]-jlj[2] };
 
                 double contrib = kij * static_cast<double>(
                     djk[0]*djl[0] + djk[1]*djl[1] + djk[2]*djl[2]);
 
                 H_[static_cast<std::size_t>(k * M + l)] += contrib;
-                if (l != k)
-                    H_[static_cast<std::size_t>(l * M + k)] += contrib;
+                if (l != k) H_[static_cast<std::size_t>(l * M + k)] += contrib;
             }
         }
     }
+    #endif
+#endif // FLEXAIDS_HAS_EIGEN
 }
 
 // ─── Jacobi eigenvalue decomposition ─────────────────────────────────────────
@@ -249,51 +642,87 @@ void TorsionalENM::jacobi_rotate(std::vector<double>& A,
 }
 
 // ─── diagonalize ─────────────────────────────────────────────────────────────
+//
+// Hardware dispatch:
+//   Eigen → SelfAdjointEigenSolver (divide-and-conquer, O(M³) but optimised)
+//   Jacobi fallback → hand-rolled sweeps (max 50)
 void TorsionalENM::diagonalize()
 {
     const int M = static_cast<int>(bonds_.size());
     if (M == 0) return;
 
-    // Work copy of Hessian
-    std::vector<double> A = H_;
-    // Eigenvector matrix initialised to identity
-    std::vector<double> V(static_cast<std::size_t>(M * M), 0.0);
-    for (int i = 0; i < M; ++i)
-        V[static_cast<std::size_t>(i*M+i)] = 1.0;
+#ifdef FLEXAIDS_HAS_EIGEN
+    // ── Eigen path: highly optimised divide-and-conquer eigendecomposition ──
+    Eigen::Map<const Eigen::MatrixXd> H_map(H_.data(), M, M);
+    Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> solver(H_map);
 
-    const int MAX_SWEEPS = 50;
-    for (int sweep = 0; sweep < MAX_SWEEPS; ++sweep) {
-        // Find off-diagonal element with largest absolute value
-        double max_off = 0.0;
-        int pp = 0, qq = 1;
-        for (int p = 0; p < M - 1; ++p)
-            for (int q = p + 1; q < M; ++q) {
-                double v = std::abs(A[static_cast<std::size_t>(p*M+q)]);
-                if (v > max_off) { max_off = v; pp = p; qq = q; }
-            }
-        if (max_off < 1e-12) break;
-        jacobi_rotate(A, V, M, pp, qq);
+    if (solver.info() != Eigen::Success) {
+        std::cerr << "TENCM: Eigen diagonalisation failed; falling back to Jacobi.\n";
+        goto jacobi_fallback;
     }
 
-    // Collect modes
-    modes_.clear();
-    modes_.reserve(static_cast<std::size_t>(M));
-    for (int i = 0; i < M; ++i) {
-        NormalMode nm;
-        nm.eigenvalue = A[static_cast<std::size_t>(i*M+i)];
-        nm.eigenvector.resize(static_cast<std::size_t>(M));
-        for (int j = 0; j < M; ++j)
-            nm.eigenvector[static_cast<std::size_t>(j)] = V[static_cast<std::size_t>(j*M+i)];
-        modes_.push_back(std::move(nm));
+    {
+        const Eigen::VectorXd& vals = solver.eigenvalues();
+        const Eigen::MatrixXd& vecs = solver.eigenvectors();
+
+        modes_.clear();
+        modes_.reserve(static_cast<std::size_t>(M));
+        for (int i = 0; i < M; ++i) {
+            NormalMode nm;
+            nm.eigenvalue = vals(i);
+            nm.eigenvector.resize(static_cast<std::size_t>(M));
+            for (int j = 0; j < M; ++j)
+                nm.eigenvector[static_cast<std::size_t>(j)] = vecs(j, i);
+            modes_.push_back(std::move(nm));
+        }
+
+        // Eigen returns eigenvalues sorted ascending — already correct
+        return;
     }
 
-    // Sort by ascending eigenvalue (lowest = softest = most flexible)
-    std::sort(modes_.begin(), modes_.end(),
-              [](const NormalMode& a, const NormalMode& b){
-                  return a.eigenvalue < b.eigenvalue; });
+    jacobi_fallback:
+#endif
+    {
+        // ── Jacobi fallback ──
+        std::vector<double> A = H_;
+        std::vector<double> V(static_cast<std::size_t>(M * M), 0.0);
+        for (int i = 0; i < M; ++i)
+            V[static_cast<std::size_t>(i*M+i)] = 1.0;
+
+        const int MAX_SWEEPS = 50;
+        for (int sweep = 0; sweep < MAX_SWEEPS; ++sweep) {
+            double max_off = 0.0;
+            int pp = 0, qq = 1;
+            for (int p = 0; p < M - 1; ++p)
+                for (int q = p + 1; q < M; ++q) {
+                    double v = std::abs(A[static_cast<std::size_t>(p*M+q)]);
+                    if (v > max_off) { max_off = v; pp = p; qq = q; }
+                }
+            if (max_off < 1e-12) break;
+            jacobi_rotate(A, V, M, pp, qq);
+        }
+
+        modes_.clear();
+        modes_.reserve(static_cast<std::size_t>(M));
+        for (int i = 0; i < M; ++i) {
+            NormalMode nm;
+            nm.eigenvalue = A[static_cast<std::size_t>(i*M+i)];
+            nm.eigenvector.resize(static_cast<std::size_t>(M));
+            for (int j = 0; j < M; ++j)
+                nm.eigenvector[static_cast<std::size_t>(j)] = V[static_cast<std::size_t>(j*M+i)];
+            modes_.push_back(std::move(nm));
+        }
+
+        std::sort(modes_.begin(), modes_.end(),
+                  [](const NormalMode& a, const NormalMode& b){
+                      return a.eigenvalue < b.eigenvalue; });
+    }
 }
 
 // ─── sample ──────────────────────────────────────────────────────────────────
+//
+// Boltzmann-weighted sampling of backbone perturbations.
+// Hardware: Eigen for matrix-vector products; OpenMP not used (single conformer).
 Conformer TorsionalENM::sample(float temperature, std::mt19937& rng) const
 {
     if (!built_) throw std::runtime_error("TENCM: model not built");
@@ -310,9 +739,29 @@ Conformer TorsionalENM::sample(float temperature, std::mt19937& rng) const
     const int SKIP = std::min(6, M);
     const double kBT = static_cast<double>(kB_kcal) * temperature;
 
+#ifdef FLEXAIDS_HAS_EIGEN
+    // Eigen path: accumulate Σ σ_m * z_m * v_m as vector operation
+    Eigen::VectorXd dtheta = Eigen::VectorXd::Zero(M);
+
     for (int m = SKIP; m < M && m < SKIP + N_MODES; ++m) {
         double lam = modes_[static_cast<std::size_t>(m)].eigenvalue;
-        if (lam < 1e-8) continue;   // nearly zero stiffness → skip
+        if (lam < 1e-8) continue;
+        double sigma = std::sqrt(kBT / lam);
+        double z = gauss(rng);
+
+        Eigen::Map<const Eigen::VectorXd> evec(
+            modes_[static_cast<std::size_t>(m)].eigenvector.data(), M);
+        dtheta += (sigma * z) * evec;
+    }
+
+    for (int k = 0; k < M; ++k)
+        conf.delta_theta[static_cast<std::size_t>(k)] = static_cast<float>(dtheta(k));
+
+#else
+    // Scalar path
+    for (int m = SKIP; m < M && m < SKIP + N_MODES; ++m) {
+        double lam = modes_[static_cast<std::size_t>(m)].eigenvalue;
+        if (lam < 1e-8) continue;
         double sigma = std::sqrt(kBT / lam);
         float  z     = gauss(rng);
 
@@ -321,9 +770,15 @@ Conformer TorsionalENM::sample(float temperature, std::mt19937& rng) const
                 static_cast<float>(sigma * z *
                 modes_[static_cast<std::size_t>(m)].eigenvector[static_cast<std::size_t>(k)]);
     }
+#endif
 
     // Build perturbed Cα coordinates:  r_i' = r_i + Σ_k J_k(i) δθ_k
     conf.ca.resize(static_cast<std::size_t>(N));
+
+    #if defined(_OPENMP) && !defined(TENCM_NO_OMP) && 0
+    // NOTE: atom loop is typically N < 1000 with per-atom M-inner-loop
+    // For small systems OpenMP overhead exceeds gain; keep serial.
+    #endif
     for (int i = 0; i < N; ++i) {
         float disp[3] = {0.0f, 0.0f, 0.0f};
         for (int k = 0; k < M; ++k) {
@@ -342,6 +797,12 @@ Conformer TorsionalENM::sample(float temperature, std::mt19937& rng) const
     }
 
     // Elastic strain energy: ½ δθᵀ H δθ
+#ifdef FLEXAIDS_HAS_EIGEN
+    {
+        Eigen::Map<const Eigen::MatrixXd> Hmat(H_.data(), M, M);
+        conf.strain_energy = static_cast<float>(0.5 * dtheta.dot(Hmat * dtheta));
+    }
+#else
     conf.strain_energy = 0.0f;
     for (int k = 0; k < M; ++k) {
         double row = 0.0;
@@ -351,14 +812,12 @@ Conformer TorsionalENM::sample(float temperature, std::mt19937& rng) const
         conf.strain_energy += static_cast<float>(
             0.5 * static_cast<double>(conf.delta_theta[static_cast<std::size_t>(k)]) * row);
     }
+#endif
 
     return conf;
 }
 
 // ─── apply ───────────────────────────────────────────────────────────────────
-// Translate Cα displacements to all heavy atoms in the residue by rigid-body
-// shift (centroid translation only — backbone torsion rebuild is handled by
-// the existing buildcc/buildic pipeline called afterwards).
 void TorsionalENM::apply(const Conformer& conf,
                           atom*            atoms,
                           const resid*     residue) const
@@ -368,13 +827,11 @@ void TorsionalENM::apply(const Conformer& conf,
 
     for (int seq = 0; seq < N; ++seq) {
         int ri = res_idx_[static_cast<std::size_t>(seq)];
-        // Displacement of this residue's Cα
         int   ai = ca_atom_idx_[static_cast<std::size_t>(seq)];
         float dx = conf.ca[static_cast<std::size_t>(seq)][0] - atoms[ai].coor[0];
         float dy = conf.ca[static_cast<std::size_t>(seq)][1] - atoms[ai].coor[1];
         float dz = conf.ca[static_cast<std::size_t>(seq)][2] - atoms[ai].coor[2];
 
-        // Apply the same rigid shift to all atoms of this residue (rotamer 0)
         int first = residue[ri].fatm[0];
         int last  = residue[ri].latm[0];
         for (int a = first; a <= last; ++a) {
@@ -387,23 +844,77 @@ void TorsionalENM::apply(const Conformer& conf,
 
 // ─── bfactors ────────────────────────────────────────────────────────────────
 // B_i = (8π²/3) <Δr_i²>  where <Δr_i²> = kBT Σ_m (σ_m² |J_m(i)|²)
+//
+// Hardware dispatch:
+//   Eigen → vectorised eigenvector·Jacobian accumulation
+//   OpenMP → parallelize over residues (each independent)
+//   AVX-512 → vectorize mode accumulation loop (8 doubles/cycle)
 std::vector<float> TorsionalENM::bfactors(float temperature) const
 {
     const int N  = static_cast<int>(ca_.size());
     const int M  = static_cast<int>(bonds_.size());
     const double kBT = static_cast<double>(kB_kcal) * temperature;
     const int SKIP = std::min(6, M);
+    const int M_end = std::min(M, SKIP + N_MODES);
+    const double BF_SCALE = 8.0 * std::numbers::pi * std::numbers::pi / 3.0;
 
     std::vector<float> bf(static_cast<std::size_t>(N), 0.0f);
 
+    // Pre-compute per-mode: kBT / λ_m (skip modes with tiny eigenvalue)
+    std::vector<double> inv_stiffness(static_cast<std::size_t>(M), 0.0);
+    for (int m = SKIP; m < M_end; ++m) {
+        double lam = modes_[static_cast<std::size_t>(m)].eigenvalue;
+        if (lam >= 1e-8)
+            inv_stiffness[static_cast<std::size_t>(m)] = kBT / lam;
+    }
+
+#if defined(_OPENMP) && !defined(TENCM_NO_OMP)
+    #pragma omp parallel for schedule(static)
+#endif
     for (int i = 0; i < N; ++i) {
         double msf = 0.0;  // mean-square fluctuation
-        for (int m = SKIP; m < M && m < SKIP + N_MODES; ++m) {
-            double lam = modes_[static_cast<std::size_t>(m)].eigenvalue;
-            if (lam < 1e-8) continue;
-            // σ_m² = kBT/λ_m; contribution to msf: σ_m² * |J_m(i)|²
-            // J_m(i) = Σ_k v_mk * J_k(i)   (linear combination of bond Jacobians)
+        for (int m = SKIP; m < M_end; ++m) {
+            double s2 = inv_stiffness[static_cast<std::size_t>(m)];
+            if (s2 == 0.0) continue;
+
+            // J_m(i) = Σ_k v_mk * J_k(i)
             float jmi[3] = {0.0f, 0.0f, 0.0f};
+
+#if defined(__AVX512F__)
+            // AVX-512: accumulate 8 bonds per cycle (double precision)
+            const double* evec = modes_[static_cast<std::size_t>(m)].eigenvector.data();
+            __m512d acc_x = _mm512_setzero_pd();
+            __m512d acc_y = _mm512_setzero_pd();
+            __m512d acc_z = _mm512_setzero_pd();
+            int k = 0;
+            // Only bonds k < i contribute (j(k,i) = 0 for k >= i)
+            int k_end = std::min(M, i);
+            for (; k + 7 < k_end; k += 8) {
+                __m512d vmk = _mm512_loadu_pd(evec + k);
+                // Gather 8 Jacobians
+                double jx[8], jy[8], jz[8];
+                for (int q = 0; q < 8; ++q) {
+                    auto jkq = jac(k + q, i);
+                    jx[q] = jkq[0]; jy[q] = jkq[1]; jz[q] = jkq[2];
+                }
+                acc_x = _mm512_fmadd_pd(vmk, _mm512_loadu_pd(jx), acc_x);
+                acc_y = _mm512_fmadd_pd(vmk, _mm512_loadu_pd(jy), acc_y);
+                acc_z = _mm512_fmadd_pd(vmk, _mm512_loadu_pd(jz), acc_z);
+            }
+            jmi[0] = static_cast<float>(_mm512_reduce_add_pd(acc_x));
+            jmi[1] = static_cast<float>(_mm512_reduce_add_pd(acc_y));
+            jmi[2] = static_cast<float>(_mm512_reduce_add_pd(acc_z));
+            // Scalar tail
+            for (; k < k_end; ++k) {
+                auto jki = jac(k, i);
+                float vmk = static_cast<float>(evec[k]);
+                jmi[0] += vmk * jki[0];
+                jmi[1] += vmk * jki[1];
+                jmi[2] += vmk * jki[2];
+            }
+
+#else
+            // Scalar / AVX2 path (Jacobian is a cross product, hard to batch in AVX2)
             for (int k = 0; k < M; ++k) {
                 if (i <= k) continue;
                 auto jki = jac(k, i);
@@ -413,13 +924,13 @@ std::vector<float> TorsionalENM::bfactors(float temperature) const
                 jmi[1] += vmk * jki[1];
                 jmi[2] += vmk * jki[2];
             }
+#endif
+
             double jmag2 = static_cast<double>(
                 jmi[0]*jmi[0] + jmi[1]*jmi[1] + jmi[2]*jmi[2]);
-            msf += (kBT / lam) * jmag2;
+            msf += s2 * jmag2;
         }
-        // B-factor = (8π²/3) * MSF  (isotropic approximation)
-        bf[static_cast<std::size_t>(i)] = static_cast<float>(
-            (8.0 * std::numbers::pi * std::numbers::pi / 3.0) * msf);
+        bf[static_cast<std::size_t>(i)] = static_cast<float>(BF_SCALE * msf);
     }
     return bf;
 }
@@ -432,7 +943,6 @@ float residue_rms_fluctuation(const TorsionalENM& tencm,
     auto bf = tencm.bfactors(temperature);
     if (residue_idx < 0 || residue_idx >= static_cast<int>(bf.size()))
         return 0.0f;
-    // MSF = B / (8π²/3)
     float msf = bf[static_cast<std::size_t>(residue_idx)] /
                 static_cast<float>(8.0 * std::numbers::pi * std::numbers::pi / 3.0);
     return std::sqrt(msf);

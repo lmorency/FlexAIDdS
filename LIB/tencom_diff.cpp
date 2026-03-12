@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <numeric>
+#include <iostream>
 #include <cmath>
 
 namespace tencom_diff {
@@ -59,9 +60,26 @@ DifferentialResult compute_differential(
                        - result.svib_ref.S_vib_kcal_mol_K;
     result.delta_F_vib = -temperature_K * result.delta_S_vib;
 
+    // ── Dimension mismatch warnings ─────────────────────────────────────────
+    int ref_nres = ref_enm.n_residues();
+    int tgt_nres = tgt_enm.n_residues();
+    if (ref_nres != tgt_nres) {
+        std::cerr << "  Warning: residue count mismatch (ref=" << ref_nres
+                  << ", tgt=" << tgt_nres << ") — mode overlaps will be NaN.\n";
+    }
+    int ref_nmodes = static_cast<int>(ref_modes.size());
+    int tgt_nmodes = static_cast<int>(tgt_modes.size());
+    if (ref_nmodes != tgt_nmodes) {
+        int diff_pct = std::abs(ref_nmodes - tgt_nmodes) * 100
+                       / std::max(ref_nmodes, tgt_nmodes);
+        if (diff_pct > 20) {
+            std::cerr << "  Warning: mode count differs by " << diff_pct
+                      << "% (ref=" << ref_nmodes << ", tgt=" << tgt_nmodes << ").\n";
+        }
+    }
+
     // ── Per-mode comparisons ────────────────────────────────────────────────
-    int n_compare = std::min(static_cast<int>(ref_modes.size()),
-                             static_cast<int>(tgt_modes.size()));
+    int n_compare = std::min(ref_nmodes, tgt_nmodes);
     bool dims_match = (ref_enm.n_bonds() == tgt_enm.n_bonds());
 
     result.mode_comparisons.reserve(n_compare);
@@ -97,6 +115,35 @@ DifferentialResult compute_differential(
     result.delta_bfactors.resize(n_bf);
     for (int i = 0; i < n_bf; ++i) {
         result.delta_bfactors[i] = result.bfactors_tgt[i] - result.bfactors_ref[i];
+    }
+
+    // ── Per-residue vibrational entropy decomposition ────────────────────────
+    // Distribute global S_vib across residues proportional to their B-factors.
+    // B_i ∝ <Δr_i²> ∝ Σ_k (v_ki² / λ_k), so B_i/Σ(B_j) gives each
+    // residue's fractional contribution to the total thermal fluctuation.
+    auto decompose_svib = [](const std::vector<float>& bfactors, double total_svib) {
+        std::vector<double> per_res(bfactors.size(), 0.0);
+        double sum_bf = 0.0;
+        for (float bf : bfactors) sum_bf += bf;
+        if (sum_bf > 0.0) {
+            for (size_t i = 0; i < bfactors.size(); ++i) {
+                per_res[i] = total_svib * (bfactors[i] / sum_bf);
+            }
+        }
+        return per_res;
+    };
+
+    result.per_residue_svib_ref = decompose_svib(
+        result.bfactors_ref, result.svib_ref.S_vib_kcal_mol_K);
+    result.per_residue_svib_tgt = decompose_svib(
+        result.bfactors_tgt, result.svib_tgt.S_vib_kcal_mol_K);
+
+    int n_pr = std::min(result.per_residue_svib_ref.size(),
+                        result.per_residue_svib_tgt.size());
+    result.per_residue_delta_svib.resize(n_pr);
+    for (int i = 0; i < n_pr; ++i) {
+        result.per_residue_delta_svib[i] =
+            result.per_residue_svib_tgt[i] - result.per_residue_svib_ref[i];
     }
 
     return result;

@@ -1,6 +1,10 @@
 #include "Vcontacts.h"
+#include <cmath>
 
 #define DEBUG_LEVEL 0
+
+// Coulomb constant: 332.0637 kcal·Å/(mol·e²)
+#define KCOULOMB 332.0637
 
 double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::vector<std::pair<int,int> > & intraclashes, bool* error)
 {
@@ -17,6 +21,7 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 		FA->optres[j].cf.wal=0.0;
 		FA->optres[j].cf.com=0.0;
 		FA->optres[j].cf.con=0.0;
+		FA->optres[j].cf.elec=0.0;
 		FA->optres[j].cf.sas=0.0;
 		FA->optres[j].cf.totsas=0.0;
 	}
@@ -318,9 +323,9 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 			
 			
 			if( !covalent ){
-				
+
 				if(FA->intramolecular || !intramolecular) {
-					
+
 					double contribution = 0.0;
 					if(energy_matrix->weight){
 						if(FA->normalize_area){
@@ -331,20 +336,53 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 					}else{
 						contribution = yval;
 					}
-					
+
 					if(FA->useacs){
 						//printf("USE ACS\n");
 						//printf("default contribution=%.3f\n", contribution);
 						contribution = contribution * atoms[atomzero].acs/surfA * FA->acsweight;
 						//printf("after contribution=%.3f\n", contribution);
 					}
-					
+
+					// ── RESP electrostatic correction ──
+					// When both atoms have explicit RESP partial charges (e.g., from
+					// PTM/glycan attachment), add a Coulombic term scaled by the
+					// contact area. This modulates the type-based CF with charge-
+					// charge interactions at the Voronoi interface.
+					if(atoms[atomzero].has_resp && atoms[atomcont].has_resp){
+						double q_i = (double)atoms[atomzero].resp_charge;
+						double q_j = (double)atoms[atomcont].resp_charge;
+						double r_ij = VC->ca_rec[currindex].dist;
+						if(r_ij > 0.5){
+							// Coulomb constant scaled for kcal/mol-Angstrom units
+							// 332.0637 = e^2/(4*pi*eps0) in kcal*A/mol/e^2
+							double elec = 332.0637 * q_i * q_j / r_ij;
+							// Scale by normalised contact area for consistency with CF
+							contribution += elec * area / surfA;
+						}
+					}
+
 					cfs->com += contribution;
-					
+
+					// Coulomb electrostatic term (distance-dependent dielectric)
+					if(FA->use_elec){
+						float qA = atoms[atomzero].charge;
+						float qB = atoms[atomcont].charge;
+						if(qA != 0.0f && qB != 0.0f){
+							double dist = VC->ca_rec[currindex].dist;
+							if(dist > 0.5){ // avoid singularity
+								// E_elec = (332.0637 * qA * qB) / (eps * r)
+								// distance-dependent dielectric: eps = dielectric * r
+								double E_elec = KCOULOMB * qA * qB / (FA->dielectric * dist * dist);
+								cfs->elec += E_elec;
+							}
+						}
+					}
+
 #if DEBUG_LEVEL > 0
 					cfs_atom.com += contribution;
 #endif
-					
+
 					FA->contributions[(VC->Calc[i].atom->type-1)*FA->ntypes+(VC->Calc[VC->ca_rec[currindex].atom].atom->type-1)] += contribution;
 					if((VC->Calc[i].atom->type-1) != (VC->Calc[VC->ca_rec[currindex].atom].atom->type-1))
 						FA->contributions[(VC->Calc[VC->ca_rec[currindex].atom].atom->type-1)*FA->ntypes+(VC->Calc[i].atom->type-1)] += contribution;

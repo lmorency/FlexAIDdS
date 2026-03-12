@@ -1,265 +1,223 @@
-// tests/test_ga_validation.cpp — GA scoring validation tests
-// Tests: cfstr scoring functions, batch result structure, scoring invariants
+// tests/test_ga_validation.cpp — Voronoi geometry & GA validation tests
+// Tests: solve_3x3, solve_2xS, cosPQR, spherical_arc, add_vertex, VoronoiCFBatch workspace
 // Apache-2.0 © 2026 Le Bonhomme Pharma
 
 #include <gtest/gtest.h>
 #include <cmath>
 #include <vector>
 #include <cstring>
-#include <numeric>
-#include <algorithm>
 
 #include "flexaid.h"
-#include "gaboom.h"
-#include "VoronoiCFBatch.h"
+#include "Vcontacts.h"
 
 namespace {
 
-// ═══════════════════════════════════════════════════════════════════════
-// cfstr + scoring function tests
-// ═══════════════════════════════════════════════════════════════════════
+static constexpr double EPSILON = 1e-6;
 
-class CFScoreTest : public ::testing::Test {
-protected:
-    cfstr cf;
+// ===========================================================================
+// solve_3x3: solves Ax = b via Cramer's rule (4-element rows: A0,A1,A2,D)
+// ===========================================================================
 
-    void SetUp() override {
-        std::memset(&cf, 0, sizeof(cfstr));
-    }
-};
+class Solve3x3Test : public ::testing::Test {};
 
-// get_apparent_cf_evalue returns com + wal + sas
-TEST_F(CFScoreTest, ApparentEvalueFormula) {
-    cf.com = -10.5;
-    cf.wal = 2.0;
-    cf.sas = 1.5;
-    cf.con = 99.0;  // should NOT contribute
+// Identity-like system: x=1, y=2, z=3
+TEST_F(Solve3x3Test, IdentitySystem) {
+    // Row format: [A, B, C, D] for Ax + By + Cz + D = 0
+    // x = 1  =>  1*x + 0*y + 0*z - 1 = 0
+    double eq0[4] = {1.0, 0.0, 0.0, -1.0};
+    double eq1[4] = {0.0, 1.0, 0.0, -2.0};
+    double eq2[4] = {0.0, 0.0, 1.0, -3.0};
+    double pt[3];
 
-    double app = get_apparent_cf_evalue(&cf);
-    EXPECT_DOUBLE_EQ(app, -10.5 + 2.0 + 1.5);
+    int result = solve_3x3(eq0, eq1, eq2, pt);
+    EXPECT_EQ(result, 0);
+    EXPECT_NEAR(pt[0], 1.0, EPSILON);
+    EXPECT_NEAR(pt[1], 2.0, EPSILON);
+    EXPECT_NEAR(pt[2], 3.0, EPSILON);
 }
 
-// get_cf_evalue returns com + wal + sas + con
-TEST_F(CFScoreTest, FullEvalueFormula) {
-    cf.com = -10.5;
-    cf.wal = 2.0;
-    cf.sas = 1.5;
-    cf.con = 3.0;
+// Coupled system: 2x + y = 5, x + 3y = 10, z = 4
+TEST_F(Solve3x3Test, CoupledSystem) {
+    double eq0[4] = {2.0, 1.0, 0.0, -5.0};
+    double eq1[4] = {1.0, 3.0, 0.0, -10.0};
+    double eq2[4] = {0.0, 0.0, 1.0, -4.0};
+    double pt[3];
 
-    double full = get_cf_evalue(&cf);
-    EXPECT_DOUBLE_EQ(full, -10.5 + 2.0 + 1.5 + 3.0);
+    int result = solve_3x3(eq0, eq1, eq2, pt);
+    EXPECT_EQ(result, 0);
+    // 2x + y = 5, x + 3y = 10 => x = 1, y = 3
+    EXPECT_NEAR(pt[0], 1.0, EPSILON);
+    EXPECT_NEAR(pt[1], 3.0, EPSILON);
+    EXPECT_NEAR(pt[2], 4.0, EPSILON);
 }
 
-// Constraint difference: get_cf_evalue - get_apparent_cf_evalue == con
-TEST_F(CFScoreTest, ConstraintDifference) {
-    cf.com = -8.0;
-    cf.wal = 1.0;
-    cf.sas = 0.5;
-    cf.con = 4.0;
+// Singular system (parallel planes) returns -1
+TEST_F(Solve3x3Test, SingularSystemReturnsNegOne) {
+    double eq0[4] = {1.0, 2.0, 3.0, -1.0};
+    double eq1[4] = {2.0, 4.0, 6.0, -2.0};  // 2x eq0
+    double eq2[4] = {0.0, 0.0, 1.0, -1.0};
+    double pt[3];
 
-    double diff = get_cf_evalue(&cf) - get_apparent_cf_evalue(&cf);
-    EXPECT_DOUBLE_EQ(diff, cf.con);
+    int result = solve_3x3(eq0, eq1, eq2, pt);
+    EXPECT_EQ(result, -1);
 }
 
-// Zero-initialized cfstr gives zero scores
-TEST_F(CFScoreTest, ZeroCfstrGivesZero) {
-    EXPECT_DOUBLE_EQ(get_apparent_cf_evalue(&cf), 0.0);
-    EXPECT_DOUBLE_EQ(get_cf_evalue(&cf), 0.0);
+// ===========================================================================
+// solve_2xS: intersection of two planes with a sphere
+// ===========================================================================
+
+class Solve2xSTest : public ::testing::Test {};
+
+// Two orthogonal planes through origin, sphere of radius 1
+TEST_F(Solve2xSTest, OrthogonalPlanesUnitSphere) {
+    plane p0{}, p1{};
+    // Plane x = 0
+    p0.Ai[0] = 1.0; p0.Ai[1] = 0.0; p0.Ai[2] = 0.0; p0.Ai[3] = 0.0;
+    // Plane y = 0
+    p1.Ai[0] = 0.0; p1.Ai[1] = 1.0; p1.Ai[2] = 0.0; p1.Ai[3] = 0.0;
+
+    double pt0[3], pt1[3];
+    int result = solve_2xS(&p0, &p1, 1.0f, pt0, pt1);
+    EXPECT_EQ(result, 0);
+
+    // Intersection line is the z-axis; sphere intersections at (0,0,±1)
+    EXPECT_NEAR(pt0[0], 0.0, EPSILON);
+    EXPECT_NEAR(pt0[1], 0.0, EPSILON);
+    EXPECT_NEAR(std::abs(pt0[2]), 1.0, EPSILON);
+
+    EXPECT_NEAR(pt1[0], 0.0, EPSILON);
+    EXPECT_NEAR(pt1[1], 0.0, EPSILON);
+    EXPECT_NEAR(std::abs(pt1[2]), 1.0, EPSILON);
+
+    // The two solutions should be distinct (opposite z)
+    EXPECT_NEAR(pt0[2] + pt1[2], 0.0, EPSILON);
 }
 
-// Both functions return finite results for extreme values
-TEST_F(CFScoreTest, FiniteForExtremeValues) {
-    cf.com = -1e6;
-    cf.wal = 1e6;
-    cf.sas = 1e3;
-    cf.con = -1e3;
+// Parallel planes have no intersection => returns -1
+TEST_F(Solve2xSTest, ParallelPlanesReturnsNegOne) {
+    plane p0{}, p1{};
+    p0.Ai[0] = 1.0; p0.Ai[1] = 0.0; p0.Ai[2] = 0.0; p0.Ai[3] = -1.0;
+    p1.Ai[0] = 1.0; p1.Ai[1] = 0.0; p1.Ai[2] = 0.0; p1.Ai[3] = -2.0;
 
-    EXPECT_TRUE(std::isfinite(get_apparent_cf_evalue(&cf)));
-    EXPECT_TRUE(std::isfinite(get_cf_evalue(&cf)));
+    double pt0[3], pt1[3];
+    int result = solve_2xS(&p0, &p1, 1.0f, pt0, pt1);
+    EXPECT_EQ(result, -1);
 }
 
-// No wall/constraint penalty: apparent == com + sas
-TEST_F(CFScoreTest, NoWallPenalty) {
-    cf.com = -15.0;
-    cf.wal = 0.0;
-    cf.sas = 2.5;
-    cf.con = 0.0;
+// Planes far from origin, small sphere => no intersection
+TEST_F(Solve2xSTest, NoIntersectionWithSmallSphere) {
+    plane p0{}, p1{};
+    // Plane x = 10
+    p0.Ai[0] = 1.0; p0.Ai[1] = 0.0; p0.Ai[2] = 0.0; p0.Ai[3] = -10.0;
+    // Plane y = 10
+    p1.Ai[0] = 0.0; p1.Ai[1] = 1.0; p1.Ai[2] = 0.0; p1.Ai[3] = -10.0;
 
-    EXPECT_DOUBLE_EQ(get_apparent_cf_evalue(&cf), cf.com + cf.sas);
-    EXPECT_DOUBLE_EQ(get_cf_evalue(&cf), cf.com + cf.sas);
+    double pt0[3], pt1[3];
+    int result = solve_2xS(&p0, &p1, 1.0f, pt0, pt1);
+    EXPECT_EQ(result, -1);
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-// cfstr determinism: same input → same output
-// ═══════════════════════════════════════════════════════════════════════
+// ===========================================================================
+// cosPQR: cosine of angle PQR (Q is center point)
+// ===========================================================================
 
-TEST_F(CFScoreTest, Deterministic) {
-    cf.com = -12.3;
-    cf.wal = 0.7;
-    cf.sas = 1.1;
-    cf.con = 0.2;
+class CosPQRTest : public ::testing::Test {};
 
-    std::vector<double> results;
-    for (int i = 0; i < 5; ++i)
-        results.push_back(get_apparent_cf_evalue(&cf));
+// Right angle: P=(1,0,0), Q=(0,0,0), R=(0,1,0) => cos(90°) = 0
+TEST_F(CosPQRTest, RightAngle) {
+    double P[3] = {1.0, 0.0, 0.0};
+    double Q[3] = {0.0, 0.0, 0.0};
+    double R[3] = {0.0, 1.0, 0.0};
 
-    for (size_t i = 1; i < results.size(); ++i)
-        EXPECT_EQ(results[0], results[i])
-            << "Scoring must be deterministic";
+    double cos_val = cosPQR(P, Q, R);
+    EXPECT_NEAR(cos_val, 0.0, EPSILON);
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-// BatchResult structure tests
-// ═══════════════════════════════════════════════════════════════════════
+// Collinear same direction: QP=(1,0,0) QR=(2,0,0) => cos(0°) = 1
+TEST_F(CosPQRTest, CollinearSameDirection) {
+    double P[3] = {2.0, 0.0, 0.0};
+    double Q[3] = {1.0, 0.0, 0.0};
+    double R[3] = {3.0, 0.0, 0.0};
 
-TEST(BatchResultTest, DefaultConstructionValid) {
-    voronoi_cf::BatchResult result;
-    EXPECT_TRUE(result.cf.empty());
-    EXPECT_TRUE(result.app_evalue.empty());
-    EXPECT_EQ(result.wall_ms, 0.0);
+    double cos_val = cosPQR(P, Q, R);
+    EXPECT_NEAR(cos_val, 1.0, EPSILON);  // QP and QR point in the same direction
 }
 
-TEST(BatchResultTest, ResizePreservesSize) {
-    voronoi_cf::BatchResult result;
-    const size_t N = 100;
-    result.cf.resize(N);
-    result.app_evalue.resize(N);
+// 60-degree angle
+TEST_F(CosPQRTest, SixtyDegreeAngle) {
+    double P[3] = {1.0, 0.0, 0.0};
+    double Q[3] = {0.0, 0.0, 0.0};
+    double R[3] = {0.5, std::sqrt(3.0) / 2.0, 0.0};
 
-    EXPECT_EQ(result.cf.size(), N);
-    EXPECT_EQ(result.app_evalue.size(), N);
+    double cos_val = cosPQR(P, Q, R);
+    EXPECT_NEAR(cos_val, 0.5, EPSILON);  // cos(60°) = 0.5
 }
 
-TEST(BatchResultTest, CfAndAppEvalueConsistency) {
-    // Verify that batch result cfstr → app_evalue is consistent
-    voronoi_cf::BatchResult result;
-    const int N = 10;
-    result.cf.resize(N);
-    result.app_evalue.resize(N);
+// 3D angle
+TEST_F(CosPQRTest, ThreeDimensionalAngle) {
+    double P[3] = {1.0, 0.0, 0.0};
+    double Q[3] = {0.0, 0.0, 0.0};
+    double R[3] = {0.0, 0.0, 1.0};
 
-    for (int i = 0; i < N; ++i) {
-        result.cf[i].com = -(double)(i + 1);
-        result.cf[i].wal = 0.1 * i;
-        result.cf[i].sas = 0.05 * i;
-        result.cf[i].con = 0.01 * i;
-        result.app_evalue[i] = get_apparent_cf_evalue(&result.cf[i]);
-    }
-
-    // Verify consistency
-    for (int i = 0; i < N; ++i) {
-        double expected = result.cf[i].com + result.cf[i].wal + result.cf[i].sas;
-        EXPECT_DOUBLE_EQ(result.app_evalue[i], expected)
-            << "Apparent evalue mismatch at index " << i;
-    }
+    double cos_val = cosPQR(P, Q, R);
+    EXPECT_NEAR(cos_val, 0.0, EPSILON);  // 90° in 3D
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-// eval_span: gene clamping correctness
-// ═══════════════════════════════════════════════════════════════════════
+// ===========================================================================
+// add_vertex: populates a vertex struct from coordinates
+// ===========================================================================
 
-// eval_span clamps gene IC values to [gene_lim.min, gene_lim.max].
-// We verify this indirectly by constructing a trivial scoring function
-// that returns the sum of IC values in the cf.com field.
+class AddVertexTest : public ::testing::Test {};
 
-static cfstr test_sum_function(
-    FA_Global* /*FA*/, VC_Global* /*VC*/,
-    atom* /*atoms*/, resid* /*residue*/, gridpoint* /*cleftgrid*/,
-    int n_genes, double* icv)
-{
-    cfstr result;
-    std::memset(&result, 0, sizeof(cfstr));
-    double sum = 0.0;
-    for (int i = 0; i < n_genes; ++i)
-        sum += icv[i];
-    result.com = sum;
-    return result;
+TEST_F(AddVertexTest, StoresCoordinatesAndPlanes) {
+    vertex poly[2];
+    double coor[3] = {3.0, 4.0, 0.0};
+
+    int result = add_vertex(poly, 0, coor, 1, 2, 3);
+    EXPECT_EQ(result, 0);
+    EXPECT_DOUBLE_EQ(poly[0].xi[0], 3.0);
+    EXPECT_DOUBLE_EQ(poly[0].xi[1], 4.0);
+    EXPECT_DOUBLE_EQ(poly[0].xi[2], 0.0);
+    EXPECT_EQ(poly[0].plane[0], 1);
+    EXPECT_EQ(poly[0].plane[1], 2);
+    EXPECT_EQ(poly[0].plane[2], 3);
+    EXPECT_NEAR(poly[0].dist, 5.0, EPSILON);  // sqrt(9+16) = 5
 }
 
-TEST(EvalSpanTest, ClampsBeyondMax) {
-    FA_Global fa;
-    std::memset(&fa, 0, sizeof(FA_Global));
-    GB_Global gb;
-    std::memset(&gb, 0, sizeof(GB_Global));
-    gb.num_genes = 2;
-    VC_Global vc;
-    std::memset(&vc, 0, sizeof(VC_Global));
+TEST_F(AddVertexTest, ComputesDistFromOrigin) {
+    vertex poly[2];
+    double coor[3] = {1.0, 1.0, 1.0};
 
-    genlim gl[2];
-    gl[0].min = -10.0; gl[0].max = 10.0; gl[0].del = 1.0; gl[0].nbin = 20; gl[0].bin = 0.05;
-    gl[1].min = 0.0;   gl[1].max = 5.0;  gl[1].del = 0.5; gl[1].nbin = 10; gl[1].bin = 0.1;
-
-    // Gene values beyond max
-    gene genes[2];
-    genes[0].to_ic = 999.0;   // well above max of 10
-    genes[1].to_ic = 100.0;   // well above max of 5
-
-    atom a;
-    std::memset(&a, 0, sizeof(atom));
-    resid r;
-    std::memset(&r, 0, sizeof(resid));
-
-    cfstr result = voronoi_cf::eval_span(
-        &fa, &gb, &vc,
-        std::span<const genlim>(gl, 2),
-        std::span<atom>(&a, 1),
-        std::span<resid>(&r, 1),
-        nullptr,
-        std::span<const gene>(genes, 2),
-        test_sum_function
-    );
-
-    // IC values should be clamped to max: 10.0 + 5.0 = 15.0
-    EXPECT_DOUBLE_EQ(result.com, 15.0);
+    add_vertex(poly, 0, coor, 0, 0, 0);
+    EXPECT_NEAR(poly[0].dist, std::sqrt(3.0), EPSILON);
 }
 
-TEST(EvalSpanTest, ClampsBelowMin) {
-    FA_Global fa;
-    std::memset(&fa, 0, sizeof(FA_Global));
-    GB_Global gb;
-    std::memset(&gb, 0, sizeof(GB_Global));
-    gb.num_genes = 2;
-    VC_Global vc;
-    std::memset(&vc, 0, sizeof(VC_Global));
+TEST_F(AddVertexTest, OriginVertexHasZeroDist) {
+    vertex poly[2];
+    double coor[3] = {0.0, 0.0, 0.0};
 
-    genlim gl[2];
-    gl[0].min = -10.0; gl[0].max = 10.0; gl[0].del = 1.0; gl[0].nbin = 20; gl[0].bin = 0.05;
-    gl[1].min = 0.0;   gl[1].max = 5.0;  gl[1].del = 0.5; gl[1].nbin = 10; gl[1].bin = 0.1;
-
-    gene genes[2];
-    genes[0].to_ic = -999.0;  // below min of -10
-    genes[1].to_ic = -999.0;  // below min of 0
-
-    atom a;
-    std::memset(&a, 0, sizeof(atom));
-    resid r;
-    std::memset(&r, 0, sizeof(resid));
-
-    cfstr result = voronoi_cf::eval_span(
-        &fa, &gb, &vc,
-        std::span<const genlim>(gl, 2),
-        std::span<atom>(&a, 1),
-        std::span<resid>(&r, 1),
-        nullptr,
-        std::span<const gene>(genes, 2),
-        test_sum_function
-    );
-
-    // IC values should be clamped to min: -10.0 + 0.0 = -10.0
-    EXPECT_DOUBLE_EQ(result.com, -10.0);
+    add_vertex(poly, 0, coor, 0, 0, 0);
+    EXPECT_DOUBLE_EQ(poly[0].dist, 0.0);
 }
 
-TEST(EvalSpanTest, WithinBoundsPassthrough) {
-    FA_Global fa;
-    std::memset(&fa, 0, sizeof(FA_Global));
-    GB_Global gb;
-    std::memset(&gb, 0, sizeof(GB_Global));
-    gb.num_genes = 3;
-    VC_Global vc;
-    std::memset(&vc, 0, sizeof(VC_Global));
+// ===========================================================================
+// solve_3x3 determinism: same input always gives same output
+// ===========================================================================
 
-    genlim gl[3];
-    for (int i = 0; i < 3; ++i) {
-        gl[i].min = -180.0; gl[i].max = 180.0;
-        gl[i].del = 1.0; gl[i].nbin = 360; gl[i].bin = 1.0/360.0;
+TEST(VoronoiDeterminismTest, Solve3x3IsDeterministic) {
+    double eq0[4] = {1.0, 2.0, 1.0, -7.0};
+    double eq1[4] = {3.0, 1.0, 2.0, -11.0};
+    double eq2[4] = {2.0, 3.0, 1.0, -10.0};
+
+    double pt_first[3], pt_second[3];
+
+    solve_3x3(eq0, eq1, eq2, pt_first);
+
+    for (int i = 0; i < 5; ++i) {
+        solve_3x3(eq0, eq1, eq2, pt_second);
+        EXPECT_EQ(pt_first[0], pt_second[0]);
+        EXPECT_EQ(pt_first[1], pt_second[1]);
+        EXPECT_EQ(pt_first[2], pt_second[2]);
     }
 
     gene genes[3];
@@ -317,6 +275,33 @@ TEST(ScoringInvariant, WallPenaltyWorsensScore) {
 
     EXPECT_LT(get_apparent_cf_evalue(&no_clash), get_apparent_cf_evalue(&clash))
         << "Wall penalty should worsen the score";
+}
+
+// ===========================================================================
+// solve_2xS results lie on the sphere
+// ===========================================================================
+
+TEST(VoronoiGeometryTest, Solve2xSResultsLieOnSphere) {
+    plane p0{}, p1{};
+    // Plane x + y = 0
+    p0.Ai[0] = 1.0; p0.Ai[1] = 1.0; p0.Ai[2] = 0.0; p0.Ai[3] = 0.0;
+    // Plane z = 0
+    p1.Ai[0] = 0.0; p1.Ai[1] = 0.0; p1.Ai[2] = 1.0; p1.Ai[3] = 0.0;
+
+    const float radius = 2.5f;
+    double pt0[3], pt1[3];
+    int result = solve_2xS(&p0, &p1, radius, pt0, pt1);
+    ASSERT_EQ(result, 0);
+
+    // Both points should lie on the sphere: |pt| = radius
+    double dist0 = std::sqrt(pt0[0]*pt0[0] + pt0[1]*pt0[1] + pt0[2]*pt0[2]);
+    double dist1 = std::sqrt(pt1[0]*pt1[0] + pt1[1]*pt1[1] + pt1[2]*pt1[2]);
+    EXPECT_NEAR(dist0, static_cast<double>(radius), EPSILON);
+    EXPECT_NEAR(dist1, static_cast<double>(radius), EPSILON);
+
+    // Both points should satisfy plane equations
+    EXPECT_NEAR(p0.Ai[0]*pt0[0] + p0.Ai[1]*pt0[1] + p0.Ai[2]*pt0[2] + p0.Ai[3], 0.0, EPSILON);
+    EXPECT_NEAR(p1.Ai[0]*pt0[0] + p1.Ai[1]*pt0[1] + p1.Ai[2]*pt0[2] + p1.Ai[3], 0.0, EPSILON);
 }
 
 }  // namespace anonymous

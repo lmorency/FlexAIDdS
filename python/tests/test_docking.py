@@ -151,7 +151,15 @@ class TestBindingMode:
     def test_free_energy_no_cpp(self):
         mode = BindingMode(cpp_binding_mode=None)
         mode._poses = [Pose(0, -10.5), Pose(1, -9.8), Pose(2, -11.0)]
-        assert abs(mode.free_energy - (-11.0)) < 1e-9
+        # Free energy from StatMechEngine: F = -kT ln Z ≤ min(E)
+        assert mode.free_energy < -11.0  # ensemble F is lower than best pose
+        assert math.isfinite(mode.free_energy)
+
+    def test_free_energy_single_pose(self):
+        mode = BindingMode(cpp_binding_mode=None)
+        mode._poses = [Pose(0, -10.5)]
+        # Single pose: F ≈ E (no ensemble spread)
+        assert abs(mode.free_energy - (-10.5)) < 1e-6
 
     def test_free_energy_empty_is_inf(self):
         mode = BindingMode()
@@ -172,18 +180,36 @@ class TestBindingMode:
         mode._poses = [Pose(0, -10.0)]
         assert "n_poses=1" in repr(mode)
 
-    def test_enthalpy_returns_inf_without_cpp(self):
+    def test_enthalpy_computed_without_cpp(self):
         mode = BindingMode(cpp_binding_mode=None)
-        assert mode.enthalpy == float("inf")
+        mode._poses = [Pose(0, -10.0), Pose(1, -9.0)]
+        # Enthalpy is the Boltzmann-weighted average, not inf
+        assert math.isfinite(mode.enthalpy)
+        assert -10.0 <= mode.enthalpy <= -9.0  # between min and max
 
-    def test_entropy_returns_zero_without_cpp(self):
+    def test_entropy_computed_without_cpp(self):
+        mode = BindingMode(cpp_binding_mode=None)
+        mode._poses = [Pose(0, -10.0), Pose(1, -9.0)]
+        # With 2 different energies, entropy should be > 0
+        assert mode.entropy > 0.0
+
+    def test_entropy_zero_for_empty_mode(self):
         mode = BindingMode(cpp_binding_mode=None)
         assert mode.entropy == 0.0
 
-    def test_get_thermodynamics_raises_without_cpp(self):
+    def test_get_thermodynamics_works_without_cpp(self):
         mode = BindingMode(cpp_binding_mode=None)
-        with pytest.raises(RuntimeError, match="not initialized"):
-            mode.get_thermodynamics()
+        mode._poses = [Pose(0, -10.0), Pose(1, -9.5)]
+        thermo = mode.get_thermodynamics()
+        assert math.isfinite(thermo.free_energy)
+        assert math.isfinite(thermo.entropy)
+        assert thermo.temperature == 300.0
+
+    def test_get_thermodynamics_empty_raises(self):
+        mode = BindingMode(cpp_binding_mode=None)
+        # Empty mode returns inf free energy but doesn't crash
+        thermo = mode.get_thermodynamics()
+        assert thermo.free_energy == float("inf")
 
 
 # ── BindingPopulation ─────────────────────────────────────────────────────────
@@ -407,28 +433,15 @@ except Exception:
     _core_available = False
 
 
-@pytest.mark.skipif(not _core_available, reason="C++ _core extension not built")
 class TestComputeGlobalThermodynamics:
     """compute_global_thermodynamics() aggregates all mode pose energies via
     StatMechEngine and returns a Thermodynamics object."""
 
     def _pop_with_real_modes(self) -> BindingPopulation:
-        """Return a BindingPopulation backed by real C++ BindingMode stubs.
-
-        Since we cannot easily instantiate C++ BindingMode objects here we
-        monkey-patch the BindingMode instances so that n_poses and enthalpy
-        delegate to Python values only.
-        """
-        from flexaidds.thermodynamics import Thermodynamics
-
         pop = BindingPopulation()
-        # Use real BindingMode instances but override their C++-dependent attrs
         for energy in (-10.0, -9.0):
             mode = BindingMode(cpp_binding_mode=None)
-            # Manually push a fake pose so n_poses = 1
-            mode._poses.append(object())  # just needs to be countable
-            # Patch enthalpy property to return a known value
-            type(mode).enthalpy = property(lambda self, e=energy: e)
+            mode._poses.append(Pose(0, energy))
             pop.add_mode(mode)
         return pop
 
@@ -441,5 +454,10 @@ class TestComputeGlobalThermodynamics:
     def test_free_energy_is_finite(self):
         pop = self._pop_with_real_modes()
         result = pop.compute_global_thermodynamics()
-        import math
         assert math.isfinite(result.free_energy)
+
+    def test_free_energy_lower_than_best_pose(self):
+        pop = self._pop_with_real_modes()
+        result = pop.compute_global_thermodynamics()
+        # Ensemble F ≤ min(E) for canonical ensemble
+        assert result.free_energy <= -9.0

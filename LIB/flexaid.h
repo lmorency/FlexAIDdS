@@ -105,6 +105,7 @@ struct cf_str{  // Complementarity Function value structure
 	double con;    // constraint value
 	double wal;    // wall term
 	double sas;    // solvent accessibility surface
+	double elec;   // electrostatic (Coulomb) energy
 	double totsas; // overall sas of molecule
 	int   rclash; // flag that shows whether the residue is making steric clashes
 };
@@ -176,7 +177,7 @@ struct atom_struct{  // atom structure
 	float  coor[3];     // processing coordinates
 	float* coor_ref;    // reference coordinates
 	float  coor_ori[3]; // original coordinates
-	
+
 	int    number;  // atom number according to PDB file
 	float  radius;  // atomic radius
 	int    type;    // atom type
@@ -188,18 +189,25 @@ struct atom_struct{  // atom structure
 	float  dih;     // dihedral between atom, rec[0], rec[1] and rec[2]
 	float  shift;   // gives the angle shift from that of rec[3]'s atom
 	float  acs;     // accessible contact surface
+	float  charge;  // partial atomic charge (e.g. RESP from MOL2)
 	int    ncons;   // number of constraint for atoms
 	int    isbb;    // atom is a backbone atom
 	int    graph;   // id of graph atom belongs to (ligands only)
-	
+
 	optmap* par;    // if this atom defines a variable (translational/rotational or dihedrals)
 	constraint** cons; // points to constraint , if NULL no constraint to atom
 	OptRes* optres;  // pointer to optimised residue list
 	float** eigen;   // eigen vectors
-	
+
 	int    rec[4];  // atom number to be used when reconstructing the atom coordinates from internal coordinates
 	char   name[5]; // atom name
 	char   element[3]; // element name
+
+	// ── PTM / RESP charge support ──
+	float  resp_charge;   // RESP partial charge (0.0 = not assigned; uses type-based scoring)
+	int    has_resp;       // flag: 1 if resp_charge was explicitly set, 0 otherwise
+	int    is_ptm;         // flag: 1 if this atom was added by PTM attachment
+	int    ptm_parent;     // atom number of the attachment point (valid when is_ptm=1)
 };
 typedef struct atom_struct atom;
 
@@ -338,6 +346,9 @@ struct FA_Global_struct{
 	float solventterm;                   // solvent penalty term
 	float intrafraction;                 // intramolecular fraction interaction
 
+	int   use_elec;                      // enable Coulomb electrostatic scoring
+	float dielectric;                    // distance-dependent dielectric constant (default 4.0)
+
 	constraint* constraints;             // list of constraints
 	int num_constraints;                 // constraints counter
 	float interaction_factor;            // interaction constraint factor
@@ -397,6 +408,7 @@ struct FA_Global_struct{
 	int   skipped;                       // atoms skipped due to faliures in generating the polyhedron
 	int   clashed;                       // skipped individuals due to steric clashes
 	int   omit_buried;                   // skip buried atoms in the Vcontacts procedure
+	int   assume_folded;                 // assume receptor is fully folded — skip NATURaL co-translational/co-transcriptional chain growth
 	int   vindex;                        // use indexed boxes and atoms in Vcontacts index_proteins
 
 	//rot    rotamer[MAX_ROTLIBSIZE];       // array of rotamer library rotamers OR observed rotamer list

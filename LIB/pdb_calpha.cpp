@@ -9,6 +9,7 @@
 #include <iostream>
 #include <cstring>
 #include <cstdlib>
+#include <cerrno>
 #include <map>
 
 namespace tencom_pdb {
@@ -91,9 +92,15 @@ CalphaStructure read_pdb_calpha(const std::string& pdb_path) {
     std::vector<ResEntry> res_entries;
     std::map<std::string, int> res_key_map;
 
+    int line_num = 0;
     std::string line;
     while (std::getline(ifs, line)) {
+        ++line_num;
+
+        // PDB ATOM records require at least 54 columns (up to z-coordinate).
+        // This check covers all field accesses below (max: substr(46,8)).
         if (line.size() < 54) continue;
+
         // Accept both ATOM and HETATM (some modified nucleotides are HETATM)
         bool is_atom   = (line.substr(0, 6) == "ATOM  ");
         bool is_hetatm = (line.substr(0, 6) == "HETATM");
@@ -105,7 +112,7 @@ CalphaStructure read_pdb_calpha(const std::string& pdb_path) {
         atom_name[4] = '\0';
 
         // Alternate location indicator (column 17)
-        char altloc = (line.size() > 16) ? line[16] : ' ';
+        char altloc = line[16];
         if (altloc != ' ' && altloc != 'A') continue;
 
         // Residue name (columns 18-20)
@@ -130,16 +137,38 @@ CalphaStructure read_pdb_calpha(const std::string& pdb_path) {
         // Chain (column 22)
         char chain = line[21];
 
-        // Residue number (columns 23-26)
-        int res_number = std::atoi(line.substr(22, 4).c_str());
+        // Residue number (columns 23-26) — use strtol for error detection
+        std::string resnum_str = line.substr(22, 4);
+        char* endptr = nullptr;
+        errno = 0;
+        long res_number_l = std::strtol(resnum_str.c_str(), &endptr, 10);
+        if (errno != 0 || endptr == resnum_str.c_str()) {
+            std::cerr << "  Warning: invalid residue number at line " << line_num
+                      << " — skipping\n";
+            continue;
+        }
+        int res_number = static_cast<int>(res_number_l);
 
         // Insertion code (column 27)
         char ins = (line.size() > 26) ? line[26] : ' ';
 
-        // Coordinates (columns 31-54)
-        float x = static_cast<float>(std::atof(line.substr(30, 8).c_str()));
-        float y = static_cast<float>(std::atof(line.substr(38, 8).c_str()));
-        float z = static_cast<float>(std::atof(line.substr(46, 8).c_str()));
+        // Coordinates (columns 31-54) — use strtod for error detection
+        auto parse_coord = [&](int col, const char* label) -> float {
+            std::string s = line.substr(col, 8);
+            char* ep = nullptr;
+            errno = 0;
+            double val = std::strtod(s.c_str(), &ep);
+            if (errno != 0 || ep == s.c_str()) {
+                throw std::runtime_error(
+                    "Invalid " + std::string(label) + " coordinate at line "
+                    + std::to_string(line_num) + " in " + pdb_path
+                    + ": \"" + s + "\"");
+            }
+            return static_cast<float>(val);
+        };
+        float x = parse_coord(30, "x");
+        float y = parse_coord(38, "y");
+        float z = parse_coord(46, "z");
 
         // Unique key: chain + resnum + insertion
         std::string key = std::string(1, chain) + std::to_string(res_number) + ins;

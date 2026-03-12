@@ -18,6 +18,8 @@
 
 #include "statmech.h"
 #include "encom.h"
+#include "tencm.h"
+#include "ShannonThermoStack/ShannonThermoStack.h"
 
 namespace py = pybind11;
 using namespace statmech;
@@ -280,4 +282,134 @@ PYBIND11_MODULE(_core, m) {
             &encom::ENCoMEngine::free_energy_with_vibrations,
             py::arg("F_electronic"), py::arg("S_vib_kcal_mol_K"), py::arg("temperature_K"),
             "F_total = F_elec - T*S_vib  (kcal/mol)");
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // TorsionalENM: backbone flexibility via torsional normal modes
+    // ═══════════════════════════════════════════════════════════════════════
+
+    py::class_<tencm::NormalMode>(m, "TorsionalNormalMode",
+        "Torsional normal mode from TorsionalENM")
+        .def(py::init<>())
+        .def_readwrite("eigenvalue",  &tencm::NormalMode::eigenvalue,
+            "Stiffness in kcal/(mol*rad^2)")
+        .def_readwrite("eigenvector", &tencm::NormalMode::eigenvector,
+            "Displacement over torsion DOFs");
+
+    py::class_<tencm::Conformer>(m, "Conformer",
+        "Perturbed backbone conformation from TorsionalENM sampling")
+        .def_readonly("delta_theta",    &tencm::Conformer::delta_theta)
+        .def_readonly("strain_energy",  &tencm::Conformer::strain_energy);
+
+    py::class_<tencm::TorsionalENM>(m, "TorsionalENM",
+        "Torsional elastic network model for backbone flexibility")
+        .def(py::init<>())
+        .def("build_from_pdb",
+            [](tencm::TorsionalENM& self, const std::string& pdb_path,
+               float cutoff, float k0) {
+                // Parse PDB for Cα coordinates, build model
+                // Read PDB file, extract atoms/residues, then build
+                std::vector<std::array<float,3>> ca_coords;
+                std::ifstream ifs(pdb_path);
+                if (!ifs.is_open())
+                    throw std::runtime_error("Cannot open PDB: " + pdb_path);
+
+                std::string line;
+                while (std::getline(ifs, line)) {
+                    if (line.size() >= 54 && line.substr(0,4) == "ATOM") {
+                        std::string aname = line.substr(12, 4);
+                        // Strip spaces
+                        aname.erase(0, aname.find_first_not_of(' '));
+                        aname.erase(aname.find_last_not_of(' ') + 1);
+                        if (aname == "CA") {
+                            float x = std::stof(line.substr(30, 8));
+                            float y = std::stof(line.substr(38, 8));
+                            float z = std::stof(line.substr(46, 8));
+                            ca_coords.push_back({x, y, z});
+                        }
+                    }
+                }
+                if (ca_coords.size() < 4)
+                    throw std::runtime_error("Need at least 4 Cα atoms, found " +
+                                             std::to_string(ca_coords.size()));
+
+                // Build directly from Cα coordinates using internal methods
+                // We use a simplified path: create minimal atom/residue stubs
+                int n = static_cast<int>(ca_coords.size());
+                std::vector<atom> atoms(n);
+                std::vector<resid> residues(n + 1); // 1-based indexing
+
+                for (int i = 0; i < n; ++i) {
+                    atoms[i].coor[0] = ca_coords[i][0];
+                    atoms[i].coor[1] = ca_coords[i][1];
+                    atoms[i].coor[2] = ca_coords[i][2];
+                    strncpy(atoms[i].name, " CA ", 5);
+                    atoms[i].number = i + 1;
+
+                    residues[i+1].fatm = (int*)malloc(sizeof(int));
+                    residues[i+1].latm = (int*)malloc(sizeof(int));
+                    residues[i+1].fatm[0] = i;
+                    residues[i+1].latm[0] = i;
+                    strncpy(residues[i+1].name, "ALA", 4);
+                }
+
+                self.build(atoms.data(), residues.data() + 1, n, cutoff, k0);
+
+                // Clean up malloc'd fatm/latm
+                for (int i = 0; i < n; ++i) {
+                    free(residues[i+1].fatm);
+                    free(residues[i+1].latm);
+                }
+            },
+            py::arg("pdb_path"),
+            py::arg("cutoff") = 9.0f,
+            py::arg("k0") = 1.0f,
+            "Build torsional ENM from a PDB file (reads Cα atoms)")
+        .def("is_built", &tencm::TorsionalENM::is_built)
+        .def("n_residues", &tencm::TorsionalENM::n_residues)
+        .def("n_bonds", &tencm::TorsionalENM::n_bonds)
+        .def("modes", &tencm::TorsionalENM::modes,
+            py::return_value_policy::reference_internal)
+        .def("bfactors", &tencm::TorsionalENM::bfactors,
+            py::arg("temperature") = 300.0f,
+            "Predicted Cα B-factors at given temperature (Å²)")
+        .def("__repr__", [](const tencm::TorsionalENM& t) {
+            return "<TorsionalENM n_res=" + std::to_string(t.n_residues()) +
+                   " n_bonds=" + std::to_string(t.n_bonds()) +
+                   " built=" + (t.is_built() ? "true" : "false") + ">";
+        });
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // ShannonThermoStack: combined entropy pipeline
+    // ═══════════════════════════════════════════════════════════════════════
+
+    py::class_<shannon_thermo::FullThermoResult>(m, "FullThermoResult",
+        "Combined thermodynamic result from ShannonThermoStack")
+        .def_readonly("deltaG",              &shannon_thermo::FullThermoResult::deltaG)
+        .def_readonly("shannonEntropy",      &shannon_thermo::FullThermoResult::shannonEntropy)
+        .def_readonly("torsionalVibEntropy", &shannon_thermo::FullThermoResult::torsionalVibEntropy)
+        .def_readonly("entropyContribution", &shannon_thermo::FullThermoResult::entropyContribution)
+        .def_readonly("report",              &shannon_thermo::FullThermoResult::report)
+        .def("__repr__", [](const shannon_thermo::FullThermoResult& r) {
+            char buf[256];
+            snprintf(buf, sizeof(buf),
+                "<FullThermoResult dG=%.3f shannon=%.3f vib=%.6f>",
+                r.deltaG, r.shannonEntropy, r.torsionalVibEntropy);
+            return std::string(buf);
+        });
+
+    m.def("compute_shannon_entropy",
+        &shannon_thermo::compute_shannon_entropy,
+        py::arg("values"), py::arg("num_bins") = 20,
+        "Compute Shannon entropy of continuous values (bits)");
+
+    m.def("compute_torsional_vibrational_entropy",
+        &shannon_thermo::compute_torsional_vibrational_entropy,
+        py::arg("modes"), py::arg("temperature_K") = 298.15,
+        "Compute torsional vibrational entropy from normal modes");
+
+    m.def("run_shannon_thermo_stack",
+        &shannon_thermo::run_shannon_thermo_stack,
+        py::arg("stat_engine"), py::arg("tencm_model"),
+        py::arg("base_deltaG"), py::arg("temperature_K") = 298.15,
+        "Run full ShannonThermoStack pipeline");
 }
