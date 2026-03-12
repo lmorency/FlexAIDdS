@@ -1,35 +1,85 @@
-# FlexAIDdS
+<div align="center">
+
+# FlexAID∆S
+
+### Entropy-Driven Molecular Docking Engine
+
+*Genetic algorithms meet statistical mechanics for real-world drug discovery*
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![C++ Standard](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](https://en.cppreference.com/w/cpp/20)
+[![Python](https://img.shields.io/badge/python-%E2%89%A5%203.9-3776AB.svg)](https://www.python.org/)
 [![Build](https://img.shields.io/badge/build-passing-brightgreen.svg)](#)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey.svg)](#)
 
-**FlexAID with Delta-S Entropy** — an entropy-driven molecular docking engine combining genetic algorithms with statistical mechanics thermodynamics. Targets real-world psychopharmacology and drug discovery applications.
+</div>
 
-## Features
+---
 
-- **Genetic algorithm docking** with configurable population, crossover, mutation, and selection
+> **Why FlexAID∆S?** Most docking engines optimize enthalpy alone. FlexAID∆S adds
+> **conformational entropy** via a full statistical mechanics framework — recovering
+> the correct binding mode **92% of the time** when enthalpy-only scoring fails.
+> On ITC-187 calorimetry benchmarks: Pearson *r* = **0.93**, RMSE = **1.4 kcal/mol**.
+
+---
+
+## ✨ Features
+
+#### 🧬 Docking Engine
+- **Genetic algorithm** with configurable population, crossover, mutation, and selection
 - **Voronoi contact function (CF)** for shape complementarity scoring
+- **Dead-end elimination (DEE)** torsion pruning reduces ligand search space
+- **Zero-copy batch scoring** via `VoronoiCFBatch` with OpenMP parallelism
+
+#### 🌡️ Thermodynamics
 - **Statistical mechanics engine** — partition function, free energy, heat capacity, conformational entropy
-- **Torsional ENCoM (tENCoM)** backbone flexibility without full rotamer rebuilds + standalone vibrational entropy differential tool
 - **Shannon entropy + torsional vibrational entropy stack** for thermodynamic scoring
+- **Torsional ENCoM (tENCoM)** backbone flexibility without full rotamer rebuilds
+
+#### 🔬 Molecular Flexibility
 - **Full flexibility by default** — ligand torsions, ring conformers, chirality, intramolecular scoring, entropy at 300 K
-- **Single JSON config** — one file overrides all parameters; `--rigid` flag for fast screening
 - **Ligand ring flexibility** — non-aromatic ring conformer sampling and sugar pucker
 - **Chiral center sampling** — explicit R/S stereocenter discrimination in the GA
 - **Multi-format ligand input** — MOL2, SDF/MOL (V2000), and legacy INP formats
-- **Automatic cavity detection** — SURFNET gap-sphere algorithm with Metal GPU acceleration
-- **NATURaL co-translational assembly** — co-translational/co-transcriptional docking with ribosome-speed elongation (Zhao 2011) and Sec translocon TM insertion (Hessa 2007)
-- **FastOPTICS + Density Peak clustering** of docking poses
+
+#### ⚡ Performance & Hardware
 - **Hardware acceleration** — CUDA, Metal (macOS), AVX-512, AVX2, OpenMP, Eigen3
 - **Ultra-fast HPC binaries** — LTO + `-march=native` for both FlexAIDdS and tENCoM
-- **Python package** (`flexaidds`) — result I/O, thermodynamics, ENCoM, docking API, CLI inspector, PyMOL visualization plugin
-- **Dead-end elimination (DEE)** — torsion pruning reduces ligand conformational search space
-- **Zero-copy batch scoring** — `VoronoiCFBatch` with `std::span` for OpenMP-parallel GA evaluation
-- **FreeNRG integration** — unified free energy framework bridging FlexAID∆S and NRGRank
+- **Automatic cavity detection** — SURFNET gap-sphere algorithm with Metal GPU
 
-## Repository Structure
+#### 🧪 Analysis & Integration
+- **Python package** (`flexaidds`) — result I/O, thermodynamics, ENCoM, docking API, CLI inspector, PyMOL plugin
+- **NATURaL co-translational assembly** — ribosome-speed elongation and Sec translocon TM insertion
+- **FastOPTICS + Density Peak clustering** of docking poses
+- **FreeNRG integration** — unified free energy framework bridging FlexAID∆S and NRGRank
+- **Single JSON config** — one file overrides all parameters; `--rigid` flag for fast screening
+
+---
+
+## 🏗️ Architecture Overview
+
+```
+┌─────────────┐    ┌──────────────┐    ┌───────────────────┐    ┌─────────────────┐
+│   Input      │    │   Genetic    │    │     Scoring       │    │ Thermodynamics  │
+│              │───▶│  Algorithm   │───▶│                   │───▶│                 │
+│ PDB + MOL2   │    │  (gaboom)    │    │ Voronoi CF + DEE  │    │ StatMech + S    │
+└─────────────┘    └──────┬───────┘    └───────────────────┘    └────────┬────────┘
+                          │                                              │
+                          ▼                                              ▼
+                   ┌──────────────┐                              ┌─────────────────┐
+                   │  Flexibility │                              │  Binding Modes  │
+                   │              │                              │                 │
+                   │ Torsions     │                              │ Clustering +    │
+                   │ Rings        │                              │ ΔG, ΔH, −TΔS   │
+                   │ Chirality    │                              │ Cv, Boltzmann   │
+                   │ tENCoM       │                              └─────────────────┘
+                   └──────────────┘
+```
+
+---
+
+<details>
+<summary><strong>📁 Repository Structure</strong> (click to expand)</summary>
 
 ```
 FlexAIDdS/
@@ -57,6 +107,7 @@ FlexAIDdS/
 │   ├── flexaidds/           # Python package (API, models, CLI)
 │   │   ├── docking.py       # High-level docking API
 │   │   ├── encom.py         # ENCoM vibrational entropy interface
+│   │   ├── tencm.py         # TorsionalENM + ShannonThermoStack wrappers
 │   │   ├── io.py            # Input/output utilities
 │   │   ├── models.py        # Data models (PoseResult, BindingModeResult, DockingResult)
 │   │   ├── results.py       # Result file parsing & loading
@@ -74,40 +125,39 @@ FlexAIDdS/
 └── BIN/                    # Binary output directory
 ```
 
-## Build
+</details>
+
+---
+
+## 🛠️ Build
+
+> **Quick start** — three commands to build everything:
+> ```bash
+> git clone https://github.com/lmorency/FlexAIDdS.git && cd FlexAIDdS
+> mkdir build && cd build
+> cmake .. -DCMAKE_BUILD_TYPE=Release && cmake --build . -j $(nproc)
+> ```
 
 ### Requirements
 
 - **Required**: C++20 compiler (GCC >= 10, Clang >= 10, MSVC), CMake >= 3.18
 - **Optional**: Eigen3 (`libeigen3-dev`), OpenMP, CUDA Toolkit, Metal framework (macOS), pybind11
 
-### Build Commands
+### Output Binaries
 
-Both ultra-fast HPC binaries (`FlexAIDdS` + `tENCoM`) are built by default:
-
-```bash
-git clone https://github.com/lmorency/FlexAIDdS.git
-cd FlexAIDdS
-mkdir build && cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release
-cmake --build . -j $(nproc)
-```
-
-This produces three binaries:
-- **`FlexAID`** — standard docking executable
-- **`FlexAIDdS`** — ultra-fast docking (LTO + `-march=native` + stripped)
-- **`tENCoM`** — ultra-fast vibrational entropy tool (same optimizations)
+| Binary | Description |
+|:-------|:------------|
+| **`FlexAID`** | Standard docking executable |
+| **`FlexAIDdS`** | Ultra-fast docking (LTO + `-march=native` + stripped) |
+| **`tENCoM`** | Ultra-fast vibrational entropy tool (same optimizations) |
 
 ### HPC Deployment
-
-For cluster / HPC nodes, build once on the target architecture:
 
 ```bash
 cmake .. -DCMAKE_BUILD_TYPE=Release \
          -DFLEXAIDS_USE_AVX512=ON \
          -DFLEXAIDS_USE_OPENMP=ON
 cmake --build . -j $(nproc)
-# Produces: FlexAIDdS and tENCoM with LTO + AVX-512 + OpenMP
 ```
 
 ### With Tests
@@ -125,7 +175,8 @@ cmake .. -DBUILD_PYTHON_BINDINGS=ON -DCMAKE_BUILD_TYPE=Release
 cmake --build . -j $(nproc)
 ```
 
-### CMake Options
+<details>
+<summary><strong>CMake Options Reference</strong></summary>
 
 | Option                    | Default | Description                                          |
 |:--------------------------|:--------|:-----------------------------------------------------|
@@ -141,9 +192,13 @@ cmake --build . -j $(nproc)
 | `BUILD_TESTING`           | OFF     | GoogleTest unit tests                                |
 | `ENABLE_TENCOM_BENCHMARK` | OFF     | Build standalone TeNCoM benchmark binary             |
 
-## Usage
+</details>
 
-### New Mode: JSON Config (Recommended)
+---
+
+## 🚀 Usage
+
+### JSON Config (Recommended)
 
 Full flexibility is enabled by default (T=300K, ligand torsions, intramolecular scoring, Voronoi contacts):
 
@@ -183,9 +238,8 @@ All parameters have built-in defaults in a single JSON schema. Override only wha
 }
 ```
 
-See [JSON Config Reference](#json-config-reference) for all keys and defaults.
-
-### Legacy Mode
+<details>
+<summary><strong>📜 Legacy Mode</strong></summary>
 
 Backward-compatible with existing `.inp` files:
 
@@ -210,15 +264,18 @@ COMPLF VCT
 TEMPER 300
 ```
 
-See [Configuration Reference](#configuration-reference) for all legacy parameters and their defaults.
+See [Configuration Reference](#-configuration-reference) for all legacy parameters and their defaults.
 
-### Vibrational Entropy (tENCoM)
+</details>
+
+### 🔧 Vibrational Entropy (tENCoM)
 
 ```bash
 tENCoM reference.pdb target1.pdb [target2.pdb ...] [-T temp] [-r cutoff] [-k k0] [-o prefix]
 ```
 
-### Co-Translational / Co-Transcriptional Docking (NATURaL)
+<details>
+<summary><strong>🧬 Co-Translational / Co-Transcriptional Docking (NATURaL)</strong></summary>
 
 NATURaL mode activates **automatically** when the system involves nucleotide ligands or nucleic acid receptors — no special flags needed. Simply dock as usual:
 
@@ -242,13 +299,14 @@ Supported organisms: *E. coli* K-12 and Human HEK293 (codon-specific tRNA abunda
 To **skip** co-translational/co-transcriptional chain growth and treat the receptor as fully folded, use the `--folded` flag:
 
 ```bash
-# Nucleotide system, but dock against the fully folded receptor
 ./FlexAIDdS ribosome.pdb atp_analog.mol2 --folded
 ```
 
 Or via JSON config: `"advanced": { "assume_folded": true }`
 
-### Python API (Phase 2)
+</details>
+
+### 🐍 Python API
 
 ```python
 import flexaidds
@@ -279,9 +337,7 @@ encom = ENCoMEngine()
 delta_s = encom.compute_delta_s('apo.pdb', 'holo.pdb')
 ```
 
-### Vibrational Entropy Integration (Phase 3)
-
-Phase 3 integrates ENCoM vibrational entropy directly into the docking free energy:
+### 🌡️ Vibrational Entropy Integration (Phase 3)
 
 ```python
 from flexaidds import TorsionalENM, run_shannon_thermo_stack
@@ -309,9 +365,7 @@ free energies when the TorsionalENM model is built during docking.
 
 **Available modules**: `docking`, `encom`, `tencm`, `io`, `models`, `results`, `thermodynamics`, `visualization`
 
-### Python CLI (Result Inspector)
-
-Inspect docking results from the command line without writing Python code:
+### 💻 Python CLI (Result Inspector)
 
 ```bash
 # Human-readable summary table
@@ -329,9 +383,10 @@ python -m flexaidds /path/to/results/ --csv results.csv
 
 Output includes mode ID, rank, number of poses, free energy, enthalpy, entropy, and best CF score for each binding mode.
 
-### PyMOL Plugin
+<details>
+<summary><strong>🔭 PyMOL Plugin</strong></summary>
 
-A full visualization plugin for PyMOL with GUI panel and 8 registered commands:
+A full visualization plugin for PyMOL with GUI panel and 8 registered commands.
 
 **Installation**:
 1. PyMOL > Plugin Manager > Install New Plugin
@@ -344,7 +399,7 @@ A full visualization plugin for PyMOL with GUI panel and 8 registered commands:
 |:--------|:------------|
 | `flexaids_load <dir> [temp]` | Load docking results from output directory |
 | `flexaids_show_ensemble <mode>` | Display all poses in a binding mode |
-| `flexaids_color_boltzmann <mode>` | Color poses by Boltzmann weight (blue=low, red=high) |
+| `flexaids_color_boltzmann <mode>` | Color poses by Boltzmann weight (blue→red) |
 | `flexaids_thermo <mode>` | Print thermodynamic properties (G, H, S, Cv) |
 | `flexaids_load_results <dir>` | Load results via flexaidds API adapter |
 | `flexaids_show_mode <mode>` | Show a single binding mode cluster |
@@ -353,7 +408,11 @@ A full visualization plugin for PyMOL with GUI panel and 8 registered commands:
 
 The plugin requires the `flexaidds` Python package (`pip install -e python/`).
 
-## Testing
+</details>
+
+---
+
+## 🧪 Testing
 
 ### C++ Tests (GoogleTest)
 
@@ -365,6 +424,9 @@ ctest --test-dir build
 Key test files in `tests/`:
 - `test_statmech.cpp` — StatMechEngine correctness
 - `test_binding_mode_statmech.cpp` — BindingMode / StatMechEngine integration
+- `test_binding_mode_vibrational.cpp` — BindingMode ENCoM vibrational correction
+- `test_tencom_diff.cpp` — TorsionalENM differential engine
+- `test_hardware_dispatch.cpp` — ShannonThermoStack hardware dispatch
 - `test_ga_validation.cpp` — Genetic algorithm validation
 
 ### Python Tests (pytest)
@@ -380,12 +442,15 @@ Key test files in `python/tests/`:
 - `test_results_loader_models.py` — Data model tests (pure Python)
 - `test_statmech.py` — StatMechEngine accuracy (requires C++ bindings)
 - `test_statmech_smoke.py` — Smoke test for CI
+- `test_tencm.py` — TorsionalENM and ShannonThermoStack (pure Python)
+- `test_docking.py` — Docking API and BindingMode thermodynamics
+- `test_encom.py` — ENCoM vibrational entropy
 
 Tests marked with `@requires_core` need the compiled C++ `_core` extension and skip gracefully if bindings are not built.
 
 ---
 
-## Scientific Background
+## 🔬 Scientific Background
 
 ### Scoring: Contact Function (CF) vs NATURaL 2-Term Potential
 
@@ -425,12 +490,12 @@ C_v = k_B·β²·(⟨E²⟩ − ⟨E⟩²)       (heat capacity)
 
 ---
 
-## Benchmarks
+## 📊 Benchmarks
 
 ### ITC-187: Calorimetry Gold Standard
 
 | Metric | FlexAID∆S | Vina | Glide |
-|--------|-----------|------|-------|
+|:-------|:---------:|:----:|:-----:|
 | **∆*G* Pearson *r*** | **0.93** | 0.64 | 0.69 |
 | **RMSE (kcal/mol)** | **1.4** | 3.1 | 2.9 |
 | **Ranking Power** | **78%** | 58% | 64% |
@@ -438,29 +503,31 @@ C_v = k_B·β²·(⟨E²⟩ − ⟨E⟩²)       (heat capacity)
 ### CASF-2016: Diverse Drug Targets
 
 | Power | FlexAID∆S | Vina | Glide | rDock |
-|-------|-----------|------|-------|-------|
+|:------|:---------:|:----:|:-----:|:-----:|
 | **Scoring** | **0.88** | 0.73 | 0.78 | 0.71 |
 | **Docking** | **81%** | 76% | 79% | 73% |
 | **Screening (EF 1%)** | **15.3** | 11.2 | 13.1 | 10.8 |
 
 ### Psychopharmacology (CNS Receptors)
 
-**23 neurological targets** (GPCR, ion channels, transporters):
-- **Pose rescue rate**: 92% (entropy recovers correct mode when enthalpy fails)
+> **Pose rescue**: On **23 neurological targets** (GPCR, ion channels, transporters),
+> entropy recovered the correct binding mode **92% of the time** when enthalpy-only
+> scoring placed the ligand in the wrong pocket.
+
 - **Average entropic penalty**: +3.02 kcal/mol
 - **Example** (mu-opioid + fentanyl):
-  - Enthalpy-only: Wrong pocket (−14.2 kcal/mol, RMSD 8.3 A)
-  - With entropy: **Correct** (−10.8 kcal/mol, RMSD 1.2 A, exp: −11.1)
+  - Enthalpy-only: Wrong pocket (−14.2 kcal/mol, RMSD 8.3 Å)
+  - With entropy: **Correct** (−10.8 kcal/mol, RMSD 1.2 Å, exp: −11.1)
 
 ---
 
-## Configuration Reference
+## 📋 Configuration Reference
 
-All parameters have built-in defaults. Override files use a simple format: one parameter per line, code followed by value.
+<details>
+<summary><strong>Docking Parameters (config.inp)</strong></summary>
 
-### Docking Parameters (config)
-
-#### Input Files
+<details>
+<summary>Input Files</summary>
 
 | Code     | Description                  | Default              |
 |:---------|:-----------------------------|:---------------------|
@@ -471,7 +538,10 @@ All parameters have built-in defaults. Override files use a simple format: one p
 | `CONSTR` | Distance constraint file     | None                 |
 | `RMSDST` | RMSD reference structure     | None                 |
 
-#### Scoring & Complementarity
+</details>
+
+<details>
+<summary>Scoring & Complementarity</summary>
 
 | Code     | Description                         | Default | Options         |
 |:---------|:------------------------------------|:--------|:----------------|
@@ -482,7 +552,10 @@ All parameters have built-in defaults. Override files use a simple format: one p
 | `USEACS` | Use accessible surface              | Off     |                 |
 | `ACSWEI` | ACS weighting factor                | 1.0     |                 |
 
-#### Binding Site
+</details>
+
+<details>
+<summary>Binding Site</summary>
 
 | Code     | Description                         | Default | Options                              |
 |:---------|:------------------------------------|:--------|:-------------------------------------|
@@ -492,17 +565,23 @@ All parameters have built-in defaults. Override files use a simple format: one p
 - `LOCCLF file.pdb` — use pre-computed sphere file
 - `LOCCDT [cleft_id] [min_r] [max_r]` — automatic cavity detection (SURFNET)
 
-#### Optimization Steps
+</details>
+
+<details>
+<summary>Optimization Steps</summary>
 
 | Code     | Description                         | Default |
 |:---------|:------------------------------------|:--------|
-| `VARDIS` | Translation step (A)                | 0.25    |
+| `VARDIS` | Translation step (Å)                | 0.25    |
 | `VARANG` | Angle step (deg)                    | 5.0     |
 | `VARDIH` | Dihedral step (deg)                 | 5.0     |
 | `VARFLX` | Flexible sidechain step (deg)       | 10.0    |
 | `SPACER` | Grid point spacing                  | 0.375   |
 
-#### Flexibility
+</details>
+
+<details>
+<summary>Flexibility</summary>
 
 | Code     | Description                         | Default |
 |:---------|:------------------------------------|:--------|
@@ -512,15 +591,21 @@ All parameters have built-in defaults. Override files use a simple format: one p
 | `NOINTR` | Disable intramolecular scoring      | Off (intramolecular enabled) |
 | `INTRAF` | Intramolecular energy fraction      | 1.0     |
 
-#### Thermodynamics & Clustering
+</details>
+
+<details>
+<summary>Thermodynamics & Clustering</summary>
 
 | Code     | Description                         | Default | Options            |
 |:---------|:------------------------------------|:--------|:-------------------|
 | `TEMPER` | Temperature (K, 0 = entropy off)    | 0       |                    |
 | `CLUSTA` | Clustering algorithm                | `CF`    | `CF`, `FO`, `DP`   |
-| `CLRMSD` | Clustering RMSD threshold (A)       | 2.0     |                    |
+| `CLRMSD` | Clustering RMSD threshold (Å)       | 2.0     |                    |
 
-#### Output
+</details>
+
+<details>
+<summary>Output</summary>
 
 | Code     | Description                         | Default |
 |:---------|:------------------------------------|:--------|
@@ -531,9 +616,15 @@ All parameters have built-in defaults. Override files use a simple format: one p
 | `EXCHET` | Exclude HET groups from receptor    | Off     |
 | `INCHOH` | Include water molecules             | Off (waters removed) |
 
-### GA Parameters (ga_overrides)
+</details>
 
-#### Population & Generations
+</details>
+
+<details>
+<summary><strong>GA Parameters (ga_overrides)</strong></summary>
+
+<details>
+<summary>Population & Generations</summary>
 
 | Code       | Description                                                      | Default  |
 |:-----------|:-----------------------------------------------------------------|:---------|
@@ -542,7 +633,10 @@ All parameters have built-in defaults. Override files use a simple format: one p
 | `POPINIMT` | Population initialization method                                 | `RANDOM` |
 | `STRTSEED` | Random seed (0 = time-based)                                     | 0        |
 
-#### Genetic Operators
+</details>
+
+<details>
+<summary>Genetic Operators</summary>
 
 | Code       | Description                                                      | Default  |
 |:-----------|:-----------------------------------------------------------------|:---------|
@@ -551,7 +645,10 @@ All parameters have built-in defaults. Override files use a simple format: one p
 | `ADAPTVGA` | Enable adaptive GA (auto-adjusts rates)                          | 0 (off)  |
 | `ADAPTKCO` | Adaptive response parameters k1-k4                               | 0.0 0.0 0.0 0.0 |
 
-#### Selection & Reproduction
+</details>
+
+<details>
+<summary>Selection & Reproduction</summary>
 
 | Code       | Description                                                      | Default  |
 |:-----------|:-----------------------------------------------------------------|:---------|
@@ -562,7 +659,10 @@ All parameters have built-in defaults. Override files use a simple format: one p
 | `SHAREPEK` | Expected number of fitness peaks                                 | float    |
 | `SHARESCL` | Fitness sharing scale factor                                     | float    |
 
-#### Output & Debugging
+</details>
+
+<details>
+<summary>Output & Debugging</summary>
 
 | Code       | Description                                                      | Default  |
 |:-----------|:-----------------------------------------------------------------|:---------|
@@ -570,9 +670,12 @@ All parameters have built-in defaults. Override files use a simple format: one p
 | `PRINTINT` | Print generation progress                                        | 1        |
 | `OUTGENER` | Output results every generation                                  | Off      |
 
----
+</details>
 
-## JSON Config Reference
+</details>
+
+<details>
+<summary><strong>JSON Config Reference</strong></summary>
 
 All keys are optional — defaults enable full flexibility at 300 K. See `LIB/config_defaults.h` for the source of truth.
 
@@ -581,7 +684,7 @@ All keys are optional — defaults enable full flexibility at 300 K. See `LIB/co
 | `scoring` | `function` | `"VCT"` | Scoring function (`VCT` = Voronoi, `SPH` = sphere) |
 | `scoring` | `self_consistency` | `"MAX"` | A→B / B→A contact handling |
 | `scoring` | `solvent_penalty` | `0.0` | Solvent exposure penalty |
-| `optimization` | `translation_step` | `0.25` | Translation delta (A) |
+| `optimization` | `translation_step` | `0.25` | Translation delta (Å) |
 | `optimization` | `angle_step` | `5.0` | Bond angle delta (deg) |
 | `optimization` | `dihedral_step` | `5.0` | Dihedral delta (deg) |
 | `optimization` | `flexible_step` | `10.0` | Sidechain flex delta (deg) |
@@ -608,7 +711,6 @@ All keys are optional — defaults enable full flexibility at 300 K. See `LIB/co
 | `output` | `htp_mode` | `false` | High-throughput (minimal output files) |
 | `protein` | `remove_water` | `true` | Remove HOH molecules |
 | `protein` | `omit_buried` | `false` | Skip buried atoms in Vcontacts |
-
 | `advanced` | `vcontacts_index` | `false` | Enable Voronoi contact index caching |
 | `advanced` | `supernode` | `false` | Supernode mode for normal mode analysis |
 | `advanced` | `force_interaction` | `false` | Enable forced interaction penalty |
@@ -618,93 +720,101 @@ All keys are optional — defaults enable full flexibility at 300 K. See `LIB/co
 The `--rigid` flag overrides flexibility to all-off and temperature to 0.
 The `--folded` flag sets `advanced.assume_folded = true`, treating the receptor as fully folded and skipping NATURaL co-translational/co-transcriptional chain growth even when nucleotide ligands or nucleic acid receptors are detected.
 
+</details>
+
 ---
 
-## Modules
+## 🧩 Modules
 
-### Torsional ENCoM (TENCM)
+<details>
+<summary><strong>Torsional ENCoM (tENCoM)</strong> — backbone flexibility via torsional normal modes</summary>
 
-Implements the torsional variant of the **Elastic Network Contact Model** (ENCoM; Frappier et al. 2015) for protein backbone flexibility, using torsional degrees of freedom from the ENM formalism of Delarue & Sanejouand (2002) and Yang, Song & Cui (2009). Builds a spring network over C-alpha contacts within a cutoff radius, computes torsional normal modes via Jacobi diagonalisation, and samples Boltzmann-weighted backbone perturbations during the GA without rebuilding the rotamer library every generation.
+Implements the torsional variant of the **Elastic Network Contact Model** (ENCoM; Frappier et al. 2015) for protein backbone flexibility, using torsional degrees of freedom from the ENM formalism of Delarue & Sanejouand (2002) and Yang, Song & Cui (2009). Builds a spring network over Cα contacts within a cutoff radius, computes torsional normal modes via Jacobi diagonalisation, and samples Boltzmann-weighted backbone perturbations during the GA without rebuilding the rotamer library every generation.
 
-Supports both protein (C-alpha) and nucleic acid (C4' backbone) chains for RNA/DNA flexibility.
+Supports both protein (Cα) and nucleic acid (C4' backbone) chains for RNA/DNA flexibility.
 
-### Statistical Mechanics Engine
+</details>
+
+<details>
+<summary><strong>Statistical Mechanics Engine</strong> — partition function, free energy, entropy, heat capacity</summary>
 
 Full thermodynamic analysis of the GA conformational ensemble:
 - Partition function Z(T) with log-sum-exp numerical stability
-- Helmholtz free energy F = -kT ln Z
+- Helmholtz free energy F = −kT ln Z
 - Average energy, variance, and heat capacity
-- Conformational entropy S = (E - F) / T
+- Conformational entropy S = (E − F) / T
 - Boltzmann-weighted state probabilities
 - Parallel tempering (replica exchange) swap acceptance
 - WHAM for free energy profiles
 - Thermodynamic integration via trapezoidal rule
 - Fast Boltzmann lookup table for inner-loop evaluation
 
-### ShannonThermoStack
+</details>
 
-Combines Shannon configurational entropy (over GA ensemble binned into 256 mega-clusters) with torsional ENCoM vibrational entropy. Uses a precomputed 256x256 energy matrix for O(1) pairwise entropy lookup. Hardware-accelerated histogram computation via Metal (Apple Silicon), CUDA, or OpenMP/Eigen.
+<details>
+<summary><strong>ShannonThermoStack</strong> — Shannon + torsional vibrational entropy pipeline</summary>
 
-### LigandRingFlex
+Combines Shannon configurational entropy (over GA ensemble binned into 256 mega-clusters) with torsional ENCoM vibrational entropy. Uses a precomputed 256×256 energy matrix for O(1) pairwise entropy lookup. Hardware-accelerated histogram computation via Metal (Apple Silicon), CUDA, or OpenMP/Eigen.
+
+</details>
+
+<details>
+<summary><strong>LigandRingFlex</strong> — non-aromatic ring and sugar pucker sampling</summary>
 
 Unified ring flexibility for the GA: non-aromatic ring conformer sampling (chair/boat/twist for 6-membered, envelope/twist for 5-membered) and furanose sugar pucker phase sampling. Integrates with GA initialisation, mutation, crossover, and fitness evaluation.
 
-### ChiralCenter
+</details>
 
-Explicit R/S stereocenter sampling. Detects sp3 tetrahedral chiral centers in the ligand, encodes each as a single GA bit (R=0, S=1), and applies an energy penalty for incorrect stereochemistry (~15-25 kcal/mol per wrong center). Low mutation rate (1-2%) reflects the high inversion barrier.
+<details>
+<summary><strong>ChiralCenter</strong> — R/S stereocenter discrimination in the GA</summary>
 
-### CavityDetect (SURFNET)
+Explicit R/S stereocenter sampling. Detects sp3 tetrahedral chiral centers in the ligand, encodes each as a single GA bit (R=0, S=1), and applies an energy penalty for incorrect stereochemistry (~15–25 kcal/mol per wrong center). Low mutation rate (1–2%) reflects the high inversion barrier.
+
+</details>
+
+<details>
+<summary><strong>CavityDetect (SURFNET)</strong> — automatic binding site detection</summary>
 
 Automatic binding site detection using the SURFNET gap-sphere algorithm. Places spheres between atom pairs within a distance range, filters by burial, and clusters surviving spheres into cavities ranked by volume. Metal GPU acceleration on Apple Silicon via Objective-C++ bridge (`CavityDetectMetalBridge.mm`), with CPU fallback.
 
-### CleftDetector
+</details>
 
-Binding cleft and pocket identification for receptor surfaces. Identifies concave regions suitable for ligand binding and provides center/radius definitions for the GA search space (`RNGOPT LOCCDT` mode).
-
-### SdfReader
-
-Multi-format ligand input supporting SDF (Structure Data File) and MOL V2000 formats. Parses atom blocks, bond blocks, and property fields. Complements the existing MOL2 and legacy INP readers for broader chemical database compatibility.
-
-### FastOPTICS (FOPTICS)
-
-Density-based hierarchical clustering of docking poses using the FastOPTICS algorithm. Alternative to CF (centroid-first) clustering — selected via `clustering_algorithm: "FO"` in JSON config or `CLUSTA FO` in legacy mode.
-
-### NATURaL (co-translational assembly)
+<details>
+<summary><strong>NATURaL</strong> — co-translational / co-transcriptional assembly</summary>
 
 **N**ative **A**ssembly of co-**T**ranscriptionally/co-**T**ranslationally **U**nified **R**eceptor-**L**igand module. Auto-detects nucleotide ligands or nucleic acid receptors and activates co-translational DualAssembly mode:
 
-- **RibosomeElongation**: Zhao 2011 master equation for codon-dependent ribosome speed (E. coli K-12 and Human HEK293). Identifies pause sites as co-translational folding windows. Also supports nucleotide-by-nucleotide RNA polymerase synthesis.
-- **TransloconInsertion**: Sec61 translocon lateral gating model (Hessa 2007). Computes per-window delta-G of TM helix insertion using the Hessa scale with Wimley-White position-weighted helix-dipole correction. Hardware-accelerated via AVX-512/AVX2/Eigen.
+- **RibosomeElongation**: Zhao 2011 master equation for codon-dependent ribosome speed (*E. coli* K-12 and Human HEK293). Identifies pause sites as co-translational folding windows. Also supports nucleotide-by-nucleotide RNA polymerase synthesis.
+- **TransloconInsertion**: Sec61 translocon lateral gating model (Hessa 2007). Computes per-window ΔG of TM helix insertion using the Hessa scale with Wimley-White position-weighted helix-dipole correction. Hardware-accelerated via AVX-512/AVX2/Eigen.
 - **DualAssemblyEngine**: Grows the receptor chain residue-by-residue at ribosome speed while computing incremental CF and Shannon entropy at each growth step to capture co-translational stereochemical selection.
 
-### VoronoiCFBatch
+</details>
 
-Zero-copy `std::span`-based batch evaluation interface for the GA inner loop. Scores entire chromosome populations in parallel via OpenMP without redundant atom buffer copies. Includes a built-in `benchmark()` method for wall-clock comparison of serial vs parallel throughput.
+<details>
+<summary><strong>Additional modules</strong> — CleftDetector, SdfReader, FastOPTICS, VoronoiCFBatch, DEE, GPU</summary>
 
-### Dead-End Elimination (DEE)
+**CleftDetector** — Binding cleft and pocket identification for receptor surfaces. Identifies concave regions suitable for ligand binding and provides center/radius definitions for the GA search space (`RNGOPT LOCCDT` mode).
 
-Torsion pruning for ligand flexibility. The DEE tree (`DEELig_Node`) eliminates rotamer combinations that provably cannot be part of the global minimum, reducing the conformational search space before GA evaluation. Controlled via `flexibility.ligand_torsions` (enabled by default) with a clash threshold of `dee_clash: 0.5`.
+**SdfReader** — Multi-format ligand input supporting SDF (Structure Data File) and MOL V2000 formats. Parses atom blocks, bond blocks, and property fields. Complements the existing MOL2 and legacy INP readers.
 
-### Scoring Functions: VCT vs SPH
+**FastOPTICS (FOPTICS)** — Density-based hierarchical clustering of docking poses. Alternative to CF clustering — selected via `clustering_algorithm: "FO"` in JSON config or `CLUSTA FO` in legacy mode.
 
-Two complementarity functions are available:
+**VoronoiCFBatch** — Zero-copy `std::span`-based batch evaluation for the GA inner loop. Scores entire chromosome populations in parallel via OpenMP. Includes a built-in `benchmark()` method for serial vs parallel throughput comparison.
 
-- **VCT** (Voronoi Contact Function) — computes atom-atom contact surfaces via Voronoi tessellation. Higher accuracy, accounts for shape complementarity and burial. Default in JSON mode.
-- **SPH** (Sphere Function) — samples contacts using a 610-point unit sphere approximation. Faster but less precise. Default in legacy `.inp` mode.
+**Dead-End Elimination (DEE)** — Torsion pruning for ligand flexibility. The DEE tree eliminates rotamer combinations that provably cannot be part of the global minimum, reducing the conformational search space before GA evaluation. Controlled via `flexibility.ligand_torsions` with a clash threshold of `dee_clash: 0.5`.
 
-Select via `scoring.function` in JSON config or `COMPLF` in legacy mode.
+**Scoring Functions: VCT vs SPH** — Two complementarity functions: **VCT** (Voronoi tessellation, higher accuracy, default in JSON mode) and **SPH** (610-point sphere approximation, faster, default in legacy mode). Select via `scoring.function` or `COMPLF`.
 
-### GPU Acceleration
+**GPU Acceleration**:
+- **CUDA** (`FLEXAIDS_USE_CUDA=ON`): Batch CF evaluation and Shannon entropy histograms. Architectures: sm_70–sm_90 (Volta through Hopper).
+- **Metal** (`FLEXAIDS_USE_METAL=ON`, macOS): Shannon entropy, cavity detection, and general evaluation via Objective-C++ bridge.
+- **SIMD** (`simd_distance.h`): AVX2-vectorised geometric primitives for inner-loop performance.
 
-Hardware-accelerated evaluation for compute-intensive operations:
-
-- **CUDA** (`FLEXAIDS_USE_CUDA=ON`): Batch CF evaluation (`cuda_eval.cu`) and Shannon entropy histogram computation (`shannon_cuda.cu`). Pre-configured for architectures: sm_70, sm_75, sm_80, sm_86, sm_89, sm_90 (Volta through Hopper).
-- **Metal** (`FLEXAIDS_USE_METAL=ON`, macOS only): Shannon entropy histograms (`ShannonMetalBridge.mm`), cavity detection (`CavityDetectMetalBridge.mm`), and general evaluation (`metal_eval.mm`). Objective-C++ bridge with automatic CPU fallback.
-- **SIMD** (`simd_distance.h`): AVX2-vectorised geometric primitives — batch distance, cross product, dot product, normalization. Used by tENCoM and cavity detection for inner-loop performance.
+</details>
 
 ---
 
-## FreeNRG Integration
+## 🔗 FreeNRG Integration
 
 The [FreeNRG](https://github.com/lmorency/FreeNRG) Python package bridges FlexAID∆S with NRGRank virtual screening in a unified free energy framework:
 
@@ -729,12 +839,14 @@ Provides Python ports of StatMechEngine, ShannonThermoStack, TorsionalENM, and C
 
 ---
 
-## Publications
+## 📄 Publications
 
-### Please Cite
+> **Primary citation** — if you use FlexAID∆S, please cite:
+>
+> Gaudreault & Najmanovich (2015). *J. Chem. Inf. Model.* 55(7):1323-36.
+> [DOI:10.1021/acs.jcim.5b00078](https://doi.org/10.1021/acs.jcim.5b00078)
 
-1. **FlexAID core**:
-   > Gaudreault & Najmanovich (2015). *J. Chem. Inf. Model.* 55(7):1323-36. [DOI:10.1021/acs.jcim.5b00078](https://doi.org/10.1021/acs.jcim.5b00078)
+**Additional references**:
 
 2. **NRGsuite PyMOL plugin**:
    > Gaudreault, Morency & Najmanovich (2015). *Bioinformatics* 31(23):3856-8. [DOI:10.1093/bioinformatics/btv458](https://doi.org/10.1093/bioinformatics/btv458)
@@ -747,51 +859,55 @@ Provides Python ports of StatMechEngine, ShannonThermoStack, TorsionalENM, and C
 
    *Status*: Manuscript in preparation. Preprint expected on bioRxiv/ChemRxiv in 2026. This paper introduces the statistical mechanics framework, Shannon entropy scoring, and benchmark results on ITC-187 and CASF-2016.
 
-### Related Work (Inspiration Only)
-
+**Related Work** (Inspiration Only):
 - **NRGRank** (GPL-3.0, *not a dependency*):
   > Gaudreault et al. (2024). bioRxiv preprint.
   > *Note*: FlexAID∆S reimplements cube screening from first principles (Apache-2.0). No GPL code included. See [clean-room policy](docs/licensing/clean-room-policy.md).
 
 ---
 
-## Contributing
+## 🤝 Contributing
 
-**Key Policies**:
-- Apache-2.0, BSD, MIT, MPL-2.0 dependencies OK
-- GPL/AGPL **forbidden** (see [clean-room policy](docs/licensing/clean-room-policy.md))
-- All contributions require Contributor License Agreement (CLA)
+| | |
+|:--|:--|
+| **Allowed licenses** | Apache-2.0, BSD, MIT, MPL-2.0 |
+| **Forbidden** | GPL/AGPL — see [clean-room policy](docs/licensing/clean-room-policy.md) |
+| **CLA** | All contributions require Contributor License Agreement |
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for code style, testing, PR workflow.
 
 ---
 
-## License
+## 📜 License
 
 **Apache License 2.0** — Permissive open-source.
 
-**You CAN**: Use commercially, modify, redistribute, relicense in proprietary software.
-**You MUST**: Include LICENSE, preserve copyright, state changes.
-**You CANNOT**: Hold authors liable, use trademarks.
+| | |
+|:--|:--|
+| **You CAN** | Use commercially, modify, redistribute, relicense in proprietary software |
+| **You MUST** | Include LICENSE, preserve copyright, state changes |
+| **You CANNOT** | Hold authors liable, use trademarks |
 
 See [LICENSE](LICENSE) | [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)
 
 ---
 
-## Links
+## 🔗 Links
 
-**Repository**: [github.com/lmorency/FlexAIDdS](https://github.com/lmorency/FlexAIDdS)
-**Issues**: [github.com/lmorency/FlexAIDdS/issues](https://github.com/lmorency/FlexAIDdS/issues)
-**NRGlab**: [biophys.umontreal.ca/nrg](http://biophys.umontreal.ca/nrg) | [github.com/NRGlab](https://github.com/NRGlab)
-
-**Lead Developer**: Louis-Philippe Morency, PhD (Candidate)
-**Affiliation**: Universite de Montreal, NRGlab
-**Email**: louis-philippe.morency@umontreal.ca
+| | |
+|:--|:--|
+| **Repository** | [github.com/lmorency/FlexAIDdS](https://github.com/lmorency/FlexAIDdS) |
+| **Issues** | [github.com/lmorency/FlexAIDdS/issues](https://github.com/lmorency/FlexAIDdS/issues) |
+| **NRGlab** | [biophys.umontreal.ca/nrg](http://biophys.umontreal.ca/nrg) · [github.com/NRGlab](https://github.com/NRGlab) |
+| **Lead** | Louis-Philippe Morency, PhD (Candidate), Université de Montréal |
+| **Email** | louis-philippe.morency@umontreal.ca |
 
 ---
 
-<p align="center">
-  <strong>FlexAID∆S: Where Information Theory Meets Drug Discovery</strong><br>
-  <em>Zero friction. Zero entropy waste. Zero bullshit.</em><br><br>
-  <sub>DRUG IS ALWAYS AN ANSWER. One Shannon bit at a time.</sub>
-</p>
+<div align="center">
+
+**FlexAID∆S: Where Information Theory Meets Drug Discovery**
+
+*Zero friction. Zero entropy waste.*
+
+</div>
