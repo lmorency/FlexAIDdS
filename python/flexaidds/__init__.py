@@ -4,6 +4,11 @@ from .models import BindingModeResult, DockingResult, PoseResult
 from .results import load_results
 from .docking import Docking, BindingMode, BindingPopulation, Pose
 from .encom import ENCoMEngine, NormalMode, VibrationalEntropy
+from .tencm import (
+    TorsionalENM, TorsionalNormalMode, Conformer, FullThermoResult,
+    compute_shannon_entropy, compute_torsional_vibrational_entropy,
+    run_shannon_thermo_stack,
+)
 from .__version__ import __version__ as __version__
 
 # Pure-Python thermodynamics (always available)
@@ -131,6 +136,14 @@ __all__ = [
     "FlexPopulationResult",
     "parse_tencom_pdb",
     "parse_tencom_json",
+    # TorsionalENM / ShannonThermoStack (always available — pure Python or C++)
+    "TorsionalENM",
+    "TorsionalNormalMode",
+    "Conformer",
+    "FullThermoResult",
+    "compute_shannon_entropy",
+    "compute_torsional_vibrational_entropy",
+    "run_shannon_thermo_stack",
     # Physical constants
     "kB_kcal",
     "kB_SI",

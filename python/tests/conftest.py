@@ -41,6 +41,12 @@ def _make_core_stub() -> types.ModuleType:
     stub.TIPoint = _NeedsRealCore
     stub.VibrationalEntropy = _NeedsRealCore
     stub.WHAMBin = _NeedsRealCore
+    stub.TorsionalENM = _NeedsRealCore
+    stub.TorsionalNormalMode = _NeedsRealCore
+    stub.Conformer = _NeedsRealCore
+    stub.compute_shannon_entropy = _NeedsRealCore
+    stub.compute_torsional_vibrational_entropy = _NeedsRealCore
+    stub.run_shannon_thermo_stack = _NeedsRealCore
     return stub
 
 

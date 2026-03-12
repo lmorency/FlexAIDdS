@@ -156,15 +156,18 @@ double BindingMode::compute_entropy() const
 double BindingMode::compute_energy() const
 {
 	rebuild_engine();
-	return engine_.compute().free_energy;
+	return engine_.compute().free_energy + compute_vibrational_correction();
 }
 
 
-/// === NEW: Thermodynamic APIs (Phase 1) ===
+/// === Thermodynamic APIs ===
 statmech::Thermodynamics BindingMode::get_thermodynamics() const
 {
 	rebuild_engine();
-	return engine_.compute();
+	statmech::Thermodynamics td = engine_.compute();
+	// Phase 3: include vibrational free energy correction in reported free energy
+	td.free_energy += compute_vibrational_correction();
+	return td;
 }
 
 
@@ -298,6 +301,13 @@ void BindingMode::output_BindingMode(int num_result, char* end_strfile, char* tm
 	sprintf(tmpremark, "REMARK Binding Mode:%d Best CF in Binding Mode:%8.5f OPTICS Center (CF):%8.5f Binding Mode Total CF:%8.5f Binding Mode Frequency:%d\n",
 		num_result, Rep_lowCF->CF, Rep_lowOPTICS->CF, this->compute_energy(), this->get_BindingMode_size());
 	strcat(remark, tmpremark);
+	{
+		double vib_corr = this->compute_vibrational_correction();
+		if (std::abs(vib_corr) > 1e-12) {
+			sprintf(tmpremark, "REMARK Vibrational correction (ENCoM): %10.4f kcal/mol\n", vib_corr);
+			strcat(remark, tmpremark);
+		}
+	}
 	for (int j = 0; j < this->Population->FA->npar; ++j)
 	{
 		sprintf(tmpremark, "REMARK [%8.3f]\n", this->Population->FA->opt_par[j]);

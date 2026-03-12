@@ -324,7 +324,35 @@ encom = ENCoMEngine()
 delta_s = encom.compute_delta_s('apo.pdb', 'holo.pdb')
 ```
 
-**Available modules**: `docking`, `encom`, `io`, `models`, `results`, `thermodynamics`, `visualization`
+### Vibrational Entropy Integration (Phase 3)
+
+Phase 3 integrates ENCoM vibrational entropy directly into the docking free energy:
+
+```python
+from flexaidds import TorsionalENM, run_shannon_thermo_stack
+
+# Build torsional elastic network from receptor
+tenm = TorsionalENM()
+tenm.build_from_pdb('receptor.pdb')
+print(f"Built {tenm.n_modes} torsional modes from {tenm.n_residues} residues")
+
+# Full thermodynamic stack: Shannon entropy + torsional vibrational entropy
+result = run_shannon_thermo_stack(
+    energies=pose_energies,
+    tencm_model=tenm,
+    base_deltaG=-12.5,
+    temperature_K=300.0,
+)
+print(f"ΔG = {result.deltaG:.4f} kcal/mol")
+print(f"Shannon entropy = {result.shannonEntropy:.4f} bits")
+print(f"Torsional S_vib = {result.torsionalVibEntropy:.6f} kcal/(mol·K)")
+print(result.report)
+```
+
+In the C++ engine, vibrational corrections are automatically applied to BindingMode
+free energies when the TorsionalENM model is built during docking.
+
+**Available modules**: `docking`, `encom`, `tencm`, `io`, `models`, `results`, `thermodynamics`, `visualization`
 
 ### Python CLI (Result Inspector)
 

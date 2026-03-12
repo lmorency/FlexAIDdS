@@ -25,6 +25,8 @@
 #endif
 
 #include "statmech.h"
+#include "tencm.h"
+#include "ShannonThermoStack/ShannonThermoStack.h"
 #include "NATURaL/NATURaLDualAssembly.h"
 
 // in milliseconds
@@ -411,7 +413,28 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		printf("  Mean energy          <E>  = %10.4f kcal/mol\n", td.mean_energy);
 		printf("  Energy std dev        σ_E = %10.4f kcal/mol\n", td.std_energy);
 		printf("  Heat capacity         C_v = %10.4f kcal/(mol·K)\n", td.heat_capacity);
-		printf("  Entropy               S   = %10.6f kcal/(mol·K)\n", td.entropy);
+		printf("  Entropy (conf)        S   = %10.6f kcal/(mol·K)\n", td.entropy);
+
+		// ── Phase 3: TorsionalENM vibrational entropy ────────────────
+		tencm::TorsionalENM tencm_model;
+		if (FA->is_protein && FA->res_cnt > 6) {
+			tencm_model.build(atoms, residue, FA->res_cnt);
+			if (tencm_model.is_built()) {
+				// Store mode count on FA for BindingMode vibrational correction
+				FA->normal_modes = static_cast<int>(tencm_model.modes().size());
+
+				// Run full ShannonThermoStack: Shannon conf entropy + torsional vib entropy
+				shannon_thermo::FullThermoResult ftr =
+					shannon_thermo::run_shannon_thermo_stack(
+						sme, tencm_model, td.free_energy, T_K);
+
+				printf("--- ShannonThermoStack (vibrational entropy integration) ---\n");
+				printf("  Shannon conf entropy    = %10.4f bits\n", ftr.shannonEntropy);
+				printf("  Torsional vib entropy   = %10.6f kcal/(mol·K)\n", ftr.torsionalVibEntropy);
+				printf("  Entropy contribution    = %10.4f kcal/mol (-TΔS)\n", ftr.entropyContribution);
+				printf("  Total ΔG (F + vib corr) = %10.4f kcal/mol\n", ftr.deltaG);
+			}
+		}
 	}
 
 	// NATURaL co-translational / co-transcriptional DualAssembly analysis
