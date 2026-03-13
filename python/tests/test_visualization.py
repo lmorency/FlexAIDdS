@@ -247,7 +247,7 @@ class TestColorByEnergy:
                 viz._cmd = original_cmd
 
     def test_gradient_direction(self):
-        """Lowest energy gets blue (frac=0), highest gets red (frac=1)."""
+        """Lowest energy gets burgundy (frac=0), highest gets purple (frac=1)."""
         import flexaidds.visualization as viz
 
         mock_cmd = MagicMock()
@@ -259,18 +259,20 @@ class TestColorByEnergy:
 
             viz.color_by_energy("obj", [-10.0, 0.0, 10.0])
 
-            # First call (state 1, energy=-10, frac=0): color [1.0, 0.0, 0.0]
+            # First call (state 1, energy=-10, frac=0): burgundy red [0.502, 0.0, 0.125]
             first_color = mock_cmd.set_color.call_args_list[0]
             assert first_color[0][0] == "_energy_1"
             rgb = first_color[0][1]
-            assert pytest.approx(rgb[0], abs=0.01) == 1.0   # 1.0 - 0.0
-            assert pytest.approx(rgb[2], abs=0.01) == 0.0   # frac = 0
+            assert pytest.approx(rgb[0], abs=0.01) == 0.502  # burgundy R
+            assert pytest.approx(rgb[1], abs=0.01) == 0.0    # G always 0
+            assert pytest.approx(rgb[2], abs=0.01) == 0.125  # burgundy B
 
-            # Last call (state 3, energy=10, frac=1): color [0.0, 0.0, 1.0]
+            # Last call (state 3, energy=10, frac=1): purple blue [0.294, 0.0, 0.510]
             last_color = mock_cmd.set_color.call_args_list[2]
             rgb_last = last_color[0][1]
-            assert pytest.approx(rgb_last[0], abs=0.01) == 0.0  # 1.0 - 1.0
-            assert pytest.approx(rgb_last[2], abs=0.01) == 1.0  # frac = 1
+            assert pytest.approx(rgb_last[0], abs=0.01) == 0.294  # purple R
+            assert pytest.approx(rgb_last[1], abs=0.01) == 0.0    # G always 0
+            assert pytest.approx(rgb_last[2], abs=0.01) == 0.510  # purple B
         finally:
             viz._PYMOL_AVAILABLE = original_available
             if original_cmd is not None:
