@@ -280,6 +280,9 @@ int main(int argc, char **argv){
 			using O = json::Object;
 			config = json::merge(config, V(O{{"advanced", V(O{{"assume_folded", V(true)}})}}));
 		}
+		if (use_folded) {
+			config = merge_json(config, nlohmann::json{{"advanced", {{"assume_folded", true}}}});
+		}
 
 		// Apply config to FA/GB structs
 		apply_config(config, FA, GB);
