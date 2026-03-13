@@ -1,4 +1,6 @@
+import os
 import re
+import sys
 from pathlib import Path
 
 from setuptools import Extension, setup
@@ -40,7 +42,20 @@ ext_modules = [
             pybind11.get_include(),
         ],
         language="c++",
-        extra_compile_args=["-std=c++20", "-O3"],
+        extra_compile_args=(
+            ["/O2", "/std:c++20", "/EHsc"]
+            if os.name == "nt"
+            else ["-std=c++20", "-O3"]
+        ),
+        define_macros=(
+            [
+                ("_CRT_SECURE_NO_WARNINGS", "1"),
+                ("_USE_MATH_DEFINES", "1"),
+                ("NOMINMAX", "1"),
+            ]
+            if os.name == "nt"
+            else []
+        ),
     ),
 ]
 

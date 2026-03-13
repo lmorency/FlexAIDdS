@@ -17,6 +17,12 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
             "FlexAIDdS requires C++20 — found ${CMAKE_CXX_COMPILER_ID} "
             "${CMAKE_CXX_COMPILER_VERSION}. Upgrade to GCC ≥ 10 or Clang ≥ 10.")
     endif()
+elseif(MSVC)
+    if(MSVC_VERSION LESS 1930)
+        message(FATAL_ERROR
+            "FlexAIDdS requires MSVC ≥ 19.30 (Visual Studio 2022 17.0+) for C++20 — "
+            "found MSVC ${MSVC_VERSION}.")
+    endif()
 endif()
 
 if(POLICY CMP0167)
@@ -405,7 +411,11 @@ if(BUILD_PYTHON_BINDINGS AND pybind11_FOUND)
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB
     )
     target_compile_definitions(_core PRIVATE VERSION_INFO=${PROJECT_VERSION})
-    
+    if(MSVC)
+        target_compile_definitions(_core PRIVATE
+            _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES NOMINMAX)
+    endif()
+
     # Link Eigen3 if available
     if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
         target_link_libraries(_core PRIVATE Eigen3::Eigen)
@@ -441,6 +451,10 @@ if(ENABLE_TENCOM_BENCHMARK)
         target_link_libraries(benchmark_tencom PRIVATE Eigen3::Eigen)
         target_compile_definitions(benchmark_tencom PRIVATE FLEXAIDS_HAS_EIGEN)
     endif()
+    if(MSVC)
+        target_compile_definitions(benchmark_tencom PRIVATE
+            _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES NOMINMAX)
+    endif()
     message(STATUS "TeNCoM benchmark enabled — build target: benchmark_tencom")
 endif()
 
@@ -462,6 +476,8 @@ if(ENABLE_TENCOM_TOOL)
     target_include_directories(tENCoM PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
     if(MSVC)
         target_compile_options(tENCoM PRIVATE /O2 /GL /fp:fast /DNDEBUG /MT)
+        target_compile_definitions(tENCoM PRIVATE
+            _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES NOMINMAX)
         target_link_options(tENCoM PRIVATE /LTCG)
     else()
         target_compile_options(tENCoM PRIVATE
@@ -541,6 +557,7 @@ if(BUILD_FLEXAIDDS_FAST)
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ChiralCenter
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/PTMAttachment
     )
 
     if(MSVC)
@@ -594,6 +611,14 @@ if(BUILD_TESTING)
 
     enable_testing()
 
+    # Helper: apply MSVC-specific definitions for test targets
+    function(flexaids_configure_msvc_test target_name)
+        if(MSVC)
+            target_compile_definitions(${target_name} PRIVATE
+                _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES NOMINMAX)
+        endif()
+    endfunction()
+
     # test_statmech — StatMechEngine unit tests
     add_executable(test_statmech tests/test_statmech.cpp LIB/statmech.cpp
                    LIB/hardware_dispatch.cpp LIB/hardware_detect.cpp)
@@ -615,6 +640,7 @@ if(BUILD_TESTING)
         target_include_directories(test_statmech PRIVATE ${EIGEN3_INCLUDE_DIRS})
         target_compile_definitions(test_statmech PRIVATE FLEXAIDS_HAS_EIGEN)
     endif()
+    flexaids_configure_msvc_test(test_statmech)
     add_test(NAME StatMechTests COMMAND test_statmech)
 
     # test_json_config — JSON parser & config defaults tests (zero dependencies)
@@ -626,6 +652,7 @@ if(BUILD_TESTING)
     else()
         target_compile_options(test_json_config PRIVATE -O2)
     endif()
+    flexaids_configure_msvc_test(test_json_config)
     add_test(NAME JsonConfigTests COMMAND test_json_config)
 
     # test_hardware_dispatch — ShannonThermoStack dispatch layer tests
@@ -640,13 +667,18 @@ if(BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ShannonThermoStack)
     target_link_libraries(test_hardware_dispatch PRIVATE GTest::gtest GTest::gtest_main)
-    target_compile_options(test_hardware_dispatch PRIVATE -O2)
+    if(MSVC)
+        target_compile_options(test_hardware_dispatch PRIVATE /O2)
+    else()
+        target_compile_options(test_hardware_dispatch PRIVATE -O2)
+    endif()
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(test_hardware_dispatch PRIVATE OpenMP::OpenMP_CXX)
     endif()
     if(FLEXAIDS_HAS_EIGEN)
         target_link_libraries(test_hardware_dispatch PRIVATE Eigen3::Eigen)
     endif()
+    flexaids_configure_msvc_test(test_hardware_dispatch)
     add_test(NAME HardwareDispatchTests COMMAND test_hardware_dispatch)
 
     # test_hardware_detect_dispatch — unified dispatch layer + hardware detection tests
@@ -681,6 +713,7 @@ if(BUILD_TESTING)
     if(FLEXAIDS_USE_METAL)
         target_compile_definitions(test_hardware_detect_dispatch PRIVATE FLEXAIDS_USE_METAL)
     endif()
+    flexaids_configure_msvc_test(test_hardware_detect_dispatch)
     add_test(NAME HardwareDetectDispatchTests COMMAND test_hardware_detect_dispatch)
 
     # test_tencom_diff — tENCoM differential engine tests
@@ -709,6 +742,7 @@ if(BUILD_TESTING)
         target_link_libraries(test_tencom_diff PRIVATE Eigen3::Eigen)
         target_compile_definitions(test_tencom_diff PRIVATE FLEXAIDS_HAS_EIGEN)
     endif()
+    flexaids_configure_msvc_test(test_tencom_diff)
     add_test(NAME TENCoMDiffTests COMMAND test_tencom_diff)
 
     # test_ptm_attachment — PTMAttachment module tests
@@ -726,6 +760,7 @@ if(BUILD_TESTING)
     else()
         target_compile_options(test_ptm_attachment PRIVATE -O2)
     endif()
+    flexaids_configure_msvc_test(test_ptm_attachment)
     add_test(NAME PTMAttachmentTests COMMAND test_ptm_attachment)
 
     # test_gaboom — Genetic Algorithm engine unit tests
@@ -766,6 +801,7 @@ if(BUILD_TESTING)
         target_link_libraries(test_gaboom PRIVATE Eigen3::Eigen)
         target_compile_definitions(test_gaboom PRIVATE FLEXAIDS_HAS_EIGEN)
     endif()
+    flexaids_configure_msvc_test(test_gaboom)
     add_test(NAME GABoomTests COMMAND test_gaboom)
 
     # test_vcontacts — Voronoi contact scoring math unit tests
@@ -785,6 +821,7 @@ if(BUILD_TESTING)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(test_vcontacts PRIVATE OpenMP::OpenMP_CXX)
     endif()
+    flexaids_configure_msvc_test(test_vcontacts)
     add_test(NAME VcontactsTests COMMAND test_vcontacts)
 
     # test_cleft_cavity — CleftDetector + CavityDetect unit tests
@@ -807,6 +844,7 @@ if(BUILD_TESTING)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(test_cleft_cavity PRIVATE OpenMP::OpenMP_CXX)
     endif()
+    flexaids_configure_msvc_test(test_cleft_cavity)
     add_test(NAME CleftCavityTests COMMAND test_cleft_cavity)
 
     # test_encom — ENCoM vibrational entropy engine tests
@@ -821,6 +859,7 @@ if(BUILD_TESTING)
     else()
         target_compile_options(test_encom PRIVATE -O2)
     endif()
+    flexaids_configure_msvc_test(test_encom)
     add_test(NAME ENCoMTests COMMAND test_encom)
 
     # test_ring_conformer_library — RingConformerLibrary + ring detection tests
@@ -838,6 +877,7 @@ if(BUILD_TESTING)
     else()
         target_compile_options(test_ring_conformer_library PRIVATE -O2)
     endif()
+    flexaids_configure_msvc_test(test_ring_conformer_library)
     add_test(NAME RingConformerLibraryTests COMMAND test_ring_conformer_library)
 
     # test_sugar_pucker — SugarPucker Cremer-Pople pseudorotation tests
@@ -859,6 +899,7 @@ if(BUILD_TESTING)
         target_link_libraries(test_sugar_pucker PRIVATE Eigen3::Eigen)
         target_compile_definitions(test_sugar_pucker PRIVATE FLEXAIDS_HAS_EIGEN)
     endif()
+    flexaids_configure_msvc_test(test_sugar_pucker)
     add_test(NAME SugarPuckerTests COMMAND test_sugar_pucker)
 
     # test_chiral_center — ChiralCenterGene R/S stereocenter tests
@@ -880,6 +921,7 @@ if(BUILD_TESTING)
         target_link_libraries(test_chiral_center PRIVATE Eigen3::Eigen)
         target_compile_definitions(test_chiral_center PRIVATE FLEXAIDS_HAS_EIGEN)
     endif()
+    flexaids_configure_msvc_test(test_chiral_center)
     add_test(NAME ChiralCenterTests COMMAND test_chiral_center)
 
     # test_cavity_detect — CavityDetect SURFNET cavity detection tests
@@ -900,6 +942,7 @@ if(BUILD_TESTING)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(test_cavity_detect PRIVATE OpenMP::OpenMP_CXX)
     endif()
+    flexaids_configure_msvc_test(test_cavity_detect)
     add_test(NAME CavityDetectTests COMMAND test_cavity_detect)
 
     # test_binding_mode_statmech — BindingMode ↔ StatMechEngine integration tests
@@ -940,6 +983,7 @@ if(BUILD_TESTING)
         target_link_libraries(test_binding_mode_statmech PRIVATE Eigen3::Eigen)
         target_compile_definitions(test_binding_mode_statmech PRIVATE FLEXAIDS_HAS_EIGEN)
     endif()
+    flexaids_configure_msvc_test(test_binding_mode_statmech)
     add_test(NAME BindingModeStatMechTests COMMAND test_binding_mode_statmech)
 
     # test_binding_mode_advanced — BindingMode advanced methods (delta_G, WHAM, representative)
@@ -980,6 +1024,7 @@ if(BUILD_TESTING)
         target_link_libraries(test_binding_mode_advanced PRIVATE Eigen3::Eigen)
         target_compile_definitions(test_binding_mode_advanced PRIVATE FLEXAIDS_HAS_EIGEN)
     endif()
+    flexaids_configure_msvc_test(test_binding_mode_advanced)
     add_test(NAME BindingModeAdvancedTests COMMAND test_binding_mode_advanced)
 
     # test_ga_core — GA primitive operations (QuickSort, mutate, crossover, copy)
@@ -1020,6 +1065,7 @@ if(BUILD_TESTING)
         target_link_libraries(test_ga_core PRIVATE Eigen3::Eigen)
         target_compile_definitions(test_ga_core PRIVATE FLEXAIDS_HAS_EIGEN)
     endif()
+    flexaids_configure_msvc_test(test_ga_core)
     add_test(NAME GACoreTests COMMAND test_ga_core)
 
     # test_ga_validation — CF scoring functions, eval_span clamping, batch result structure
@@ -1060,6 +1106,7 @@ if(BUILD_TESTING)
         target_link_libraries(test_ga_validation PRIVATE Eigen3::Eigen)
         target_compile_definitions(test_ga_validation PRIVATE FLEXAIDS_HAS_EIGEN)
     endif()
+    flexaids_configure_msvc_test(test_ga_validation)
     add_test(NAME GAValidationTests COMMAND test_ga_validation)
 
     message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_hardware_detect_dispatch, test_tencom_diff, test_ptm_attachment, test_gaboom, test_vcontacts, test_cleft_cavity, test_encom, test_ring_conformer_library, test_sugar_pucker, test_chiral_center, test_cavity_detect, test_binding_mode_statmech, test_binding_mode_advanced, test_ga_core, test_ga_validation")

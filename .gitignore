@@ -28,6 +28,7 @@
 !tests/**
 # build system
 !CMakeLists.txt
+!CMakePresets.json
 !LICENSE
 !README.md
 !CLAUDE.md
