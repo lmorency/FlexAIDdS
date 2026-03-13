@@ -31,10 +31,10 @@ export function FleetDashboard() {
 
   const thermalColor = (state: string) => {
     switch (state) {
-      case 'nominal': return '#4ade80';
-      case 'fair': return '#fbbf24';
-      case 'serious': return '#f97316';
-      case 'critical': return '#ef4444';
+      case 'nominal': return '#4B0082';   // purple blue (cool)
+      case 'fair': return '#6B0060';      // mid-purple
+      case 'serious': return '#700030';   // mid-burgundy
+      case 'critical': return '#800020';  // burgundy red (hot)
       default: return '#9ca3af';
     }
   };
@@ -83,7 +83,7 @@ export function FleetDashboard() {
           <h3>Job Progress</h3>
           <div style={{ background: '#333', borderRadius: '4px', height: '24px', overflow: 'hidden' }}>
             <div style={{
-              background: '#4ade80',
+              background: 'linear-gradient(90deg, #800020, #4B0082)',
               height: '100%',
               width: `${(fleet.completedChunks / fleet.totalChunks) * 100}%`,
               transition: 'width 0.3s',

@@ -23,7 +23,9 @@ BindingPopulation::BindingPopulation(FA_Global* pFA, GB_Global* pGB, VC_Global* 
 	  gene_lim(pgene_lim),
 	  atoms(patoms),
 	  residue(presidue),
-	  cleftgrid(pcleftgrid)
+	  cleftgrid(pcleftgrid),
+	  shannonS_population_(0.0),
+	  shannon_cache_valid_(false)
 {
 }
 
@@ -36,6 +38,7 @@ void BindingPopulation::add_BindingMode(BindingMode& mode)
 	}
 	mode.set_energy();
 	this->BindingModes.push_back(mode);
+	this->shannon_cache_valid_ = false;  // Invalidate Shannon cache
 	this->Entropize();
 }
 
@@ -97,6 +100,61 @@ statmech::StatMechEngine BindingPopulation::get_global_ensemble() const
 	}
 
 	return global_engine;
+}
+
+
+/// === Population-level Shannon entropy ===
+double BindingPopulation::get_shannon_entropy() const
+{
+	if (shannon_cache_valid_)
+	{
+		return shannonS_population_;
+	}
+
+	// Collect all pose energies across all binding modes
+	std::vector<double> all_energies;
+	for (const auto& mode : this->BindingModes)
+	{
+		for (const auto& pose : mode.Poses)
+		{
+			all_energies.push_back(pose.CF);
+		}
+	}
+
+	if (all_energies.empty())
+	{
+		shannonS_population_ = 0.0;
+		shannon_cache_valid_ = true;
+		return 0.0;
+	}
+
+	// Compute Shannon entropy via ShannonThermoStack (energy histogram binning)
+	double shannon_bits = shannon_thermo::compute_shannon_entropy(all_energies);
+
+	// Convert from dimensionless bits to thermodynamic units: S = kB * H
+	shannonS_population_ = statmech::kB_kcal * shannon_bits;
+	shannon_cache_valid_ = true;
+	return shannonS_population_;
+}
+
+
+/// === ΔG matrix between all pairs of binding modes ===
+std::vector<std::vector<double>> BindingPopulation::get_deltaG_matrix() const
+{
+	int n = static_cast<int>(this->BindingModes.size());
+	std::vector<std::vector<double>> matrix(n, std::vector<double>(n, 0.0));
+
+	for (int i = 0; i < n; ++i)
+	{
+		for (int j = i + 1; j < n; ++j)
+		{
+			double dg = compute_delta_G(this->BindingModes[i], this->BindingModes[j]);
+			matrix[i][j] = dg;
+			matrix[j][i] = -dg;
+		}
+	}
+
+	return matrix;
 }
 
 

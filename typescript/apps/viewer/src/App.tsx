@@ -11,6 +11,7 @@ import type { BindingPopulation, HealthCorrelation } from '@bonhomme/shared';
 import { deserializePopulation } from '@bonhomme/shared';
 import { IntelligenceEngine } from './IntelligenceEngine';
 import { FleetDashboard } from './FleetDashboard';
+import { MolstarViewer as MolstarViewerComponent, populationColorHex } from './MolstarViewer';
 
 type View = 'population' | 'fleet' | 'health';
 
@@ -149,39 +150,8 @@ function PopulationView({ population, oracleAnalysis }: {
 
       <section>
         <h2>3D Viewer</h2>
-        <MolstarViewer population={population} />
+        <MolstarViewerComponent population={population} />
       </section>
-    </div>
-  );
-}
-
-/** Color scale for BindingPopulation Boltzmann weights in Mol* */
-function populationColor(weight: number): string {
-  if (weight > 0.7) return '#ff0000';  // hot: high-probability pose
-  if (weight > 0.4) return '#ff8800';  // warm: moderate probability
-  return '#00ff88';                     // cool: low probability
-}
-
-function MolstarViewer({ population }: { population: BindingPopulation }) {
-  const containerRef = React.useRef<HTMLDivElement>(null);
-
-  return (
-    <div>
-      <div
-        ref={containerRef}
-        id="molstar-viewer"
-        style={{ width: '100%', height: '500px', background: '#1a1a2e', borderRadius: '8px' }}
-      >
-        {/* Mol* PluginContext will be mounted here when molstar is available */}
-      </div>
-      {population.modes.length > 0 && (
-        <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem', fontSize: '0.85em' }}>
-          <span>Boltzmann weight scale:</span>
-          <span style={{ color: populationColor(0.8) }}>High (&gt;0.7)</span>
-          <span style={{ color: populationColor(0.5) }}>Medium (0.4-0.7)</span>
-          <span style={{ color: populationColor(0.2) }}>Low (&lt;0.4)</span>
-        </div>
-      )}
     </div>
   );
 }
