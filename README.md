@@ -320,11 +320,18 @@ To **skip** co-translational/co-transcriptional chain growth and treat the recep
 
 Or via JSON config: `"advanced": { "assume_folded": true }`
 
-### Python API (Phase 2)
-
+### Python API
 
 ```python
 import flexaidds as fd
+
+# High-level docking
+results = fd.dock(
+    receptor='receptor.pdb',
+    ligand='ligand.mol2',
+    binding_site='auto',
+    compute_entropy=True,
+)
 
 # Load and analyze existing results
 run = fd.load_results("path/to/output_dir")
@@ -339,90 +346,14 @@ engine.add_sample(-6.0)
 thermo = engine.compute()
 print("F =", thermo.free_energy)
 print("S =", thermo.entropy)
-```
-
-### Planned: Zero-Config CLI (Phase 2)
-
-> **Not yet implemented.** The following CLI and YAML config modes are planned for a future release.
-
-```bash
-# Planned zero-config interface
-./flexaids dock receptor.pdb ligand.mol2
-```
-
-```yaml
-# Planned YAML config format
-docking:
-  binding_site:
-    method: auto
-  flexible_sidechains: ["A:TYR123", "A:PHE456"]
-  temperature: 300.0
-genetic_algorithm:
-  population_size: 2000
-  max_generations: 100
-hardware:
-  backend: auto  # cuda, metal, avx512, openmp
-```
-
-### Planned: Python Docking API (Phase 2)
-
-> **Not yet implemented.** Live docking orchestration from Python is staged behind ongoing C++ integration.
-
-# High-level docking
-results = flexaidds.dock(
-    receptor='receptor.pdb',
-    ligand='ligand.mol2',
-    binding_site='auto',
-    compute_entropy=True
-)
-
-# Load and analyze existing results
-from flexaidds import load_results
-docking = load_results('output_prefix')
-for mode in docking.binding_modes:
-    print(f"Mode {mode.rank}: dG={mode.free_energy:.2f}, S={mode.entropy:.3f}")
-
-# Thermodynamic analysis
-from flexaidds import StatMechEngine
-engine = StatMechEngine(temperature=300)
-engine.add_energies(pose_energies)
-print(f"Free energy: {engine.free_energy():.2f} kcal/mol")
 
 # ENCoM vibrational entropy
-from flexaidds import ENCoMEngine
-encom = ENCoMEngine()
-delta_s = encom.compute_delta_s('apo.pdb', 'holo.pdb')
+delta_s = fd.ENCoMEngine.compute_delta_s('apo.pdb', 'holo.pdb')
 ```
 
-### Vibrational Entropy Integration (Phase 3)
+### Vibrational Entropy Integration
 
-Phase 3 integrates ENCoM vibrational entropy directly into the docking free energy:
-
-```python
-from flexaidds import TorsionalENM, run_shannon_thermo_stack
-
-# Build torsional elastic network from receptor
-tenm = TorsionalENM()
-tenm.build_from_pdb('receptor.pdb')
-print(f"Built {tenm.n_modes} torsional modes from {tenm.n_residues} residues")
-
-# Full thermodynamic stack: Shannon entropy + torsional vibrational entropy
-result = run_shannon_thermo_stack(
-    energies=pose_energies,
-    tencm_model=tenm,
-    base_deltaG=-12.5,
-    temperature_K=300.0,
-)
-print(f"ΔG = {result.deltaG:.4f} kcal/mol")
-print(f"Shannon entropy = {result.shannonEntropy:.4f} bits")
-print(f"Torsional S_vib = {result.torsionalVibEntropy:.6f} kcal/(mol·K)")
-print(result.report)
-```
-
-In the C++ engine, vibrational corrections are automatically applied to BindingMode
-free energies when the TorsionalENM model is built during docking.
-
-**Available modules**: `docking`, `encom`, `tencm`, `io`, `models`, `results`, `thermodynamics`, `visualization`
+ENCoM vibrational entropy is integrated directly into the docking free energy:
 
 ```python
 from flexaidds import TorsionalENM, run_shannon_thermo_stack
@@ -536,8 +467,6 @@ Tests marked with `@requires_core` need the compiled C++ `_core` extension and s
 ---
 
 ## 🔬 Scientific Background
-
-### Scoring: Contact Function (CF) vs NATURaL 2-Term Potential
 
 ### Scoring: Contact Function (CF) vs NATURaL 2-Term Potential
 
@@ -816,8 +745,6 @@ The `--folded` flag sets `advanced.assume_folded = true`, treating the receptor 
 
 Implements the torsional variant of the **Elastic Network Contact Model** (ENCoM; Frappier et al. 2015) for protein backbone flexibility, using torsional degrees of freedom from the ENM formalism of Delarue & Sanejouand (2002) and Yang, Song & Cui (2009). Builds a spring network over Cα contacts within a cutoff radius, computes torsional normal modes via Jacobi diagonalisation, and samples Boltzmann-weighted backbone perturbations during the GA without rebuilding the rotamer library every generation.
 
-Implements the torsional variant of the **Elastic Network Contact Model** (ENCoM; Frappier et al. 2015) for protein backbone flexibility, using torsional degrees of freedom from the ENM formalism of Delarue & Sanejouand (2002) and Yang, Song & Cui (2009). Builds a spring network over C-alpha contacts within a cutoff radius, computes torsional normal modes via Jacobi diagonalisation, and samples Boltzmann-weighted backbone perturbations during the GA without rebuilding the rotamer library every generation.
-
 </details>
 
 <details>
@@ -979,15 +906,11 @@ See [LICENSE](LICENSE) | [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)
 
 ## Links
 
-**Repository**: [github.com/lmorency/FlexAIDdS](https://github.com/lmorency/FlexAIDdS)
-**Issues**: [github.com/lmorency/FlexAIDdS/issues](https://github.com/lmorency/FlexAIDdS/issues)
-**Original FlexAID**: [github.com/NRGlab/FlexAID](https://github.com/NRGlab/FlexAID)
-**NRGlab**: [biophys.umontreal.ca/nrg](http://biophys.umontreal.ca/nrg) | [github.com/NRGlab](https://github.com/NRGlab)
-
 | | |
 |:--|:--|
 | **Repository** | [github.com/lmorency/FlexAIDdS](https://github.com/lmorency/FlexAIDdS) |
 | **Issues** | [github.com/lmorency/FlexAIDdS/issues](https://github.com/lmorency/FlexAIDdS/issues) |
+| **Original FlexAID** | [github.com/NRGlab/FlexAID](https://github.com/NRGlab/FlexAID) |
 | **NRGlab** | [biophys.umontreal.ca/nrg](http://biophys.umontreal.ca/nrg) · [github.com/NRGlab](https://github.com/NRGlab) |
 | **Lead** | Louis-Philippe Morency, PhD (Candidate), Université de Montréal |
 | **Email** | louis-philippe.morency@umontreal.ca |
