@@ -1,0 +1,163 @@
+"""Binding mode animation for FlexAID∆S (Phase 3, deliverable 3.3).
+
+Generates smooth coordinate interpolation between two binding mode
+representative poses and renders as a PyMOL movie.
+
+Usage:
+    PyMOL> flexaids_load_results /path/to/output
+    PyMOL> flexaids_animate 1 2
+    PyMOL> flexaids_animate 1 2, n_frames=100
+"""
+
+from __future__ import annotations
+
+from typing import List, Optional, Tuple
+
+try:
+    from pymol import cmd
+except ImportError as exc:
+    raise ImportError("PyMOL not available") from exc
+
+
+def _read_atom_coords(pdb_path: str) -> List[List[float]]:
+    """Read all ATOM/HETATM coordinates from a PDB file.
+
+    Returns a list of [x, y, z] lists preserving atom order.
+    """
+    coords = []
+    with open(pdb_path) as fh:
+        for line in fh:
+            if line.startswith("ATOM") or line.startswith("HETATM"):
+                x = float(line[30:38])
+                y = float(line[38:46])
+                z = float(line[46:54])
+                coords.append([x, y, z])
+    return coords
+
+
+def _interpolate_coords(
+    coords1: List[List[float]],
+    coords2: List[List[float]],
+    t: float,
+) -> List[List[float]]:
+    """Linear interpolation between two coordinate sets.
+
+    Args:
+        coords1: Starting coordinates (list of [x, y, z]).
+        coords2: Ending coordinates (list of [x, y, z]).
+        t: Interpolation parameter in [0, 1].
+
+    Returns:
+        Interpolated coordinates.
+    """
+    n = min(len(coords1), len(coords2))
+    result = []
+    for i in range(n):
+        result.append([
+            (1.0 - t) * coords1[i][0] + t * coords2[i][0],
+            (1.0 - t) * coords1[i][1] + t * coords2[i][1],
+            (1.0 - t) * coords1[i][2] + t * coords2[i][2],
+        ])
+    return result
+
+
+def animate_binding_modes(
+    mode_id_1: int,
+    mode_id_2: int,
+    n_frames: int = 50,
+    movie_name: str = "",
+) -> None:
+    """Create a smooth animation between two binding mode representative poses.
+
+    Loads the best pose from each mode, performs linear Cartesian
+    interpolation, and sets up a PyMOL movie with the interpolated frames.
+
+    Args:
+        mode_id_1: First binding mode ID.
+        mode_id_2: Second binding mode ID.
+        n_frames: Number of interpolation frames (default 50).
+        movie_name: If non-empty, save movie to this filename (e.g. "morph.mpg").
+
+    Example:
+        PyMOL> flexaids_animate 1 2
+        PyMOL> flexaids_animate 1 3, n_frames=100
+    """
+    from . import results_adapter
+
+    mode1 = results_adapter._get_mode(int(mode_id_1))
+    mode2 = results_adapter._get_mode(int(mode_id_2))
+
+    if mode1 is None or mode2 is None:
+        print("ERROR: Mode(s) not found. Use 'flexaids_load_results' first.")
+        return
+
+    best1 = mode1.best_pose()
+    best2 = mode2.best_pose()
+
+    if best1 is None or best2 is None:
+        print("ERROR: No representative pose available for one or both modes.")
+        return
+
+    n_frames = int(n_frames)
+    if n_frames < 2:
+        n_frames = 2
+
+    coords1 = _read_atom_coords(str(best1.path))
+    coords2 = _read_atom_coords(str(best2.path))
+
+    if not coords1 or not coords2:
+        print("ERROR: Could not read coordinates from PDB files.")
+        return
+
+    n_atoms = min(len(coords1), len(coords2))
+    if len(coords1) != len(coords2):
+        print(
+            f"WARNING: Atom count mismatch ({len(coords1)} vs {len(coords2)}). "
+            f"Using first {n_atoms} atoms."
+        )
+
+    obj_name = f"morph_m{mode_id_1}_m{mode_id_2}"
+
+    # Load the first pose as the base object
+    cmd.load(str(best1.path), obj_name, state=1)
+
+    # Create interpolated states
+    for frame_idx in range(1, n_frames):
+        t = frame_idx / (n_frames - 1)
+        interp = _interpolate_coords(coords1, coords2, t)
+
+        # Load the base PDB into a new state, then update coordinates
+        cmd.load(str(best1.path), obj_name, state=frame_idx + 1)
+
+        # Update coordinates for this state using alter_state
+        flat_coords = []
+        for c in interp:
+            flat_coords.extend(c)
+
+        # Use stored for coordinate update
+        stored_key = f"_morph_coords_{frame_idx}"
+        cmd.stored.__dict__[stored_key] = iter(interp)
+
+        cmd.alter_state(
+            frame_idx + 1,
+            obj_name,
+            f"(x, y, z) = next(stored.{stored_key})",
+        )
+
+    # Set up the movie
+    cmd.mset(f"1 -{n_frames}")
+    cmd.show("sticks", f"{obj_name} and organic")
+    cmd.show("cartoon", obj_name)
+    cmd.zoom(obj_name)
+
+    if movie_name:
+        movie_name = str(movie_name)
+        print(f"Saving movie to {movie_name}...")
+        cmd.movie.produce(movie_name)
+        print(f"Movie saved: {movie_name}")
+
+    print(
+        f"Animation created: '{obj_name}' ({n_frames} frames, "
+        f"mode {mode_id_1} -> mode {mode_id_2}). "
+        "Use PyMOL movie controls to play."
+    )
