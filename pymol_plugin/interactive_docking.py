@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 import shutil
 import tempfile
+import threading
 from pathlib import Path
 from typing import Optional
 
@@ -37,6 +38,7 @@ class DockingProgressCallback:
         self.generation: int = 0
         self.best_cf: float = float("inf")
         self.running: bool = False
+        self.cancelled: bool = False
 
     def on_generation(self, gen_num: int, best_cf: float, mean_entropy: float = 0.0) -> None:
         """Update progress after each GA generation."""
@@ -46,6 +48,15 @@ class DockingProgressCallback:
             f"  Gen {gen_num}: Best CF = {best_cf:.4f}, "
             f"Mean S = {mean_entropy:.6f}"
         )
+
+    def cancel(self) -> None:
+        """Request cancellation of the running docking job."""
+        self.cancelled = True
+        print("Docking cancellation requested...")
+
+
+# Module-level handle for the active background docking job
+_active_docking: Optional[DockingProgressCallback] = None
 
 
 def _get_selection_center(selection: str) -> Optional[tuple]:
@@ -130,6 +141,70 @@ def _write_minimal_config(
         fh.write(f"PERMEA 0.05\n")
 
 
+def _run_docking_worker(
+    config_path: str,
+    work_dir: str,
+    timeout: int,
+    callback: DockingProgressCallback,
+) -> None:
+    """Background worker that runs the docking engine.
+
+    Designed to be called from a ``threading.Thread`` so PyMOL's event
+    loop is not blocked.  Results are loaded into PyMOL on completion.
+    """
+    global _active_docking
+    cleanup_work_dir = True
+
+    try:
+        from flexaidds.docking import Docking
+
+        docking = Docking(config_path)
+        population = docking.run(timeout=timeout)
+
+        callback.running = False
+
+        if callback.cancelled:
+            print("Docking cancelled by user.")
+            return
+
+        n_modes = len(population)
+        print(f"Docking complete: {n_modes} binding mode(s) found.")
+
+        for mode_idx, mode in enumerate(population):
+            thermo = mode.get_thermodynamics()
+            print(
+                f"  Mode {mode_idx + 1}: F={thermo.free_energy:.2f} kcal/mol, "
+                f"H={thermo.mean_energy:.2f}, S={thermo.entropy:.6f}, "
+                f"n_poses={mode.n_poses}"
+            )
+
+        pdb_files = sorted(Path(work_dir).glob("*_*.pdb"))
+        output_pdbs = [p for p in pdb_files if p.name != "receptor.pdb"]
+
+        if output_pdbs:
+            from . import results_adapter
+            results_adapter.load_docking_results(work_dir, prefix="dock")
+            cleanup_work_dir = False
+            print("Results loaded into PyMOL with prefix 'dock'.")
+        else:
+            print("No output PDB files generated.")
+
+    except FileNotFoundError:
+        print(
+            "ERROR: FlexAID binary not found. Build with:\n"
+            "  cmake --build build --target FlexAID"
+        )
+    except RuntimeError as exc:
+        print(f"ERROR: Docking failed: {exc}")
+    except Exception as exc:
+        print(f"ERROR: Unexpected error: {exc}")
+    finally:
+        callback.running = False
+        _active_docking = None
+        if cleanup_work_dir:
+            shutil.rmtree(work_dir, ignore_errors=True)
+
+
 def dock_interactive(
     receptor_obj: str,
     ligand_file: str,
@@ -137,6 +212,7 @@ def dock_interactive(
     temperature: int = 300,
     timeout: int = 300,
     n_results: int = 10,
+    async_mode: bool = True,
 ) -> None:
     """Run FlexAID∆S docking from PyMOL using a loaded receptor and ligand.
 
@@ -147,6 +223,9 @@ def dock_interactive(
     4. Execute docking via ``flexaidds.docking.Docking``
     5. Load results back into PyMOL
 
+    By default runs asynchronously in a background thread so PyMOL
+    remains responsive.  Use ``flexaids_dock_cancel`` to abort.
+
     Args:
         receptor_obj: Name of the receptor PyMOL object.
         ligand_file: Path to ligand file (MOL2 or SDF).
@@ -155,17 +234,27 @@ def dock_interactive(
         temperature: Docking temperature in Kelvin (default: 300).
         timeout: Maximum docking time in seconds (default: 300).
         n_results: Number of output poses to generate (default: 10).
+        async_mode: If True (default), run in a background thread.
 
     Example:
         PyMOL> flexaids_dock receptor, /path/to/ligand.mol2
         PyMOL> flexaids_dock receptor, ligand.mol2, site_selection=active_site
+        PyMOL> flexaids_dock receptor, ligand.mol2, async_mode=0
     """
+    global _active_docking
+
     receptor_obj = str(receptor_obj).strip()
     ligand_file = str(ligand_file).strip()
     site_selection = str(site_selection).strip()
     temperature = int(temperature)
     timeout = int(timeout)
     n_results = int(n_results)
+    async_mode = bool(int(async_mode)) if isinstance(async_mode, str) else bool(async_mode)
+
+    if _active_docking is not None and _active_docking.running:
+        print("ERROR: A docking job is already running. "
+              "Use 'flexaids_dock_cancel' to abort it first.")
+        return
 
     # Validate receptor object exists in PyMOL
     if receptor_obj not in cmd.get_object_list():
@@ -195,14 +284,11 @@ def dock_interactive(
 
     radius = _get_selection_radius(site_selection)
 
-    # Create temporary working directory (cleaned up after loading results)
     work_dir = tempfile.mkdtemp(prefix="flexaids_dock_")
     receptor_pdb = os.path.join(work_dir, "receptor.pdb")
     config_path = os.path.join(work_dir, "dock.inp")
-    cleanup_work_dir = True
 
-    # Save receptor
-    print(f"Preparing docking...")
+    print("Preparing docking...")
     print(f"  Receptor: {receptor_obj}")
     print(f"  Ligand: {ligand_file}")
     print(f"  Binding site center: ({center[0]:.1f}, {center[1]:.1f}, {center[2]:.1f})")
@@ -210,6 +296,7 @@ def dock_interactive(
     print(f"  Temperature: {temperature} K")
 
     if not _save_receptor_pdb(receptor_obj, receptor_pdb):
+        shutil.rmtree(work_dir, ignore_errors=True)
         return
 
     _write_minimal_config(
@@ -217,54 +304,34 @@ def dock_interactive(
         center, radius, temperature, n_results,
     )
 
-    # Run docking
     callback = DockingProgressCallback()
     callback.running = True
+    _active_docking = callback
 
-    print(f"Starting FlexAID∆S docking (timeout: {timeout}s)...")
+    print(f"Starting FlexAID∆S docking (timeout: {timeout}s, "
+          f"async={async_mode})...")
 
-    try:
-        from flexaidds.docking import Docking
-
-        docking = Docking(config_path)
-        population = docking.run(timeout=timeout)
-
-        callback.running = False
-
-        # Load results into PyMOL
-        n_modes = len(population)
-        print(f"Docking complete: {n_modes} binding mode(s) found.")
-
-        for mode_idx, mode in enumerate(population):
-            thermo = mode.get_thermodynamics()
-            print(
-                f"  Mode {mode_idx + 1}: F={thermo.free_energy:.2f} kcal/mol, "
-                f"H={thermo.mean_energy:.2f}, S={thermo.entropy:.6f}, "
-                f"n_poses={mode.n_poses}"
-            )
-
-        # Load output PDBs into PyMOL
-        pdb_files = sorted(Path(work_dir).glob("*_*.pdb"))
-        output_pdbs = [p for p in pdb_files if p.name != "receptor.pdb"]
-
-        if output_pdbs:
-            from . import results_adapter
-            results_adapter.load_docking_results(work_dir, prefix="dock")
-            cleanup_work_dir = False  # Keep dir since PyMOL refs the PDBs
-            print("Results loaded into PyMOL with prefix 'dock'.")
-        else:
-            print("No output PDB files generated.")
-
-    except FileNotFoundError:
-        print(
-            "ERROR: FlexAID binary not found. Build with:\n"
-            "  cmake --build build --target FlexAID"
+    if async_mode:
+        t = threading.Thread(
+            target=_run_docking_worker,
+            args=(config_path, work_dir, timeout, callback),
+            daemon=True,
         )
-    except RuntimeError as exc:
-        print(f"ERROR: Docking failed: {exc}")
-    except Exception as exc:
-        print(f"ERROR: Unexpected error: {exc}")
-    finally:
-        callback.running = False
-        if cleanup_work_dir:
-            shutil.rmtree(work_dir, ignore_errors=True)
+        t.start()
+        print("Docking running in background. PyMOL remains usable.")
+        print("  Use 'flexaids_dock_cancel' to abort.")
+    else:
+        _run_docking_worker(config_path, work_dir, timeout, callback)
+
+
+def dock_cancel() -> None:
+    """Cancel a running background docking job.
+
+    Example:
+        PyMOL> flexaids_dock_cancel
+    """
+    global _active_docking
+    if _active_docking is not None and _active_docking.running:
+        _active_docking.cancel()
+    else:
+        print("No active docking job to cancel.")

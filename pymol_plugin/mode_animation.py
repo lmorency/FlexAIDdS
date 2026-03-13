@@ -11,12 +11,64 @@ Usage:
 
 from __future__ import annotations
 
+import math
 from typing import List, Optional, Tuple
+
+try:
+    import numpy as np
+    _HAS_NUMPY = True
+except ImportError:
+    _HAS_NUMPY = False
 
 try:
     from pymol import cmd
 except ImportError as exc:
     raise ImportError("PyMOL not available") from exc
+
+
+def _kabsch_align(
+    coords_mobile: List[List[float]],
+    coords_target: List[List[float]],
+) -> List[List[float]]:
+    """Kabsch optimal rotation to align coords_mobile onto coords_target.
+
+    Minimises RMSD between the two coordinate sets using SVD-based
+    superposition.  Requires NumPy.  Returns the aligned mobile coordinates.
+
+    If NumPy is unavailable or the sets are empty, returns coords_mobile
+    unchanged.
+    """
+    if not _HAS_NUMPY:
+        return coords_mobile
+    n = min(len(coords_mobile), len(coords_target))
+    if n < 3:
+        return coords_mobile
+
+    P = np.asarray(coords_mobile[:n], dtype=np.float64)
+    Q = np.asarray(coords_target[:n], dtype=np.float64)
+
+    # Centre both sets
+    centroid_P = P.mean(axis=0)
+    centroid_Q = Q.mean(axis=0)
+    P_c = P - centroid_P
+    Q_c = Q - centroid_Q
+
+    # Cross-covariance matrix
+    H = P_c.T @ Q_c
+
+    U, S, Vt = np.linalg.svd(H)
+
+    # Correct for reflection
+    d = np.linalg.det(Vt.T @ U.T)
+    sign_matrix = np.diag([1.0, 1.0, 1.0 if d >= 0 else -1.0])
+
+    R = Vt.T @ sign_matrix @ U.T
+
+    # Apply rotation and translation to all mobile coords
+    all_P = np.asarray(coords_mobile, dtype=np.float64)
+    aligned = (all_P - centroid_P) @ R.T + centroid_Q
+
+    return aligned.tolist()
 
 
 def _read_atom_coords(pdb_path: str) -> List[List[float]]:
@@ -66,21 +118,25 @@ def animate_binding_modes(
     mode_id_2: int,
     n_frames: int = 50,
     movie_name: str = "",
+    align: bool = True,
 ) -> None:
     """Create a smooth animation between two binding mode representative poses.
 
-    Loads the best pose from each mode, performs linear Cartesian
-    interpolation, and sets up a PyMOL movie with the interpolated frames.
+    Loads the best pose from each mode, optionally performs Kabsch RMSD
+    alignment, then does linear Cartesian interpolation and sets up a
+    PyMOL movie with the interpolated frames.
 
     Args:
         mode_id_1: First binding mode ID.
         mode_id_2: Second binding mode ID.
         n_frames: Number of interpolation frames (default 50).
         movie_name: If non-empty, save movie to this filename (e.g. "morph.mpg").
+        align: If True (default), Kabsch-align mode 2 onto mode 1 before
+               interpolation.  Requires NumPy.
 
     Example:
         PyMOL> flexaids_animate 1 2
-        PyMOL> flexaids_animate 1 3, n_frames=100
+        PyMOL> flexaids_animate 1 3, n_frames=100, align=0
     """
     from . import results_adapter
 
@@ -115,6 +171,12 @@ def animate_binding_modes(
             f"WARNING: Atom count mismatch ({len(coords1)} vs {len(coords2)}). "
             f"Using first {n_atoms} atoms."
         )
+
+    # Kabsch alignment: superpose coords2 onto coords1
+    align = bool(int(align)) if isinstance(align, str) else bool(align)
+    if align and _HAS_NUMPY:
+        coords2 = _kabsch_align(coords2, coords1)
+        print("  Kabsch alignment applied.")
 
     obj_name = f"morph_m{mode_id_1}_m{mode_id_2}"
 

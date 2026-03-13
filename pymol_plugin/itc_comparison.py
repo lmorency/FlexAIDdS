@@ -23,7 +23,7 @@ except ImportError as exc:
 
 
 def _parse_itc_csv(csv_path: str) -> Dict[str, float]:
-    """Parse a simple ITC experimental data CSV file.
+    """Parse a simple ITC experimental data CSV file (first row).
 
     Expected format (header + data row):
         dG,dH,TdS
@@ -34,17 +34,39 @@ def _parse_itc_csv(csv_path: str) -> Dict[str, float]:
     Returns:
         Dictionary with keys 'dG', 'dH', 'TdS'.
     """
+    rows = _parse_itc_csv_multi(csv_path)
+    return rows[0] if rows else {}
+
+
+def _parse_itc_csv_multi(csv_path: str) -> List[Dict[str, float]]:
+    """Parse a multi-row ITC experimental data CSV file.
+
+    Expected format (header + one or more data rows):
+        ligand,dG,dH,TdS
+        aspirin,-8.5,-12.3,3.8
+        ibuprofen,-7.2,-10.1,2.9
+
+    The 'ligand' column is optional.  All thermodynamic values in kcal/mol.
+
+    Returns:
+        List of dictionaries, each with keys 'dG', 'dH', 'TdS' and
+        optionally 'ligand'.
+    """
     import csv
 
-    result: Dict[str, float] = {}
+    results: List[Dict[str, float]] = []
     with open(csv_path) as fh:
         reader = csv.DictReader(fh)
         for row in reader:
+            entry: Dict[str, Any] = {}
             for key in ("dG", "dH", "TdS"):
                 if key in row and row[key]:
-                    result[key] = float(row[key])
-            break  # Only read the first data row
-    return result
+                    entry[key] = float(row[key])
+            if entry:
+                if "ligand" in row and row["ligand"]:
+                    entry["ligand"] = row["ligand"]
+                results.append(entry)
+    return results
 
 
 def plot_enthalpy_entropy_compensation(
@@ -168,12 +190,15 @@ def plot_free_energy_comparison(
         print("ERROR: No results loaded. Use 'flexaids_load_results' first.")
         return
 
-    itc_data: Dict[str, float] = {}
+    itc_rows: List[Dict[str, Any]] = []
     if itc_csv:
         try:
-            itc_data = _parse_itc_csv(itc_csv)
+            itc_rows = _parse_itc_csv_multi(itc_csv)
         except Exception as exc:
             print(f"WARNING: Could not parse ITC data: {exc}")
+
+    # First row used as primary comparison (backwards compatible)
+    itc_data: Dict[str, float] = itc_rows[0] if itc_rows else {}
 
     top = result.top_mode()
     if top is None:
@@ -199,9 +224,20 @@ def plot_free_energy_comparison(
         ax.scatter(enthalpies, entropy_terms, c="steelblue", s=50,
                    label="FlexAID∆S", zorder=3)
 
-    if "dH" in itc_data and "TdS" in itc_data:
-        ax.scatter([itc_data["dH"]], [-itc_data["TdS"]],
-                   c="red", marker="*", s=250, zorder=4, label="ITC (exp.)")
+    # Plot all ITC experimental points
+    for idx, row in enumerate(itc_rows):
+        if "dH" in row and "TdS" in row:
+            label = row.get("ligand", f"ITC #{idx + 1}")
+            ax.scatter(
+                [row["dH"]], [-row["TdS"]],
+                c="red", marker="*", s=250, zorder=4,
+                label=label if idx < 5 else None,  # Limit legend entries
+            )
+            ax.annotate(
+                label, (row["dH"], -row["TdS"]),
+                textcoords="offset points", xytext=(5, -10),
+                fontsize=7, color="firebrick",
+            )
 
     ax.set_xlabel("ΔH (kcal/mol)")
     ax.set_ylabel("-TΔS (kcal/mol)")
@@ -215,10 +251,13 @@ def plot_free_energy_comparison(
     bar_values = [top.free_energy if top.free_energy is not None else 0.0]
     bar_colors = ["steelblue"]
 
-    if "dG" in itc_data:
-        bar_labels.append("Experimental")
-        bar_values.append(itc_data["dG"])
-        bar_colors.append("firebrick")
+    # Add bars for each experimental ITC row
+    for idx, row in enumerate(itc_rows):
+        if "dG" in row:
+            label = row.get("ligand", f"Exp. #{idx + 1}")
+            bar_labels.append(label)
+            bar_values.append(row["dG"])
+            bar_colors.append("firebrick" if idx == 0 else "salmon")
 
     bars = ax2.bar(bar_labels, bar_values, color=bar_colors, width=0.5)
     for bar, val in zip(bars, bar_values):

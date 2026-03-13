@@ -6,12 +6,19 @@ it as a pseudoatom-based heatmap in PyMOL (Phase 3, deliverable 3.1).
 Usage:
     PyMOL> flexaids_load_results /path/to/output
     PyMOL> flexaids_entropy_heatmap 1
+    PyMOL> flexaids_entropy_heatmap 1, renderer=cgo
 """
 
 from __future__ import annotations
 
 import math
 from typing import List, Optional, Tuple
+
+try:
+    import numpy as np
+    _HAS_NUMPY = True
+except ImportError:
+    _HAS_NUMPY = False
 
 try:
     from pymol import cmd
@@ -80,61 +87,100 @@ def _compute_grid_bounds(
     )
 
 
-def _compute_spatial_entropy(
-    mode: BindingModeResult,
-    grid_spacing: float = 2.0,
-    sigma: float = 2.0,
+def _compute_spatial_entropy_numpy(
+    pose_coords_list: List[List[Tuple[float, float, float]]],
+    bounds: Tuple[Tuple[float, float, float], Tuple[float, float, float]],
+    grid_spacing: float,
+    sigma: float,
+    max_points: int = 30,
 ) -> List[Tuple[float, float, float, float]]:
-    """Compute spatial entropy density on a 3D grid from pose ensemble.
+    """NumPy-accelerated spatial entropy computation.
 
-    Each grid point accumulates a Gaussian-weighted atom count from all
-    poses.  The local density is then converted to a Shannon-style
-    entropy measure:  S_i = -sum_j p_j ln(p_j)  where p_j is the
-    fraction of total density contributed by pose j at grid point i.
-
-    Args:
-        mode: BindingModeResult with pose PDB paths.
-        grid_spacing: Distance between grid points in Angstroms.
-        sigma: Gaussian smoothing width in Angstroms.
-
-    Returns:
-        List of (x, y, z, entropy) tuples for grid points with non-zero
-        entropy.
+    Vectorises the Gaussian density evaluation using broadcasting,
+    giving ~10-100x speedup over pure Python on typical grids.
     """
-    if not mode.poses:
-        return []
+    (x_min, y_min, z_min), (x_max, y_max, z_max) = bounds
 
-    # Collect coordinates from all poses
-    pose_coords_list = []
-    for pose in mode.poses:
-        coords = _read_pose_coords(str(pose.path))
-        if coords:
-            pose_coords_list.append(coords)
+    nx = min(max(1, int((x_max - x_min) / grid_spacing) + 1), max_points)
+    ny = min(max(1, int((y_max - y_min) / grid_spacing) + 1), max_points)
+    nz = min(max(1, int((z_max - z_min) / grid_spacing) + 1), max_points)
 
-    if not pose_coords_list:
-        return []
+    gx = np.linspace(x_min, x_min + (nx - 1) * grid_spacing, nx)
+    gy = np.linspace(y_min, y_min + (ny - 1) * grid_spacing, ny)
+    gz = np.linspace(z_min, z_min + (nz - 1) * grid_spacing, nz)
 
-    # Flatten all coordinates to compute grid bounds
-    all_coords = [c for pose_coords in pose_coords_list for c in pose_coords]
-    if not all_coords:
-        return []
+    # Grid points: (N_grid, 3) where N_grid = nx*ny*nz
+    grid_x, grid_y, grid_z = np.meshgrid(gx, gy, gz, indexing="ij")
+    grid_pts = np.stack([grid_x.ravel(), grid_y.ravel(), grid_z.ravel()], axis=1)
+    n_grid = grid_pts.shape[0]
 
-    (x_min, y_min, z_min), (x_max, y_max, z_max) = _compute_grid_bounds(all_coords)
+    inv_2sigma2 = 1.0 / (2.0 * sigma * sigma)
+    r2_cutoff = (4.0 * sigma) ** 2
+    n_poses = len(pose_coords_list)
 
-    nx = max(1, int((x_max - x_min) / grid_spacing) + 1)
-    ny = max(1, int((y_max - y_min) / grid_spacing) + 1)
-    nz = max(1, int((z_max - z_min) / grid_spacing) + 1)
+    # Accumulate per-pose densities: shape (n_grid, n_poses)
+    densities = np.zeros((n_grid, n_poses), dtype=np.float64)
 
-    # Cap grid size to avoid excessive computation
-    max_points = 30
-    nx = min(nx, max_points)
-    ny = min(ny, max_points)
-    nz = min(nz, max_points)
+    for p_idx, pose_coords in enumerate(pose_coords_list):
+        atoms = np.asarray(pose_coords, dtype=np.float64)  # (n_atoms, 3)
+        # Process in chunks to limit memory: each chunk evaluates
+        # (n_grid, chunk_size) distances
+        chunk_size = max(1, min(len(atoms), 500))
+        for start in range(0, len(atoms), chunk_size):
+            atom_chunk = atoms[start:start + chunk_size]  # (chunk, 3)
+            # Broadcast: (n_grid, 1, 3) - (1, chunk, 3) -> (n_grid, chunk, 3)
+            diff = grid_pts[:, np.newaxis, :] - atom_chunk[np.newaxis, :, :]
+            r2 = np.sum(diff * diff, axis=2)  # (n_grid, chunk)
+            mask = r2 < r2_cutoff
+            contrib = np.where(mask, np.exp(-r2 * inv_2sigma2), 0.0)
+            densities[:, p_idx] += contrib.sum(axis=1)
+
+    # Shannon entropy per grid point
+    totals = densities.sum(axis=1)  # (n_grid,)
+    valid = totals > 0.1
+
+    results = []
+    if not np.any(valid):
+        return results
+
+    # Normalise to probabilities
+    probs = densities[valid] / totals[valid, np.newaxis]  # (n_valid, n_poses)
+    # -p * ln(p), with 0*ln(0) = 0
+    with np.errstate(divide="ignore", invalid="ignore"):
+        log_p = np.where(probs > 1e-15, np.log(probs), 0.0)
+    entropy = -np.sum(probs * log_p, axis=1)
+
+    max_s = math.log(n_poses) if n_poses > 1 else 1.0
+    entropy_norm = entropy / max_s if max_s > 0 else entropy
+
+    valid_pts = grid_pts[valid]
+    for i in range(len(valid_pts)):
+        results.append((
+            float(valid_pts[i, 0]),
+            float(valid_pts[i, 1]),
+            float(valid_pts[i, 2]),
+            float(entropy_norm[i]),
+        ))
+
+    return results
+
+
+def _compute_spatial_entropy_pure(
+    pose_coords_list: List[List[Tuple[float, float, float]]],
+    bounds: Tuple[Tuple[float, float, float], Tuple[float, float, float]],
+    grid_spacing: float,
+    sigma: float,
+    max_points: int = 30,
+) -> List[Tuple[float, float, float, float]]:
+    """Pure-Python spatial entropy computation (fallback when NumPy unavailable)."""
+    (x_min, y_min, z_min), (x_max, y_max, z_max) = bounds
+
+    nx = min(max(1, int((x_max - x_min) / grid_spacing) + 1), max_points)
+    ny = min(max(1, int((y_max - y_min) / grid_spacing) + 1), max_points)
+    nz = min(max(1, int((z_max - z_min) / grid_spacing) + 1), max_points)
 
     inv_2sigma2 = 1.0 / (2.0 * sigma * sigma)
     n_poses = len(pose_coords_list)
-
-    # Distance cutoff: beyond 4*sigma the Gaussian contribution is < 0.02%
     r2_cutoff = (4.0 * sigma) ** 2
 
     results = []
@@ -146,7 +192,6 @@ def _compute_spatial_entropy(
             for iz in range(nz):
                 gz = z_min + iz * grid_spacing
 
-                # Per-pose density at this grid point
                 pose_densities = []
                 for pose_coords in pose_coords_list:
                     density = 0.0
@@ -163,22 +208,69 @@ def _compute_spatial_entropy(
                 if total < 1e-12:
                     continue
 
-                # Shannon entropy over pose contributions
                 entropy = 0.0
                 for d in pose_densities:
                     p = d / total
                     if p > 1e-15:
                         entropy -= p * math.log(p)
 
-                # Normalise to [0, 1] range (max entropy = ln(n_poses))
                 max_s = math.log(n_poses) if n_poses > 1 else 1.0
                 entropy_norm = entropy / max_s if max_s > 0 else 0.0
 
-                # Only include points with meaningful density
                 if total > 0.1:
                     results.append((gx, gy, gz, entropy_norm))
 
     return results
+
+
+def _compute_spatial_entropy(
+    mode: BindingModeResult,
+    grid_spacing: float = 2.0,
+    sigma: float = 2.0,
+) -> List[Tuple[float, float, float, float]]:
+    """Compute spatial entropy density on a 3D grid from pose ensemble.
+
+    Each grid point accumulates a Gaussian-weighted atom count from all
+    poses.  The local density is then converted to a Shannon-style
+    entropy measure:  S_i = -sum_j p_j ln(p_j)  where p_j is the
+    fraction of total density contributed by pose j at grid point i.
+
+    Uses NumPy vectorisation when available for ~10-100x speedup.
+
+    Args:
+        mode: BindingModeResult with pose PDB paths.
+        grid_spacing: Distance between grid points in Angstroms.
+        sigma: Gaussian smoothing width in Angstroms.
+
+    Returns:
+        List of (x, y, z, entropy) tuples for grid points with non-zero
+        entropy.
+    """
+    if not mode.poses:
+        return []
+
+    pose_coords_list = []
+    for pose in mode.poses:
+        coords = _read_pose_coords(str(pose.path))
+        if coords:
+            pose_coords_list.append(coords)
+
+    if not pose_coords_list:
+        return []
+
+    all_coords = [c for pose_coords in pose_coords_list for c in pose_coords]
+    if not all_coords:
+        return []
+
+    bounds = _compute_grid_bounds(all_coords)
+
+    if _HAS_NUMPY:
+        return _compute_spatial_entropy_numpy(
+            pose_coords_list, bounds, grid_spacing, sigma,
+        )
+    return _compute_spatial_entropy_pure(
+        pose_coords_list, bounds, grid_spacing, sigma,
+    )
 
 
 def _entropy_color(entropy_norm: float) -> Tuple[float, float, float]:
@@ -197,12 +289,68 @@ def _entropy_color(entropy_norm: float) -> Tuple[float, float, float]:
         return (1.0, 1.0 - s, 1.0 - s)  # white -> red
 
 
+def _render_pseudoatom(
+    grid_points: List[Tuple[float, float, float, float]],
+    obj_name: str,
+    mode_id: int,
+    sphere_scale: float,
+    transparency: float,
+) -> None:
+    """Render heatmap using pseudoatom spheres (legacy method)."""
+    for i, (x, y, z, s_norm) in enumerate(grid_points):
+        r, g, b = _entropy_color(s_norm)
+        color_name = f"_ent_m{mode_id}_{i}"
+        cmd.set_color(color_name, [r, g, b])
+        cmd.pseudoatom(
+            obj_name,
+            pos=[x, y, z],
+            name=f"E{i}",
+            b=s_norm,
+        )
+
+    cmd.show("spheres", obj_name)
+    cmd.set("sphere_scale", sphere_scale, obj_name)
+    cmd.set("sphere_transparency", transparency, obj_name)
+
+    for i, (x, y, z, s_norm) in enumerate(grid_points):
+        color_name = f"_ent_m{mode_id}_{i}"
+        cmd.color(color_name, f"{obj_name} and name E{i}")
+
+
+def _render_cgo(
+    grid_points: List[Tuple[float, float, float, float]],
+    obj_name: str,
+    sphere_scale: float,
+    transparency: float,
+) -> None:
+    """Render heatmap using PyMOL CGO spheres for better performance.
+
+    CGO (Compiled Graphics Objects) bypass the molecular object overhead,
+    rendering faster with large point counts and supporting transparency
+    natively.
+    """
+    # CGO constants
+    COLOR = 6.0    # 0x6
+    SPHERE = 7.0   # 0x7
+    ALPHA = 25.0   # 0x19
+
+    cgo_list: list = [ALPHA, 1.0 - transparency]
+
+    for x, y, z, s_norm in grid_points:
+        r, g, b = _entropy_color(s_norm)
+        cgo_list.extend([COLOR, r, g, b])
+        cgo_list.extend([SPHERE, x, y, z, sphere_scale])
+
+    cmd.load_cgo(cgo_list, obj_name)
+
+
 def render_entropy_heatmap(
     mode_id: int,
     grid_spacing: float = 2.0,
     sigma: float = 2.0,
     sphere_scale: float = 0.4,
     transparency: float = 0.3,
+    renderer: str = "cgo",
 ) -> None:
     """Compute and render an entropy heatmap for a loaded binding mode.
 
@@ -214,9 +362,11 @@ def render_entropy_heatmap(
         sigma: Gaussian smoothing width in Angstroms (default 2.0).
         sphere_scale: PyMOL sphere scale for heatmap points.
         transparency: Sphere transparency (0=opaque, 1=invisible).
+        renderer: 'cgo' (default, faster) or 'pseudoatom' (legacy).
 
     Example:
         PyMOL> flexaids_entropy_heatmap 1
+        PyMOL> flexaids_entropy_heatmap 1, renderer=pseudoatom
         PyMOL> flexaids_entropy_heatmap 1, grid_spacing=1.5, sigma=1.5
     """
     from . import results_adapter
@@ -233,9 +383,10 @@ def render_entropy_heatmap(
 
     grid_spacing = float(grid_spacing)
     sigma = float(sigma)
+    renderer = str(renderer).strip().lower()
 
     print(f"Computing entropy heatmap for mode {mode_id} "
-          f"(grid={grid_spacing}A, sigma={sigma}A)...")
+          f"(grid={grid_spacing}A, sigma={sigma}A, renderer={renderer})...")
 
     grid_points = _compute_spatial_entropy(mode, grid_spacing, sigma)
 
@@ -251,25 +402,10 @@ def render_entropy_heatmap(
     except Exception:
         pass
 
-    for i, (x, y, z, s_norm) in enumerate(grid_points):
-        r, g, b = _entropy_color(s_norm)
-        color_name = f"_ent_m{mode_id}_{i}"
-        cmd.set_color(color_name, [r, g, b])
-        cmd.pseudoatom(
-            obj_name,
-            pos=[x, y, z],
-            name=f"E{i}",
-            b=s_norm,
-        )
-
-    cmd.show("spheres", obj_name)
-    cmd.set("sphere_scale", sphere_scale, obj_name)
-    cmd.set("sphere_transparency", transparency, obj_name)
-
-    # Color each pseudoatom by its entropy value
-    for i, (x, y, z, s_norm) in enumerate(grid_points):
-        color_name = f"_ent_m{mode_id}_{i}"
-        cmd.color(color_name, f"{obj_name} and name E{i}")
+    if renderer == "pseudoatom":
+        _render_pseudoatom(grid_points, obj_name, mode_id, sphere_scale, transparency)
+    else:
+        _render_cgo(grid_points, obj_name, sphere_scale, transparency)
 
     n_high = sum(1 for _, _, _, s in grid_points if s > 0.5)
     print(

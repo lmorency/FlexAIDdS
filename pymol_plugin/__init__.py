@@ -78,7 +78,7 @@ if PYMOL_AVAILABLE:
         plot_enthalpy_entropy_compensation,
         plot_free_energy_comparison,
     )
-    from .interactive_docking import dock_interactive
+    from .interactive_docking import dock_interactive, dock_cancel
 
     cmd.extend("flexaids_load", load_binding_modes)
     cmd.extend("flexaids_show_ensemble", show_pose_ensemble)
@@ -93,3 +93,4 @@ if PYMOL_AVAILABLE:
     cmd.extend("flexaids_itc_plot", plot_enthalpy_entropy_compensation)
     cmd.extend("flexaids_itc_compare", plot_free_energy_comparison)
     cmd.extend("flexaids_dock", dock_interactive)
+    cmd.extend("flexaids_dock_cancel", dock_cancel)
