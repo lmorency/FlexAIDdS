@@ -81,7 +81,8 @@ class BindingMode // aggregation of poses (Cluster)
 				int nbins = 20
 			) const;  // 1D FE profile along arbitrary coordinate
 			
-			std::vector<Pose>::const_iterator elect_Representative(bool useOPTICSordering) const;
+			const Pose&	get_pose(int index) const;
+		std::vector<Pose>::const_iterator elect_Representative(bool useOPTICSordering) const;
 			inline bool const 			operator<(const BindingMode&);
 
  	protected:
@@ -118,6 +119,9 @@ class BindingPopulation
 		 	void	add_BindingMode(BindingMode&);
 		 	// return the number of BindinMonde (size getter)
 		 	int	 	get_Population_size();
+		 	// access individual BindingMode by index (bounds-checked)
+		 	const BindingMode&	get_binding_mode(int index) const;
+		 	BindingMode&		get_binding_mode(int index);
 		 	// output BindingMode up to nResults results
 		 	void	output_Population(int nResults, char* end_strfile, char* tmp_end_strfile, char* dockinp, char* gainp, int minPoints);
 		 	

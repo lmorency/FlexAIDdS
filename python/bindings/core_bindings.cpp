@@ -191,6 +191,10 @@ PYBIND11_MODULE(_core, m) {
             "Boltzmann weights for all poses in this mode")
         .def("get_BindingMode_size", &BindingMode::get_BindingMode_size,
             "Number of poses in this binding mode")
+        .def("get_pose", &BindingMode::get_pose,
+            py::arg("index"),
+            py::return_value_policy::reference_internal,
+            "Access pose by index (bounds-checked)")
         .def("__len__", &BindingMode::get_BindingMode_size)
         .def("__repr__", [](const BindingMode& m) {
             auto thermo = m.get_thermodynamics();
@@ -209,6 +213,12 @@ PYBIND11_MODULE(_core, m) {
         "Collection of binding modes from a docking run, with global ensemble analysis")
         .def("get_population_size", &BindingPopulation::get_Population_size,
             "Number of distinct binding modes")
+        .def("get_binding_mode",
+            static_cast<const BindingMode& (BindingPopulation::*)(int) const>(
+                &BindingPopulation::get_binding_mode),
+            py::arg("index"),
+            py::return_value_policy::reference_internal,
+            "Access binding mode by index (bounds-checked)")
         .def("compute_delta_G",
             [](const BindingPopulation& pop, const BindingMode& m1, const BindingMode& m2) {
                 return pop.compute_delta_G(m1, m2);
