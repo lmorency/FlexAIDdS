@@ -6,13 +6,12 @@
 // Copyright 2024-2026 Louis-Philippe Morency / NRGlab, Universite de Montreal
 // SPDX-License-Identifier: Apache-2.0
 
-import React, { useRef, useEffect, useCallback } from 'react';
+import React, { useRef, useEffect } from 'react';
 import type { BindingPopulation } from '@bonhomme/shared';
-import { PluginContext } from 'molstar/lib/mol-plugin/context';
-import { DefaultPluginSpec } from 'molstar/lib/mol-plugin/spec';
-import { PluginCommands } from 'molstar/lib/mol-plugin/commands';
-import { ColorTheme } from 'molstar/lib/mol-theme/color';
-import { Color } from 'molstar/lib/mol-util/color';
+import { createPluginUI } from 'molstar/lib/mol-plugin-ui';
+import { DefaultPluginUISpec } from 'molstar/lib/mol-plugin-ui/spec';
+import type { PluginUIContext } from 'molstar/lib/mol-plugin-ui/context';
+import 'molstar/lib/mol-plugin-ui/skin/light.scss';
 
 /**
  * Interpolate between burgundy red and purple blue based on Boltzmann weight.
@@ -38,41 +37,37 @@ export function populationColorHex(weight: number): string {
 interface MolstarViewerProps {
   population: BindingPopulation;
   pdbData?: string;
-  selectedModeIndex?: number;
 }
 
-export function MolstarViewer({ population, pdbData, selectedModeIndex }: MolstarViewerProps) {
+export function MolstarViewer({ population, pdbData }: MolstarViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const pluginRef = useRef<PluginContext | null>(null);
+  const pluginRef = useRef<PluginUIContext | null>(null);
 
-  // Initialize Mol* plugin
+  // Initialize Mol* plugin UI
   useEffect(() => {
     if (!containerRef.current) return;
 
-    const init = async () => {
-      const plugin = new PluginContext(DefaultPluginSpec());
-      await plugin.init();
+    let disposed = false;
 
-      if (!containerRef.current) {
+    const init = async () => {
+      const plugin = await createPluginUI({
+        target: containerRef.current!,
+        spec: {
+          ...DefaultPluginUISpec(),
+          layout: {
+            initial: {
+              isExpanded: false,
+              showControls: false,
+              controlsDisplay: 'reactive',
+            },
+          },
+        },
+      });
+
+      if (disposed) {
         plugin.dispose();
         return;
       }
-
-      const canvas = containerRef.current.querySelector('canvas');
-      if (!canvas) {
-        const newCanvas = document.createElement('canvas');
-        newCanvas.style.width = '100%';
-        newCanvas.style.height = '100%';
-        containerRef.current.appendChild(newCanvas);
-      }
-
-      plugin.initViewer(containerRef.current, {
-        layoutIsExpanded: false,
-        layoutShowControls: false,
-        layoutShowRemoteState: false,
-        layoutShowSequence: false,
-        layoutShowLog: false,
-      });
 
       pluginRef.current = plugin;
     };
@@ -80,6 +75,7 @@ export function MolstarViewer({ population, pdbData, selectedModeIndex }: Molsta
     init();
 
     return () => {
+      disposed = true;
       pluginRef.current?.dispose();
       pluginRef.current = null;
     };
@@ -91,7 +87,7 @@ export function MolstarViewer({ population, pdbData, selectedModeIndex }: Molsta
     if (!plugin || !pdbData) return;
 
     const loadStructure = async () => {
-      await PluginCommands.State.RemoveObject(plugin, { state: plugin.state.data, ref: 'structure' });
+      plugin.clear();
 
       const data = await plugin.builders.data.rawData({ data: pdbData }, { state: { isGhost: true } });
       const trajectory = await plugin.builders.structure.parseTrajectory(data, 'pdb');

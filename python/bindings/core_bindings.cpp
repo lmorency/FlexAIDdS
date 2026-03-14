@@ -227,6 +227,10 @@ PYBIND11_MODULE(_core, m) {
             "ΔG between two binding modes (kcal/mol); positive = mode1 less favoured")
         .def("get_global_ensemble", &BindingPopulation::get_global_ensemble,
             "StatMechEngine aggregating all poses across all binding modes")
+        .def("get_shannon_entropy", &BindingPopulation::get_shannon_entropy,
+            "Population-level Shannon configurational entropy S = -kB * sum(p_i * ln(p_i)) (kcal/mol/K)")
+        .def("get_deltaG_matrix", &BindingPopulation::get_deltaG_matrix,
+            "Full ΔG matrix between all pairs of binding modes (kcal/mol); matrix[i][j] = F_i - F_j")
         .def("__len__", &BindingPopulation::get_Population_size)
         .def("__repr__", [](const BindingPopulation& p) {
             return "<BindingPopulation n_modes=" +

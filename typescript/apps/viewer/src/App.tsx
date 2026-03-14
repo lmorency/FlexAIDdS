@@ -6,7 +6,7 @@
 // Copyright 2024-2026 Louis-Philippe Morency / NRGlab, Universite de Montreal
 // SPDX-License-Identifier: Apache-2.0
 
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import type { BindingPopulation, HealthCorrelation } from '@bonhomme/shared';
 import { deserializePopulation } from '@bonhomme/shared';
 import { IntelligenceEngine } from './IntelligenceEngine';
@@ -126,7 +126,9 @@ function PopulationView({ population, oracleAnalysis }: {
                 <td>{mode.freeEnergy.toFixed(3)}</td>
                 <td>{mode.entropy.toFixed(6)}</td>
                 <td>{mode.heatCapacity.toFixed(6)}</td>
-                <td>{(mode.probability * 100).toFixed(1)}%</td>
+                <td style={{ color: populationColorHex(mode.probability) }}>
+                  {(mode.probability * 100).toFixed(1)}%
+                </td>
               </tr>
             ))}
           </tbody>
