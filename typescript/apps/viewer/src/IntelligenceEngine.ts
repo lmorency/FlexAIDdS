@@ -148,7 +148,7 @@ export class IntelligenceEngine {
     }
 
     // Bullet 5: Health correlation
-    if (health?.hrvSDNN) {
+    if (health?.hrvSDNN != null) {
       if (population.isCollapsed && health.hrvSDNN > 60) {
         structured.push({
           text: `Entropy collapse correlates with good HRV (${health.hrvSDNN.toFixed(0)} ms) — system recovering. Gentle activity recommended.`,

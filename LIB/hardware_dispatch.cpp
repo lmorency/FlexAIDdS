@@ -261,7 +261,8 @@ static BoltzmannBatchResult boltzmann_eigen(
 
     std::vector<double> weights(n);
     Eigen::Map<Eigen::ArrayXd>(weights.data(), n) = w;
-    auto telemetry = make_telemetry(HardwareBackend::AVX2, start, n);
+    // Report as the actual CPU backend that selected Eigen (may be AVX2 or OPENMP)
+    auto telemetry = make_telemetry(select_cpu_backend(), start, n);
     return { std::move(weights), log_Z, E_min, telemetry };
 }
 #endif

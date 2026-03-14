@@ -208,8 +208,7 @@ public actor IntelligenceOracle {
     /// Compare current results with a previous campaign run.
     public func compareWithPrevious(
         current: ThermodynamicResult,
-        previous: ThermodynamicResult,
-        entropyScore: BindingEntropyScore? = nil
+        previous: ThermodynamicResult
     ) async throws -> OracleAnalysis {
         let deltaF = current.freeEnergy - previous.freeEnergy
         let deltaS = current.entropy - previous.entropy
