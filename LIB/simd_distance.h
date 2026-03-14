@@ -57,9 +57,157 @@ inline void normalize3(float* v) noexcept {
     v[0] *= inv_len;  v[1] *= inv_len;  v[2] *= inv_len;
 }
 
+// ─── AVX-512 implementations ─────────────────────────────────────────────────
+
+#if FLEXAIDS_HAS_AVX512
+
+// Horizontal sum of a __m512 register (16 floats → 1 float)
+inline float hsum512_ps(__m512 v) noexcept {
+    return _mm512_reduce_add_ps(v);
+}
+
+// Squared distances between one point B and 16 points A stored in SOA layout.
+//   ax[16], ay[16], az[16] – x/y/z of 16 A atoms
+//   bx, by, bz              – coordinates of atom B
+//   out[16]                 – results
+inline void distance2_1x16(const float* FLEXAIDS_RESTRICT ax,
+                            const float* FLEXAIDS_RESTRICT ay,
+                            const float* FLEXAIDS_RESTRICT az,
+                            float bx, float by, float bz,
+                            float* FLEXAIDS_RESTRICT out) noexcept {
+    __m512 vbx = _mm512_set1_ps(bx);
+    __m512 vby = _mm512_set1_ps(by);
+    __m512 vbz = _mm512_set1_ps(bz);
+    __m512 dx  = _mm512_sub_ps(_mm512_loadu_ps(ax), vbx);
+    __m512 dy  = _mm512_sub_ps(_mm512_loadu_ps(ay), vby);
+    __m512 dz  = _mm512_sub_ps(_mm512_loadu_ps(az), vbz);
+    __m512 r2  = _mm512_fmadd_ps(dz, dz,
+                 _mm512_fmadd_ps(dy, dy,
+                 _mm512_mul_ps(dx, dx)));
+    _mm512_storeu_ps(out, r2);
+}
+
+// Also provide the 8-wide version using AVX-512 (uses 256-bit subset)
+inline void distance2_1x8(const float* FLEXAIDS_RESTRICT ax,
+                           const float* FLEXAIDS_RESTRICT ay,
+                           const float* FLEXAIDS_RESTRICT az,
+                           float bx, float by, float bz,
+                           float* FLEXAIDS_RESTRICT out) noexcept {
+    __m256 vbx = _mm256_set1_ps(bx);
+    __m256 vby = _mm256_set1_ps(by);
+    __m256 vbz = _mm256_set1_ps(bz);
+    __m256 dx  = _mm256_sub_ps(_mm256_loadu_ps(ax), vbx);
+    __m256 dy  = _mm256_sub_ps(_mm256_loadu_ps(ay), vby);
+    __m256 dz  = _mm256_sub_ps(_mm256_loadu_ps(az), vbz);
+    __m256 r2  = _mm256_fmadd_ps(dz, dz,
+                 _mm256_fmadd_ps(dy, dy,
+                 _mm256_mul_ps(dx, dx)));
+    _mm256_storeu_ps(out, r2);
+}
+
+// Sum of squared distances over N atoms (AOS interleaved xyz), 16-wide.
+// Returns Σ |a_i - b_i|²
+inline float sum_sq_distances(const float* FLEXAIDS_RESTRICT a_xyz,
+                               const float* FLEXAIDS_RESTRICT b_xyz,
+                               int N) noexcept {
+    __m512 acc = _mm512_setzero_ps();
+    int i = 0;
+    for (; i <= N - 16; i += 16) {
+        for (int c = 0; c < 3; ++c) {
+            float a16[16], b16[16];
+            for (int k = 0; k < 16; ++k) {
+                a16[k] = a_xyz[(i+k)*3 + c];
+                b16[k] = b_xyz[(i+k)*3 + c];
+            }
+            __m512 da = _mm512_sub_ps(_mm512_loadu_ps(a16), _mm512_loadu_ps(b16));
+            acc = _mm512_fmadd_ps(da, da, acc);
+        }
+    }
+    float sum = hsum512_ps(acc);
+    // Scalar tail
+    for (; i < N; ++i)
+        for (int c = 0; c < 3; ++c)
+            sum += sq(a_xyz[i*3+c] - b_xyz[i*3+c]);
+    return sum;
+}
+
+// Lennard-Jones r^-12 wall energy for 16 distances simultaneously.
+//   r2[16]  – squared distances (must NOT be zero)
+//   inv_rAB12 – (permeability * r_AB)^12 precomputed
+//   k_wall  – wall constant
+inline void lj_wall_16x(const float* FLEXAIDS_RESTRICT r2,
+                         float inv_rAB12,
+                         float k_wall,
+                         float* FLEXAIDS_RESTRICT Ewall) noexcept {
+    __m512 vr2     = _mm512_loadu_ps(r2);
+    __m512 inv_r2  = _mm512_rcp14_ps(vr2);
+    // Newton-Raphson refinement: inv_r2 *= 2 - vr2 * inv_r2
+    inv_r2 = _mm512_mul_ps(inv_r2,
+              _mm512_sub_ps(_mm512_set1_ps(2.0f),
+              _mm512_mul_ps(vr2, inv_r2)));
+    __m512 inv_r4  = _mm512_mul_ps(inv_r2, inv_r2);
+    __m512 inv_r6  = _mm512_mul_ps(inv_r4, inv_r2);
+    __m512 inv_r12 = _mm512_mul_ps(inv_r6, inv_r6);
+    __m512 e = _mm512_mul_ps(_mm512_set1_ps(k_wall),
+               _mm512_sub_ps(inv_r12, _mm512_set1_ps(inv_rAB12)));
+    _mm512_storeu_ps(Ewall, e);
+}
+
+// 8-wide LJ wall (AVX2-compatible intrinsics available via AVX-512 superset)
+inline void lj_wall_8x(const float* FLEXAIDS_RESTRICT r2,
+                        float inv_rAB12,
+                        float k_wall,
+                        float* FLEXAIDS_RESTRICT Ewall) noexcept {
+    __m256 vr2    = _mm256_loadu_ps(r2);
+    __m256 inv_r2 = _mm256_rcp_ps(vr2);
+    inv_r2 = _mm256_mul_ps(inv_r2,
+              _mm256_sub_ps(_mm256_set1_ps(2.0f),
+              _mm256_mul_ps(vr2, inv_r2)));
+    __m256 inv_r4  = _mm256_mul_ps(inv_r2, inv_r2);
+    __m256 inv_r6  = _mm256_mul_ps(inv_r4, inv_r2);
+    __m256 inv_r12 = _mm256_mul_ps(inv_r6, inv_r6);
+    __m256 vKWALL  = _mm256_set1_ps(k_wall);
+    __m256 vrAB12  = _mm256_set1_ps(inv_rAB12);
+    __m256 e = _mm256_mul_ps(vKWALL, _mm256_sub_ps(inv_r12, vrAB12));
+    _mm256_storeu_ps(Ewall, e);
+}
+
+// Batched dot products: result[i] = dot(a[i], b[i]), 16-wide
+inline void dot3_batch(const float* FLEXAIDS_RESTRICT a,
+                       const float* FLEXAIDS_RESTRICT b,
+                       float* FLEXAIDS_RESTRICT out, int N) noexcept {
+    int i = 0;
+    for (; i <= N - 16; i += 16) {
+        __m512 s = _mm512_setzero_ps();
+        for (int c = 0; c < 3; ++c) {
+            float a16[16], b16[16];
+            for (int k = 0; k < 16; ++k) {
+                a16[k] = a[(i+k)*3+c];
+                b16[k] = b[(i+k)*3+c];
+            }
+            s = _mm512_fmadd_ps(_mm512_loadu_ps(a16),
+                                _mm512_loadu_ps(b16), s);
+        }
+        _mm512_storeu_ps(out + i, s);
+    }
+    for (; i < N; ++i) {
+        out[i] = a[i*3]*b[i*3] + a[i*3+1]*b[i*3+1] + a[i*3+2]*b[i*3+2];
+    }
+}
+
+// Horizontal sum for AVX2 subset (still needed for some callers)
+inline float hsum256_ps(__m256 v) noexcept {
+    __m128 lo = _mm256_castps256_ps128(v);
+    __m128 hi = _mm256_extractf128_ps(v, 1);
+    lo = _mm_add_ps(lo, hi);
+    lo = _mm_add_ps(lo, _mm_movehl_ps(lo, lo));
+    lo = _mm_add_ss(lo, _mm_movehdup_ps(lo));
+    return _mm_cvtss_f32(lo);
+}
+
 // ─── AVX2 implementations ────────────────────────────────────────────────────
 
-#if FLEXAIDS_HAS_AVX2
+#elif FLEXAIDS_HAS_AVX2
 
 // Horizontal sum of an __m256 register
 inline float hsum256_ps(__m256 v) noexcept {
@@ -328,6 +476,13 @@ inline void boltzmann_batch_8d(const double* FLEXAIDS_RESTRICT energies,
 
 #else  // ─── scalar fallback versions ─────────────────────────────────────────
 
+inline void distance2_1x16(const float* ax, const float* ay, const float* az,
+                            float bx, float by, float bz,
+                            float* out) noexcept {
+    for (int k = 0; k < 16; ++k)
+        out[k] = sq(ax[k]-bx) + sq(ay[k]-by) + sq(az[k]-bz);
+}
+
 inline void distance2_1x8(const float* ax, const float* ay, const float* az,
                            float bx, float by, float bz,
                            float* out) noexcept {
@@ -341,6 +496,15 @@ inline float sum_sq_distances(const float* a, const float* b, int N) noexcept {
         for (int c = 0; c < 3; ++c)
             s += sq(a[i*3+c] - b[i*3+c]);
     return s;
+}
+
+inline void lj_wall_16x(const float* r2, float inv_rAB12, float k_wall,
+                          float* Ewall) noexcept {
+    for (int k = 0; k < 16; ++k) {
+        float inv_r6 = 1.0f / (r2[k]*r2[k]*r2[k]);
+        float inv_r12 = inv_r6 * inv_r6;
+        Ewall[k] = k_wall * (inv_r12 - inv_rAB12);
+    }
 }
 
 inline void lj_wall_8x(const float* r2, float inv_rAB12, float k_wall,
@@ -357,7 +521,7 @@ inline void dot3_batch(const float* a, const float* b, float* out, int N) noexce
         out[i] = a[i*3]*b[i*3] + a[i*3+1]*b[i*3+1] + a[i*3+2]*b[i*3+2];
 }
 
-#endif  // FLEXAIDS_HAS_AVX2
+#endif  // FLEXAIDS_HAS_AVX512 / FLEXAIDS_HAS_AVX2
 
 // ─── dispatch helper: compile-time dispatch to best available ────────────────
 

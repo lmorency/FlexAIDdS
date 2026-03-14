@@ -278,6 +278,8 @@ target_sources(FlexAID PRIVATE
         LIB/PTMAttachment/PTMAttachment.cpp
         # ── JSON config parser (zero external dependencies) ──
         LIB/config_parser.cpp
+        # ── Unified runtime hardware dispatch ──
+        LIB/HardwareDispatch.cpp
 )
 
 target_include_directories(FlexAID PRIVATE
@@ -545,18 +547,9 @@ if(ENABLE_VCFBATCH_BENCHMARK)
 endif()
 
 # ─── FlexAIDdS: ultra-fast docking executable ─────────────────────────────
-# Build with: cmake .. -DBUILD_FLEXAIDDS_FAST=ON -DCMAKE_BUILD_TYPE=Release
-#             cmake --build . --target FlexAIDdS -j $(nproc)
-#
-# Differences from FlexAID:
-#   - LTO (link-time optimisation) for whole-program inlining
-#   - -march=native: tunes for the build machine's exact CPU
-#   - Stripped binary (-s): smaller on-disk footprint
-#   - NDEBUG: disables assert() overhead
 option(BUILD_FLEXAIDDS_FAST "Build ultra-fast FlexAIDdS docking executable (LTO + native)" ON)
 if(BUILD_FLEXAIDDS_FAST)
     add_executable(FlexAIDdS "")
-    # Re-use the same source list as FlexAID
     get_target_property(_flexaid_sources FlexAID SOURCES)
     target_sources(FlexAIDdS PRIVATE ${_flexaid_sources})
 
@@ -581,13 +574,9 @@ if(BUILD_FLEXAIDDS_FAST)
         target_link_options(FlexAIDdS PRIVATE -flto -s)
     endif()
 
-    # SIMD
     flexaids_configure_simd(FlexAIDdS)
-
-    # JSON config
     target_link_libraries(FlexAIDdS PRIVATE nlohmann_json::nlohmann_json)
 
-    # Eigen3
     if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
         target_link_libraries(FlexAIDdS PRIVATE Eigen3::Eigen)
         target_compile_definitions(FlexAIDdS PRIVATE FLEXAIDS_HAS_EIGEN)
@@ -596,12 +585,38 @@ if(BUILD_FLEXAIDDS_FAST)
         target_compile_definitions(FlexAIDdS PRIVATE FLEXAIDS_HAS_EIGEN)
     endif()
 
-    # OpenMP
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(FlexAIDdS PRIVATE OpenMP::OpenMP_CXX)
     endif()
 
-    message(STATUS "FlexAIDdS fast executable enabled — build with: cmake --build . --target FlexAIDdS")
+    message(STATUS "FlexAIDdS fast executable enabled")
+endif()
+
+# ─── Dispatch Benchmark (optional standalone binary) ─────────────────────────
+option(ENABLE_DISPATCH_BENCHMARK "Build the hardware dispatch benchmark binary" OFF)
+if(ENABLE_DISPATCH_BENCHMARK)
+    add_executable(benchmark_dispatch
+        LIB/benchmark_dispatch.cpp
+        LIB/HardwareDispatch.cpp
+    )
+    target_include_directories(benchmark_dispatch PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    if(MSVC)
+        target_compile_options(benchmark_dispatch PRIVATE /O2 /fp:fast)
+    else()
+        target_compile_options(benchmark_dispatch PRIVATE -O3 -ffast-math)
+    endif()
+    flexaids_configure_simd(benchmark_dispatch)
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(benchmark_dispatch PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
+        target_link_libraries(benchmark_dispatch PRIVATE Eigen3::Eigen)
+        target_compile_definitions(benchmark_dispatch PRIVATE FLEXAIDS_HAS_EIGEN)
+    elseif(FLEXAIDS_USE_EIGEN AND EIGEN3_FOUND)
+        target_include_directories(benchmark_dispatch PRIVATE ${EIGEN3_INCLUDE_DIRS})
+        target_compile_definitions(benchmark_dispatch PRIVATE FLEXAIDS_HAS_EIGEN)
+    endif()
+    message(STATUS "Dispatch benchmark enabled — build target: benchmark_dispatch")
 endif()
 
 # ─── Unit Tests (GoogleTest) ───────────────────────────────────────────────
@@ -1193,4 +1208,30 @@ if(BUILD_SWIFT_BRIDGE)
     target_link_libraries(FlexAIDCore PUBLIC ${FOUNDATION_LIBRARY})
 
     message(STATUS "Swift bridge enabled — build target: FlexAIDCore (static library)")
+
+    # test_unified_dispatch — runtime HardwareDispatcher tests
+    add_executable(test_unified_dispatch
+        tests/test_unified_dispatch.cpp
+        LIB/HardwareDispatch.cpp
+    )
+    target_include_directories(test_unified_dispatch PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_unified_dispatch PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_unified_dispatch PRIVATE /O2)
+    else()
+        target_compile_options(test_unified_dispatch PRIVATE -O2)
+    endif()
+    flexaids_configure_simd(test_unified_dispatch)
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(test_unified_dispatch PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
+        target_link_libraries(test_unified_dispatch PRIVATE Eigen3::Eigen)
+        target_compile_definitions(test_unified_dispatch PRIVATE FLEXAIDS_HAS_EIGEN)
+    elseif(FLEXAIDS_USE_EIGEN AND EIGEN3_FOUND)
+        target_include_directories(test_unified_dispatch PRIVATE ${EIGEN3_INCLUDE_DIRS})
+        target_compile_definitions(test_unified_dispatch PRIVATE FLEXAIDS_HAS_EIGEN)
+    endif()
+    add_test(NAME UnifiedDispatchTests COMMAND test_unified_dispatch)
 endif()
