@@ -116,7 +116,7 @@ public struct WorkChunk: Sendable, Codable, Identifiable {
     }
 
     /// Mark this chunk as orphaned and prepare for retry.
-    /// Returns nil if max retries exceeded (becomes permanently failed).
+    /// Returns false if max retries exceeded (becomes permanently failed).
     public mutating func markOrphanedForRetry() -> Bool {
         retryCount += 1
         claimedBy = nil

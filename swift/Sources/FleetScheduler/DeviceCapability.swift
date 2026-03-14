@@ -133,19 +133,66 @@ public struct DeviceCapability: Sendable, Codable, Hashable {
     // MARK: - Private Helpers
 
     /// Estimate TFLOPS with Apple Silicon generation awareness.
+    ///
+    /// `sysctlbyname("hw.model")` returns identifiers like "Mac14,7" (M2 MacBook Pro),
+    /// "Mac15,3" (M3 MacBook Pro), "MacBookAir10,1" (M1 MacBook Air), etc.
+    /// We map known model number ranges to Apple Silicon generations.
+    /// For iOS, `hw.machine` returns e.g. "iPhone15,4", "iPad14,1".
     private static func estimateTFLOPS(cores: Int, model: String) -> Double {
+        // Extract major number from identifiers like "Mac15,3", "MacBookPro18,3", "iPhone15,4"
+        let pattern = #"(\d+),\d+"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: model, range: NSRange(model.startIndex..., in: model)),
+              let range = Range(match.range(at: 1), in: model),
+              let majorNum = Int(model[range]) else {
+            return Double(cores) * 0.1
+        }
+
         let lower = model.lowercased()
-        // M4 series (2024+): ~4.0 TFLOPS base
-        if lower.contains("m4") { return Double(cores) * 0.25 }
-        // M3 series: ~3.5 TFLOPS base
-        if lower.contains("m3") { return Double(cores) * 0.22 }
-        // M2 series: ~3.0 TFLOPS base
-        if lower.contains("m2") { return Double(cores) * 0.19 }
-        // M1 series: ~2.6 TFLOPS base
-        if lower.contains("m1") { return Double(cores) * 0.16 }
-        // A-series (iPhone/iPad): ~1-2 TFLOPS
-        if lower.contains("iphone") || lower.contains("ipad") { return Double(cores) * 0.12 }
-        // Conservative fallback
+
+        // Mac-prefixed identifiers (Mac14 = M2, Mac15 = M3, Mac16 = M4)
+        if lower.hasPrefix("mac") && !lower.hasPrefix("macbook") {
+            switch majorNum {
+            case 16...: return Double(cores) * 0.25  // M4 series
+            case 15:    return Double(cores) * 0.22  // M3 series
+            case 14:    return Double(cores) * 0.19  // M2 series
+            case 13:    return Double(cores) * 0.16  // M1 series
+            default:    return Double(cores) * 0.1
+            }
+        }
+
+        // MacBookPro / MacBookAir identifiers (e.g., MacBookPro18,3 = M1 Pro)
+        if lower.hasPrefix("macbook") {
+            switch majorNum {
+            case 16...: return Double(cores) * 0.25  // M4 series
+            case 15:    return Double(cores) * 0.22  // M3 series
+            case 13...14: return Double(cores) * 0.19  // M2 series
+            case 10...12: return Double(cores) * 0.16  // M1 series
+            default:      return Double(cores) * 0.1
+            }
+        }
+
+        // iPhone identifiers (iPhone15 = A16, iPhone16 = A17 Pro, iPhone17 = A18)
+        if lower.hasPrefix("iphone") {
+            switch majorNum {
+            case 17...: return Double(cores) * 0.14  // A18+
+            case 16:    return Double(cores) * 0.13  // A17 Pro
+            case 15:    return Double(cores) * 0.12  // A16
+            default:    return Double(cores) * 0.10
+            }
+        }
+
+        // iPad identifiers
+        if lower.hasPrefix("ipad") {
+            switch majorNum {
+            case 16...: return Double(cores) * 0.22  // M3+ iPads
+            case 14...15: return Double(cores) * 0.19  // M2 iPads
+            case 13:    return Double(cores) * 0.16  // M1 iPads
+            default:    return Double(cores) * 0.12
+            }
+        }
+
+        // Conservative fallback for unknown models
         return Double(cores) * 0.1
     }
 

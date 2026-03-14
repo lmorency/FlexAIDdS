@@ -85,7 +85,13 @@ kernel void parallel_sum_reduce(
     uint                   tgid        [[threadgroup_position_in_grid]],
     uint                   tg_size     [[threads_per_threadgroup]])
 {
-    threadgroup double shared[256];
+    // Must match the threadgroup size dispatched by the host (256).
+    // Using a constant ensures no OOB if tg_size matches.
+    constexpr uint MAX_TG_SIZE = 256;
+    threadgroup double shared[MAX_TG_SIZE];
+
+    // Guard: if runtime tg_size exceeds our shared array, bail safely
+    if (lid >= MAX_TG_SIZE) return;
 
     // Load (zero-pad out-of-bounds)
     shared[lid] = (gid < n) ? input[gid] : 0.0;
