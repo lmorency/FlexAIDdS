@@ -50,14 +50,7 @@ ext_modules = [
             str(LIB_DIR / "ShannonThermoStack"),
             pybind11.get_include(),
         ],
-        define_macros=_core_defs,
-        language="c++",
-        extra_compile_args=(
-            ["/O2", "/std:c++20", "/EHsc"]
-            if os.name == "nt"
-            else ["-std=c++20", "-O3"]
-        ),
-        define_macros=(
+        define_macros=_core_defs + (
             [
                 ("_CRT_SECURE_NO_WARNINGS", "1"),
                 ("_USE_MATH_DEFINES", "1"),
@@ -65,6 +58,12 @@ ext_modules = [
             ]
             if os.name == "nt"
             else []
+        ),
+        language="c++",
+        extra_compile_args=(
+            ["/O2", "/std:c++20", "/EHsc"]
+            if os.name == "nt"
+            else ["-std=c++20", "-O3"]
         ),
     ),
 ]
