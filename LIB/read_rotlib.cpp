@@ -78,7 +78,7 @@ void read_rotlib(FA_Global* FA,rot** rotamer,char* libfile){
 
       for(i=0;i<9;i++){help[i]=buffer[i+9];}
       help[8]='\0';
-      sscanf(help,"%s",(*rotamer)[FA->rotlibsize].name);
+      sscanf(help,"%8s",(*rotamer)[FA->rotlibsize].name);
 
       for(i=0;i<4;i++){help[i]=buffer[i+20];}
       help[4]='\0';

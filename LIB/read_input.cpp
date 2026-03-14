@@ -82,28 +82,28 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 		for(i=0;i<6;++i) field[i]=buffer[i];
 		field[6]='\0';
 		
-		if(strcmp(field,"PDBNAM") == 0){strcpy(pdb_name,&buffer[7]);}
-		if(strcmp(field,"INPLIG") == 0){strcpy(lig_file,&buffer[7]);}
-		if(strcmp(field,"METOPT") == 0){sscanf(buffer,"%s %s",a,FA->metopt);}
+		if(strcmp(field,"PDBNAM") == 0){strncpy(pdb_name,&buffer[7],MAX_PATH__-1);pdb_name[MAX_PATH__-1]='\0';}
+		if(strcmp(field,"INPLIG") == 0){strncpy(lig_file,&buffer[7],MAX_PATH__-1);lig_file[MAX_PATH__-1]='\0';}
+		if(strcmp(field,"METOPT") == 0){sscanf(buffer,"%s %2s",a,FA->metopt);}
 		if(strcmp(field,"DEEFLX") == 0){FA->deelig_flex=1;}
-		if(strcmp(field,"BPKENM") == 0){sscanf(buffer,"%s %s",a,FA->bpkenm);}
-		if(strcmp(field,"COMPLF") == 0){sscanf(buffer,"%s %s",a,FA->complf);}
-		if(strcmp(field,"VCTSCO") == 0){sscanf(buffer,"%s %s",a,FA->vcontacts_self_consistency);}
+		if(strcmp(field,"BPKENM") == 0){sscanf(buffer,"%s %2s",a,FA->bpkenm);}
+		if(strcmp(field,"COMPLF") == 0){sscanf(buffer,"%s %3s",a,FA->complf);}
+		if(strcmp(field,"VCTSCO") == 0){sscanf(buffer,"%s %5s",a,FA->vcontacts_self_consistency);}
 		if(strcmp(field,"VCTPLA") == 0){sscanf(buffer,"%s %c",a,&FA->vcontacts_planedef);}
 		if(strcmp(field,"NORMAR") == 0){FA->normalize_area=1;}
 		if(strcmp(field,"USEACS") == 0){FA->useacs=1;}
 		if(strcmp(field,"ACSWEI") == 0){sscanf(buffer,"%s %f",field,&FA->acsweight);}
-		if(strcmp(field,"RNGOPT") == 0){strcpy(rngoptline,buffer);for(i=0;i<6;i++)rngopt[i]=buffer[7+i];rngopt[6]='\0';}
-		if(strcmp(field,"OPTIMZ") == 0){strcpy(optline[nopt++],buffer);}
-		if(strcmp(field,"FLEXSC") == 0){strcpy(flexscline[nflexsc++],buffer);}
+		if(strcmp(field,"RNGOPT") == 0){strncpy(rngoptline,buffer,MAX_PATH__-1);rngoptline[MAX_PATH__-1]='\0';for(i=0;i<6;i++)rngopt[i]=buffer[7+i];rngopt[6]='\0';}
+		if(strcmp(field,"OPTIMZ") == 0){if(nopt<MAX_PAR){strncpy(optline[nopt],buffer,MAX_PATH__-1);optline[nopt][MAX_PATH__-1]='\0';nopt++;}}
+		if(strcmp(field,"FLEXSC") == 0){if(nflexsc<MAX_PAR){strncpy(flexscline[nflexsc],buffer,MAX_PATH__-1);flexscline[nflexsc][MAX_PATH__-1]='\0';nflexsc++;}}
 		if(strcmp(field,"ROTOBS") == 0){FA->rotobs=1;}
-		if(strcmp(field,"DEFTYP") == 0){strcpy(deftyp_forced,&buffer[7]);}
+		if(strcmp(field,"DEFTYP") == 0){strncpy(deftyp_forced,&buffer[7],MAX_PATH__-1);deftyp_forced[MAX_PATH__-1]='\0';}
 		if(strcmp(field,"CLRMSD") == 0){sscanf(buffer,"%s %f",a,&FA->cluster_rmsd);}
 		if(strcmp(field,"ROTOUT") == 0){FA->rotout=1;}
 		if(strcmp(field,"NMAMOD") == 0){sscanf(buffer,"%s %d",a,&FA->normal_modes);}
-		if(strcmp(field,"NMAAMP") == 0){strcpy(normal_file,&buffer[7]);}
-		if(strcmp(field,"NMAEIG") == 0){strcpy(eigen_file,&buffer[7]);}
-		if(strcmp(field,"RMSDST") == 0){strcpy(rmsd_file,&buffer[7]);}
+		if(strcmp(field,"NMAAMP") == 0){strncpy(normal_file,&buffer[7],MAX_PATH__-1);normal_file[MAX_PATH__-1]='\0';}
+		if(strcmp(field,"NMAEIG") == 0){strncpy(eigen_file,&buffer[7],MAX_PATH__-1);eigen_file[MAX_PATH__-1]='\0';}
+		if(strcmp(field,"RMSDST") == 0){strncpy(rmsd_file,&buffer[7],MAX_PATH__-1);rmsd_file[MAX_PATH__-1]='\0';}
 		if(strcmp(field,"EXCHET") == 0){FA->exclude_het=1;}
 		if(strcmp(field,"INCHOH") == 0){FA->remove_water=0;}
 		if(strcmp(field,"NOINTR") == 0){FA->intramolecular=0;}
@@ -121,15 +121,15 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 		if(strcmp(field,"DIELEC") == 0){sscanf(buffer,"%s %f",field,&FA->dielectric);}
 		if(strcmp(field,"OUTRNG") == 0){FA->output_range=1;}
 		if(strcmp(field,"USEDEE") == 0){FA->useflexdee=1;}
-		if(strcmp(field,"IMATRX") == 0){strcpy(emat_forced,&buffer[7]);}
+		if(strcmp(field,"IMATRX") == 0){strncpy(emat_forced,&buffer[7],MAX_PATH__-1);emat_forced[MAX_PATH__-1]='\0';}
 		if(strcmp(field,"DEECLA") == 0){sscanf(buffer,"%s %f",field,&FA->dee_clash);}
 		if(strcmp(field,"ROTPER") == 0){sscanf(buffer,"%s %f",field,&FA->rotamer_permeability);}
-		if(strcmp(field,"CONSTR") == 0){strcpy(constraint_file,&buffer[7]);}
+		if(strcmp(field,"CONSTR") == 0){strncpy(constraint_file,&buffer[7],MAX_PATH__-1);constraint_file[MAX_PATH__-1]='\0';}
 		if(strcmp(field,"MAXRES") == 0){sscanf(buffer,"%s %d",field,&FA->max_results);}
 		if(strcmp(field,"SPACER") == 0){sscanf(buffer,"%s %f",field,&FA->spacer_length);}
-		if(strcmp(field,"DEPSPA") == 0){strcpy(FA->dependencies_path,&buffer[7]);}
-		if(strcmp(field,"STATEP") == 0){strcpy(FA->state_path,&buffer[7]);}
-		if(strcmp(field,"TEMPOP") == 0){strcpy(FA->temp_path,&buffer[7]);}
+		if(strcmp(field,"DEPSPA") == 0){strncpy(FA->dependencies_path,&buffer[7],MAX_PATH__-1);FA->dependencies_path[MAX_PATH__-1]='\0';}
+		if(strcmp(field,"STATEP") == 0){strncpy(FA->state_path,&buffer[7],MAX_PATH__-1);FA->state_path[MAX_PATH__-1]='\0';}
+		if(strcmp(field,"TEMPOP") == 0){strncpy(FA->temp_path,&buffer[7],MAX_PATH__-1);FA->temp_path[MAX_PATH__-1]='\0';}
 		if(strcmp(field,"NRGSUI") == 0){FA->nrg_suite=1;}
 		if(strcmp(field,"NRGOUT") == 0){sscanf(buffer,"%s %d",field,&FA->nrg_suite_timeout);}
 		if(strcmp(field,"SCOLIG") == 0){FA->score_ligand_only=1;}
@@ -145,7 +145,7 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 		}
 		if(strcmp(field,"CLUSTA") == 0)
 		{
-			if(FA->temperature > 0) sscanf(buffer, "%s %s", field, FA->clustering_algorithm);
+			if(FA->temperature > 0) sscanf(buffer, "%s %2s", field, FA->clustering_algorithm);
 			else
 			{
 				fprintf(stdout,"Overriding the clustering algorithm to CF as the Temperature given in input parameter does not allow the consideration of conformational entropy.\n");
@@ -171,20 +171,20 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 
 	// default state path (controls pause-stop-abort)
 	if(!strcmp(FA->state_path,"")){
-		strcpy(FA->state_path,FA->base_path);
+		strncpy(FA->state_path,FA->base_path,MAX_PATH__-1);
+		FA->state_path[MAX_PATH__-1]='\0';
 	}
 
 	if(!strcmp(FA->temp_path,"")){
-		strcpy(FA->temp_path,FA->base_path);
+		strncpy(FA->temp_path,FA->base_path,MAX_PATH__-1);
+		FA->temp_path[MAX_PATH__-1]='\0';
 	}
-    
+
 	// temporary pdb name
-	strcpy(tmpprotname,FA->temp_path);
-    
 #ifdef _WIN32
-	strcat(tmpprotname,"\\target.pdb");
+	snprintf(tmpprotname,MAX_PATH__,"%s\\target.pdb",FA->temp_path);
 #else
-	strcat(tmpprotname,"/target.pdb");
+	snprintf(tmpprotname,MAX_PATH__,"%s/target.pdb",FA->temp_path);
 #endif
 
 
@@ -193,21 +193,15 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 	/************************************************************/
 	if(!strcmp(emat_forced,"")){
 		// use default
-		if(!strcmp(FA->dependencies_path,"")){
-			// use executable path
-			strcpy(emat,FA->base_path);		
-		}else{
-			// use new dependencies path
-			strcpy(emat,FA->dependencies_path);
-		}
+		const char* emat_base = !strcmp(FA->dependencies_path,"") ? FA->base_path : FA->dependencies_path;
 #ifdef _WIN32
-		strcat(emat,"\\MC_st0r5.2_6.dat");
+		snprintf(emat,MAX_PATH__,"%s\\MC_st0r5.2_6.dat",emat_base);
 #else
-		strcat(emat,"/MC_st0r5.2_6.dat");
+		snprintf(emat,MAX_PATH__,"%s/MC_st0r5.2_6.dat",emat_base);
 #endif
 	}else{
 		// use forced matrix
-		strcpy(emat,emat_forced);
+		strncpy(emat,emat_forced,MAX_PATH__-1);emat[MAX_PATH__-1]='\0';
 	}
 	
 	printf("interaction matrix is <%s>\n", emat);
@@ -224,31 +218,16 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 	/************************************************************/
 	if(!strcmp(deftyp_forced,"")){
 		// use default definition
-		
-		if(!strcmp(FA->dependencies_path,"")){
-			strcpy(deftyp,FA->base_path);
-		}else{
-			strcpy(deftyp,FA->dependencies_path);
-		}
-		
-		
-		if(FA->is_protein){
+		const char* deftyp_base = !strcmp(FA->dependencies_path,"") ? FA->base_path : FA->dependencies_path;
+		const char* deftyp_file = FA->is_protein ? "AMINO.def" : "NUCLEOTIDES.def";
 #ifdef _WIN32
-			strcat(deftyp,"\\AMINO.def");
+		snprintf(deftyp,MAX_PATH__,"%s\\%s",deftyp_base,deftyp_file);
 #else
-			strcat(deftyp,"/AMINO.def");
+		snprintf(deftyp,MAX_PATH__,"%s/%s",deftyp_base,deftyp_file);
 #endif
-		}else{
-#ifdef _WIN32
-			strcat(deftyp,"\\NUCLEOTIDES.def");
-#else
-			strcat(deftyp,"/NUCLEOTIDES.def");
-#endif
-		}
-		
 	}else{
 		// use forced definition of types
-		strcpy(deftyp,deftyp_forced);
+		strncpy(deftyp,deftyp_forced,MAX_PATH__-1);deftyp[MAX_PATH__-1]='\0';
 	}
 
 	printf("definition of types is <%s>\n", deftyp);
@@ -298,13 +277,17 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 
 	// Create the new filename with _tmp_random
 	char *extension_pos = dot;
-	char random_str[16]; // Buffer for "_tmp_XXXXXX"
-	sprintf(random_str, "_tmp_%d.pdb", random_num);
+	char random_str[24]; // Buffer for "_tmp_XXXXXX.pdb"
+	snprintf(random_str, sizeof(random_str), "_tmp_%d.pdb", random_num);
 
 	if (extension_pos != NULL) {
-		strcpy(extension_pos, random_str);
+		size_t avail = MAX_PATH__ - (size_t)(extension_pos - tmpprotname);
+		strncpy(extension_pos, random_str, avail - 1);
+		tmpprotname[MAX_PATH__ - 1] = '\0';
 	} else {
-		strcat(tmpprotname, random_str);
+		size_t cur = strlen(tmpprotname);
+		strncpy(tmpprotname + cur, random_str, MAX_PATH__ - cur - 1);
+		tmpprotname[MAX_PATH__ - 1] = '\0';
 	}
 
 	modify_pdb(pdb_name,tmpprotname,FA->exclude_het,FA->remove_water,FA->is_protein);
@@ -365,33 +348,23 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 		if (FA->rotobs) {
 
 			// use rotamers found in bound conformations (hap2db)
-			if(!strcmp(FA->dependencies_path,"")){
-				strcpy(rotobs_file,FA->base_path);
-			}else{
-				strcpy(rotobs_file,FA->dependencies_path);
-			}
-            
+			const char* rotobs_base = !strcmp(FA->dependencies_path,"") ? FA->base_path : FA->dependencies_path;
 #ifdef _WIN32
-			strcat(rotobs_file,"\\rotobs.lst");
+			snprintf(rotobs_file,MAX_PATH__,"%s\\rotobs.lst",rotobs_base);
 #else
-			strcat(rotobs_file,"/rotobs.lst");
+			snprintf(rotobs_file,MAX_PATH__,"%s/rotobs.lst",rotobs_base);
 #endif
-            
+
 			printf("read rotamer observations <%s>\n",rotobs_file);
 			read_rotobs(FA,rotamer,rotobs_file);
 		}else{
-			
+
 			// use penultimate rotamer library instances
-			if(!strcmp(FA->dependencies_path,"")){
-				strcpy(rotlib_file,FA->base_path);
-			}else{
-				strcpy(rotlib_file,FA->dependencies_path);
-			}
-            
+			const char* rotlib_base = !strcmp(FA->dependencies_path,"") ? FA->base_path : FA->dependencies_path;
 #ifdef _WIN32
-			strcat(rotlib_file,"\\Lovell_LIB.dat");
+			snprintf(rotlib_file,MAX_PATH__,"%s\\Lovell_LIB.dat",rotlib_base);
 #else
-			strcat(rotlib_file,"/Lovell_LIB.dat");
+			snprintf(rotlib_file,MAX_PATH__,"%s/Lovell_LIB.dat",rotlib_base);
 #endif
             
 			printf("read rotamer library <%s>\n",rotlib_file);
@@ -507,11 +480,10 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 
 		// Optionally write detected spheres for inspection
 		char auto_sph[MAX_PATH__];
-		strcpy(auto_sph, FA->temp_path);
 #ifdef _WIN32
-		strcat(auto_sph, "\\auto_cleft.sph");
+		snprintf(auto_sph, MAX_PATH__, "%s\\auto_cleft.sph", FA->temp_path);
 #else
-		strcat(auto_sph, "/auto_cleft.sph");
+		snprintf(auto_sph, MAX_PATH__, "%s/auto_cleft.sph", FA->temp_path);
 #endif
 		write_cleft_spheres(spheres, auto_sph);
 
@@ -525,14 +497,6 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 	///////////////////////////////////////////////////////////////////////////////
     
 	for(i=0;i<nopt;i++){
-		//printf("%s\n", optline[i]);
-		if(i==MAX_PAR){
-			printf("WARNING: number of params allowed was reached (100). other params will be skipped.\n");
-			break;
-		}
-    
-		//printf("optline[%d]=%s\n",i,optline[i]);
-		
 		sscanf(optline[i],"%s %d %s %d",a,&opt[0],a,&opt[1]);
 		//printf("%d %d\n",opt[0],opt[1]);
 		//getchar();
@@ -554,17 +518,12 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 		Terminate(2);
 	}
     
-	if(FA->output_range){		
-        
+	if(FA->output_range){
 #ifdef _WIN32
-		strcpy(gridfilename,"\\grid.sta.pdb");
+		snprintf(gridfile,MAX_PATH__,"%s\\grid.sta.pdb",FA->temp_path);
 #else
-		strcpy(gridfilename,"/grid.sta.pdb");
+		snprintf(gridfile,MAX_PATH__,"%s/grid.sta.pdb",FA->temp_path);
 #endif
-        
-		strcpy(gridfile,FA->temp_path);
-		strcat(gridfile,gridfilename);
-        
 		write_grid(FA,*cleftgrid,gridfile);
 	}
     

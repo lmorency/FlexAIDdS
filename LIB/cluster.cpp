@@ -149,9 +149,7 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 	}
       
 	// print cluster information
-	sprintf(sufix,".cad");
-	strcpy(tmp_end_strfile,end_strfile);
-	strcat(tmp_end_strfile,sufix);
+	snprintf(tmp_end_strfile, MAX_PATH__, "%s.cad", end_strfile);
 	if (FA->htpmode == false)
 	{
 		if(!OpenFile_B(tmp_end_strfile,"w",&outfile_ptr))
@@ -205,12 +203,14 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 
 		cf=ic2cf(FA,VC,atoms,residue,cleftgrid,GB->num_genes,FA->opt_par);
 
-		strcpy(remark,"REMARK optimized structure\n");
+		size_t remark_len = 0;
+		remark[0] = '\0';
+		safe_remark_cat(remark, "REMARK optimized structure\n", &remark_len);
 
-		sprintf(tmpremark,"REMARK CF=%8.5f\n",get_cf_evalue(&cf));
-		strcat(remark,tmpremark);
-		sprintf(tmpremark,"REMARK CF.app=%8.5f\n",get_apparent_cf_evalue(&cf));
-		strcat(remark,tmpremark);
+		snprintf(tmpremark, MAX_REMARK, "REMARK CF=%8.5f\n",get_cf_evalue(&cf));
+		safe_remark_cat(remark, tmpremark, &remark_len);
+		snprintf(tmpremark, MAX_REMARK, "REMARK CF.app=%8.5f\n",get_apparent_cf_evalue(&cf));
+		safe_remark_cat(remark, tmpremark, &remark_len);
 
 		for(i=0;i<FA->num_optres;++i)
 		{
@@ -218,46 +218,45 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 			res_ptr = &residue[FA->optres[i].rnum];
 			cf_ptr = &FA->optres[i].cf;
 	  
-			sprintf(tmpremark,"REMARK optimizable residue %s %c %d\n",
+			snprintf(tmpremark, MAX_REMARK, "REMARK optimizable residue %s %c %d\n",
 				res_ptr->name,res_ptr->chn,res_ptr->number);
-			strcat(remark,tmpremark);
-	  
-			sprintf(tmpremark,"REMARK CF.com=%8.5f\n",cf_ptr->com);
-			strcat(remark,tmpremark);
-			sprintf(tmpremark,"REMARK CF.sas=%8.5f\n",cf_ptr->sas);
-			strcat(remark,tmpremark);
-			sprintf(tmpremark,"REMARK CF.wal=%8.5f\n",cf_ptr->wal);
-			strcat(remark,tmpremark);
-			sprintf(tmpremark,"REMARK CF.con=%8.5f\n",cf_ptr->con);
-			strcat(remark,tmpremark);
-			sprintf(tmpremark,"REMARK Residue has an overall SAS of %.3f\n",cf_ptr->totsas);
-			strcat(remark,tmpremark);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+
+			snprintf(tmpremark, MAX_REMARK, "REMARK CF.com=%8.5f\n",cf_ptr->com);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK CF.sas=%8.5f\n",cf_ptr->sas);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK CF.wal=%8.5f\n",cf_ptr->wal);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK CF.con=%8.5f\n",cf_ptr->con);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK Residue has an overall SAS of %.3f\n",cf_ptr->totsas);
+			safe_remark_cat(remark, tmpremark, &remark_len);
 		}
 
-		sprintf(tmpremark,"REMARK Cluster %d: Rank (top):%d Average CF:%8.5f Frequency:%d\n",
+		snprintf(tmpremark, MAX_REMARK, "REMARK Cluster %d: Rank (top):%d Average CF:%8.5f Frequency:%d\n",
 			j,Clus_TOP[j],Clus_ACF[j],Clus_FRE[j]);
-		strcat(remark,tmpremark);
+		safe_remark_cat(remark, tmpremark, &remark_len);
 		for(i=0;i<FA->npar;++i)
 		{
-			sprintf(tmpremark,"REMARK [%8.3f]\n",FA->opt_par[i]);
-			strcat(remark,tmpremark);
+			snprintf(tmpremark, MAX_REMARK, "REMARK [%8.3f]\n",FA->opt_par[i]);
+			safe_remark_cat(remark, tmpremark, &remark_len);
 		}
-		//sprintf(tmpremark,"REMARK seed=%ld\n",FA->seed_ini);
-		strcat(remark,tmpremark);
+		//snprintf(tmpremark, MAX_REMARK, "REMARK seed=%ld\n",FA->seed_ini);
+		safe_remark_cat(remark, tmpremark, &remark_len);
 		if(FA->refstructure == 1){
-			sprintf(tmpremark,"REMARK %8.5f RMSD to ref. structure (no symmetry correction)\n",
+			snprintf(tmpremark, MAX_REMARK, "REMARK %8.5f RMSD to ref. structure (no symmetry correction)\n",
 				calc_rmsd(FA,atoms,residue,cleftgrid,FA->npar,FA->opt_par, Hungarian));
-			strcat(remark,tmpremark);
+			safe_remark_cat(remark, tmpremark, &remark_len);
 			Hungarian = true;
-			sprintf(tmpremark,"REMARK %8.5f RMSD to ref. structure     (symmetry corrected)\n",
+			snprintf(tmpremark, MAX_REMARK, "REMARK %8.5f RMSD to ref. structure     (symmetry corrected)\n",
 				calc_rmsd(FA,atoms,residue,cleftgrid,FA->npar,FA->opt_par, Hungarian));
-			strcat(remark,tmpremark);
+			safe_remark_cat(remark, tmpremark, &remark_len);
 		}
-		sprintf(tmpremark,"REMARK inputs: %s & %s\n",dockinp,gainp);
-		strcat(remark,tmpremark);
-		sprintf(sufix,"_%d.pdb",j);
-		strcpy(tmp_end_strfile,end_strfile);
-		strcat(tmp_end_strfile,sufix);
+		snprintf(tmpremark, MAX_REMARK, "REMARK inputs: %s & %s\n",dockinp,gainp);
+		safe_remark_cat(remark, tmpremark, &remark_len);
+		snprintf(sufix, sizeof(sufix), "_%d.pdb",j);
+		snprintf(tmp_end_strfile, MAX_PATH__, "%s%s", end_strfile, sufix);
 		//printf("filename=<%s>\n",tmp_end_strfile);
 		//PAUSE;
 		write_pdb(FA,atoms,residue,tmp_end_strfile,remark);

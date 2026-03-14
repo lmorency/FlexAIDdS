@@ -61,7 +61,8 @@ void read_coor(FA_Global* FA,atom** atoms,resid** residue,char line[], char res_
 		(*atoms)[FA->atm_cnt].coor_ref=NULL;
 		(*atoms)[FA->atm_cnt].acs=-1.0f;		
 		
-		strcpy((*atoms)[FA->atm_cnt].name,atm_typ);
+		strncpy((*atoms)[FA->atm_cnt].name,atm_typ,sizeof((*atoms)[FA->atm_cnt].name)-1);
+		(*atoms)[FA->atm_cnt].name[sizeof((*atoms)[FA->atm_cnt].name)-1]='\0';
 		if(strcmp((*atoms)[FA->atm_cnt].name," OXT")==0){
 			(*residue)[FA->res_cnt].ter = 1;
 			//printf("Residue Ter: %d\n", (*residue)[FA->res_cnt].ter);

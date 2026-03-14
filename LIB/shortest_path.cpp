@@ -47,7 +47,12 @@ void shortest_path(resid* residue, int tot, atom* atoms)
 			if(j==i){
 				//ss << atoms[fatm+i].number;
 				ss << fatm+i;
-				strcpy(residue->shortpath[i][j], ss.str().c_str());
+				if(ss.str().length() > MAX_SHORTEST_PATH*6){
+					fprintf(stderr,"ERROR: Shortest path buffer too short for the size of the molecule\n");
+					Terminate(25);
+				}
+				strncpy(residue->shortpath[i][j], ss.str().c_str(), MAX_SHORTEST_PATH*6);
+				residue->shortpath[i][j][MAX_SHORTEST_PATH*6-1] = '\0';
 				/*
 				  printf("shortest path from %d to %d is %s\n",
 				  atoms[fatm+j].number, atoms[fatm+i].number, residue->shortpath[i][j]);

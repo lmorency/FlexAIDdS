@@ -13,9 +13,7 @@ int write_rrd(FA_Global* FA,GB_Global* GB,const chromosome* chrom, const genlim*
 	float rmsd_corrected = 0.0f;
 	bool Hungarian = false;
 
-	sprintf(sufix,".rrd");
-	strcpy(tmp_end_strfile,outfile);
-	strcat(tmp_end_strfile,sufix);
+	snprintf(tmp_end_strfile,MAX_PATH__,"%s.rrd",outfile);
 	
 	outfile_ptr=NULL;
 	if(!OpenFile_B(tmp_end_strfile,"w",&outfile_ptr)){

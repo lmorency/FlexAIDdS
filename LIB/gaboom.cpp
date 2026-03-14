@@ -73,26 +73,14 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	*memchrom=0; //num chrom allocated in memory
 
 	// for generation random doubles from [0,1[ (mutation crossover operators)
-	strcpy(PAUSEFILE,FA->state_path);
 #ifdef _WIN32
-	strcat(PAUSEFILE,"\\.pause");
+	snprintf(PAUSEFILE,MAX_PATH__,"%s\\.pause",FA->state_path);
+	snprintf(ABORTFILE,MAX_PATH__,"%s\\.abort",FA->state_path);
+	snprintf(STOPFILE,MAX_PATH__,"%s\\.stop",FA->state_path);
 #else
-	strcat(PAUSEFILE,"/.pause");
-#endif
-
-
-	strcpy(ABORTFILE,FA->state_path);
-#ifdef _WIN32
-	strcat(ABORTFILE,"\\.abort");
-#else
-	strcat(ABORTFILE,"/.abort");
-#endif
-
-	strcpy(STOPFILE,FA->state_path);
-#ifdef _WIN32
-	strcat(STOPFILE,"\\.stop");
-#else
-	strcat(STOPFILE,"/.stop");
+	snprintf(PAUSEFILE,MAX_PATH__,"%s/.pause",FA->state_path);
+	snprintf(ABORTFILE,MAX_PATH__,"%s/.abort",FA->state_path);
+	snprintf(STOPFILE,MAX_PATH__,"%s/.stop",FA->state_path);
 #endif
 
 	GB->num_genes=FA->npar;
@@ -297,29 +285,21 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 
 			if(FA->output_range){
 #ifdef _WIN32
-				sprintf(gridfilename,"\\grid.%d.prt.pdb",i+1);
+				snprintf(gridfile,MAX_PATH__,"%s\\grid.%d.prt.pdb",FA->temp_path,i+1);
 #else
-				sprintf(gridfilename,"/grid.%d.prt.pdb",i+1);
+				snprintf(gridfile,MAX_PATH__,"%s/grid.%d.prt.pdb",FA->temp_path,i+1);
 #endif
-				strcpy(gridfile,FA->temp_path);
-				strcat(gridfile,gridfilename);
-
 				write_grid(FA,(*cleftgrid),gridfile);
 			}
 
 			slice_grid(FA,(*gene_lim),atoms,residue,cleftgrid);
 
 			if(FA->output_range){
-
 #ifdef _WIN32
-				sprintf(gridfilename,"\\grid.%d.slc.pdb",i+1);
+				snprintf(gridfile,MAX_PATH__,"%s\\grid.%d.slc.pdb",FA->temp_path,i+1);
 #else
-				sprintf(gridfilename,"/grid.%d.slc.pdb",i+1);
+				snprintf(gridfile,MAX_PATH__,"%s/grid.%d.slc.pdb",FA->temp_path,i+1);
 #endif
-
-				strcpy(gridfile,FA->temp_path);
-				strcat(gridfile,gridfilename);
-
 				write_grid(FA,(*cleftgrid),gridfile);
 			}
 
@@ -341,7 +321,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		  if((i/rrg_skip)*rrg_skip == i) rrg_flag=1;
 		  if((rrg_flag==1) && (GB->outgen==1)){
 		  if(FA->refstructure == 1){
-		  sprintf(tmp_rrgfile,"%s_%d.rrg",FA->rrgfile,i);
+		  snprintf(tmp_rrgfile,MAX_PATH__,"%s_%d.rrg",FA->rrgfile,i);
 		  //printf("%s\n",tmp_rrgfile);
 		  //PAUSE;
 		  write_rrg(FA,GB,(*chrom),(*gene_lim),atoms,residue,(*cleftgrid),tmp_rrgfile);
@@ -379,8 +359,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 
 	QuickSort((*chrom),0,GB->num_chrom-1,true);
 
-	strcpy(outfile,FA->rrgfile);
-	strcat(outfile,"_par.res");
+	snprintf(outfile,MAX_PATH__,"%s_par.res",FA->rrgfile);
 	if (FA->htpmode == false) {write_par((*chrom),(*gene_lim),i+1,outfile,GB->num_chrom,GB->num_genes);}
 
 	printf("sorting chrom_snapshot\n");
@@ -1324,11 +1303,10 @@ FILE* get_update_file_ptr(FA_Global* FA)
 	char UPDATEFILE[MAX_PATH__];
 	long long timeout = 0;
 
-	strcpy(UPDATEFILE,FA->state_path);
 #ifdef _WIN32
-	strcat(UPDATEFILE,"\\.update");
+	snprintf(UPDATEFILE,MAX_PATH__,"%s\\.update",FA->state_path);
 #else
-	strcat(UPDATEFILE,"/.update");
+	snprintf(UPDATEFILE,MAX_PATH__,"%s/.update",FA->state_path);
 #endif
 
 	outfile_ptr = fopen(UPDATEFILE,"r");
@@ -1801,17 +1779,18 @@ void read_gainputs(FA_Global* FA,GB_Global* GB,int* gen_int,int* sz_part,char fi
 		}else if(strncmp(buffer,"ENDMPROB",8) == 0){
 			sscanf(buffer,"%s %lf",field,&GB->end_mut_prob);
 		}else if(strncmp(buffer,"POPINIMT",8) == 0){
-			sscanf(buffer,"%s %s",field,GB->pop_init_method);
+			sscanf(buffer,"%s %8s",field,GB->pop_init_method);
 			//0         1         2
 			//012345678901234567890123456789
 			//POPINIMT IPFILE file.dat
 			if(strcmp(GB->pop_init_method,"IPFILE") == 0){
-				strcpy(GB->pop_init_file,&buffer[16]);
+				strncpy(GB->pop_init_file,&buffer[16],MAX_PATH__-1);
+				GB->pop_init_file[MAX_PATH__-1]='\0';
 			}
 		}else if(strncmp(buffer,"FITMODEL",8) == 0){
-			sscanf(buffer,"%s %s",field,GB->fitness_model);
+			sscanf(buffer,"%s %8s",field,GB->fitness_model);
 		}else if(strncmp(buffer,"REPMODEL",8) == 0){
-			sscanf(buffer,"%s %s",field,GB->rep_model);
+			sscanf(buffer,"%s %8s",field,GB->rep_model);
 		}else if(strncmp(buffer,"DUPLICAT",8) == 0){
 			GB->duplicates = 1;
 		}else if(strncmp(buffer,"BOOMFRAC",8) == 0){

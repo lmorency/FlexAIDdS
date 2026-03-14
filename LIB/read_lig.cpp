@@ -137,7 +137,8 @@ void read_lig(FA_Global* FA,atom** atoms,resid** residue,char ligfile[]){
 			FA->resligand = &(*residue)[FA->res_cnt];
 
 			(*residue)[FA->res_cnt].type=1;
-			strcpy((*residue)[FA->res_cnt].name,rnam);
+			strncpy((*residue)[FA->res_cnt].name,rnam,sizeof((*residue)[FA->res_cnt].name)-1);
+			(*residue)[FA->res_cnt].name[sizeof((*residue)[FA->res_cnt].name)-1]='\0';
 
 			(*residue)[FA->res_cnt].chn=buffer[11];
 			if((*residue)[FA->res_cnt].chn == '-'){(*residue)[FA->res_cnt].chn=' ';}

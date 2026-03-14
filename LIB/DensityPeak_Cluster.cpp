@@ -401,9 +401,7 @@ void DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome
     QuickSort_Cluster_by_CF( Clust, Entropic, 0, nResults-1 );
 
 	// (12) Output Cluster information
-	sprintf(sufix,".cad");
-	strcpy(tmp_end_strfile, end_strfile);
-	strcat(tmp_end_strfile, sufix);
+	snprintf(tmp_end_strfile, MAX_PATH__, "%s.cad", end_strfile);
 
 	if(!OpenFile_B(tmp_end_strfile,"w",&outfile_ptr))
 	{
@@ -469,61 +467,62 @@ void DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome
 		
 		CF = ic2cf(FA, VC, atoms, residue, cleftgrid, GB->num_genes, FA->opt_par);
 		
-		strcpy(remark,"REMARK optimized structure\n");
-		sprintf(tmpremark,"REMARK Density Peak clustering algorithm used to output %s as cluster representatives\n", (OUTPUT_CLUSTER_CENTER == true ? "the lowest CF" : "the center of highest density"));
-		strcat(remark,tmpremark);
-		
-		sprintf(tmpremark,"REMARK CF=%8.5f\n",get_cf_evalue(&CF));
-		strcat(remark,tmpremark);
-		sprintf(tmpremark,"REMARK CF.app=%8.5f\n",get_apparent_cf_evalue(&CF));
-		strcat(remark,tmpremark);
+		size_t remark_len = 0;
+		remark[0] = '\0';
+		safe_remark_cat(remark, "REMARK optimized structure\n", &remark_len);
+		snprintf(tmpremark,MAX_REMARK,"REMARK Density Peak clustering algorithm used to output %s as cluster representatives\n", (OUTPUT_CLUSTER_CENTER == true ? "the lowest CF" : "the center of highest density"));
+		safe_remark_cat(remark,tmpremark,&remark_len);
+
+		snprintf(tmpremark,MAX_REMARK,"REMARK CF=%8.5f\n",get_cf_evalue(&CF));
+		safe_remark_cat(remark,tmpremark,&remark_len);
+		snprintf(tmpremark,MAX_REMARK,"REMARK CF.app=%8.5f\n",get_apparent_cf_evalue(&CF));
+		safe_remark_cat(remark,tmpremark,&remark_len);
 		for(j = 0; j < FA->num_optres; ++j)
 		{
 			pRes = &residue[FA->optres[j].rnum];
 			pCF  = &FA->optres[j].cf;
 
-			sprintf(tmpremark,"REMARK optimizable residue %s %c %d\n", pRes->name, pRes->chn, pRes->number);
-			strcat(remark,tmpremark);
-	  
-			sprintf(tmpremark ,"REMARK CF.com=%8.5f\n", pCF->com);
-			strcat(remark, tmpremark);
-			sprintf(tmpremark ,"REMARK CF.sas=%8.5f\n", pCF->sas);
-			strcat(remark, tmpremark);
-			sprintf(tmpremark ,"REMARK CF.wal=%8.5f\n", pCF->wal);
-			strcat(remark, tmpremark);
-			sprintf(tmpremark ,"REMARK CF.con=%8.5f\n", pCF->con);
-			strcat(remark, tmpremark);
-			sprintf(tmpremark, "REMARK Residue has an overall SAS of %.3f\n", pCF->totsas);
-			strcat(remark, tmpremark);
+			snprintf(tmpremark,MAX_REMARK,"REMARK optimizable residue %s %c %d\n", pRes->name, pRes->chn, pRes->number);
+			safe_remark_cat(remark,tmpremark,&remark_len);
+
+			snprintf(tmpremark,MAX_REMARK,"REMARK CF.com=%8.5f\n", pCF->com);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark,MAX_REMARK,"REMARK CF.sas=%8.5f\n", pCF->sas);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark,MAX_REMARK,"REMARK CF.wal=%8.5f\n", pCF->wal);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark,MAX_REMARK,"REMARK CF.con=%8.5f\n", pCF->con);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark,MAX_REMARK,"REMARK Residue has an overall SAS of %.3f\n", pCF->totsas);
+			safe_remark_cat(remark, tmpremark, &remark_len);
 		}
-		
-		sprintf(tmpremark,"REMARK Cluster:%d Best CF in Cluster:%8.5f Cluster Center (CF):%8.5f Cluster Total CF:%8.5f Cluster Frequency:%d\n", 
+
+		snprintf(tmpremark,MAX_REMARK,"REMARK Cluster:%d Best CF in Cluster:%8.5f Cluster Center (CF):%8.5f Cluster Total CF:%8.5f Cluster Frequency:%d\n",
 				pCluster->ID, pCluster->Representative->Chromosome->app_evalue, pCluster->Center->Chromosome->app_evalue, pCluster->totCF, pCluster->Frequency);
-		strcat(remark,tmpremark);
-		
+		safe_remark_cat(remark,tmpremark,&remark_len);
+
 		for(j=0; j < FA->npar; ++j)
 		{
-			sprintf(tmpremark, "REMARK [%8.3f]\n",FA->opt_par[j]);
-			strcat(remark,tmpremark);
+			snprintf(tmpremark,MAX_REMARK,"REMARK [%8.3f]\n",FA->opt_par[j]);
+			safe_remark_cat(remark,tmpremark,&remark_len);
 		}
 
-		// Calculate RMSD value to REFERENCE pose IF REFERENCE is defined in input 
+		// Calculate RMSD value to REFERENCE pose IF REFERENCE is defined in input
 		if(FA->refstructure == 1)
 		{
-			sprintf(tmpremark,"REMARK %8.5f RMSD to ref. structure (no symmetry correction)\n",
+			snprintf(tmpremark,MAX_REMARK,"REMARK %8.5f RMSD to ref. structure (no symmetry correction)\n",
 			calc_rmsd(FA,atoms,residue,cleftgrid,FA->npar,FA->opt_par, Hungarian));
-			strcat(remark,tmpremark);
+			safe_remark_cat(remark,tmpremark,&remark_len);
 			Hungarian = true;
-			sprintf(tmpremark,"REMARK %8.5f RMSD to ref. structure     (symmetry corrected)\n",
+			snprintf(tmpremark,MAX_REMARK,"REMARK %8.5f RMSD to ref. structure     (symmetry corrected)\n",
 			calc_rmsd(FA,atoms,residue,cleftgrid,FA->npar,FA->opt_par, Hungarian));
-			strcat(remark,tmpremark);
+			safe_remark_cat(remark,tmpremark,&remark_len);
 		}
 
-		sprintf(tmpremark,"REMARK inputs: %s & %s\n",dockinp,gainp);
-		strcat(remark,tmpremark);
-		sprintf(sufix,"_%d.pdb",i);
-		strcpy(tmp_end_strfile,end_strfile);
-		strcat(tmp_end_strfile,sufix);
+		snprintf(tmpremark,MAX_REMARK,"REMARK inputs: %s & %s\n",dockinp,gainp);
+		safe_remark_cat(remark,tmpremark,&remark_len);
+		snprintf(sufix,sizeof(sufix),"_%d.pdb",i);
+		snprintf(tmp_end_strfile,MAX_PATH__,"%s%s",end_strfile,sufix);
 
 		// (*) write pdb file
 		write_pdb(FA,atoms,residue,tmp_end_strfile,remark);

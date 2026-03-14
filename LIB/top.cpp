@@ -181,8 +181,8 @@ int main(int argc, char **argv){
 
 	FA->mov[0] = NULL;
 	FA->mov[1] = NULL;
-	strcpy(FA->clustering_algorithm,"CF");
-	strcpy(FA->vcontacts_self_consistency,"MAX");
+	strncpy(FA->clustering_algorithm,"CF",sizeof(FA->clustering_algorithm)-1); FA->clustering_algorithm[sizeof(FA->clustering_algorithm)-1]='\0';
+	strncpy(FA->vcontacts_self_consistency,"MAX",sizeof(FA->vcontacts_self_consistency)-1); FA->vcontacts_self_consistency[sizeof(FA->vcontacts_self_consistency)-1]='\0';
 	FA->vcontacts_planedef = 'X';
 
 	// ── Determine base path from executable location ──
@@ -199,10 +199,10 @@ int main(int argc, char **argv){
 			FA->base_path[i+1]='\0';
 		}
 	}else{
-		strcpy(FA->base_path,".");
+		strncpy(FA->base_path,".",MAX_PATH__-1); FA->base_path[MAX_PATH__-1]='\0';
 	}
 #else
-	strcpy(FA->base_path,".");
+	strncpy(FA->base_path,".",MAX_PATH__-1); FA->base_path[MAX_PATH__-1]='\0';
 #endif //_WIN32
 
 	printf("base path is '%s'\n", FA->base_path);
@@ -234,18 +234,18 @@ int main(int argc, char **argv){
 			Terminate(1);
 		}
 		legacy_mode = true;
-		strcpy(dockinp, argv[2]);
-		strcpy(gainp, argv[3]);
-		strcpy(end_strfile, argv[4]);
-		strcpy(FA->rrgfile, end_strfile);
+		strncpy(dockinp, argv[2], MAX_PATH__-1); dockinp[MAX_PATH__-1]='\0';
+		strncpy(gainp, argv[3], MAX_PATH__-1); gainp[MAX_PATH__-1]='\0';
+		strncpy(end_strfile, argv[4], MAX_PATH__-1); end_strfile[MAX_PATH__-1]='\0';
+		strncpy(FA->rrgfile, end_strfile, MAX_PATH__-1); FA->rrgfile[MAX_PATH__-1]='\0';
 	}
 	// Legacy auto-detect: if exactly 3 positional args and first does not end in .pdb
 	else if (argc == 4 && strstr(argv[1], ".pdb") == NULL && strstr(argv[1], ".PDB") == NULL) {
 		legacy_mode = true;
-		strcpy(dockinp, argv[1]);
-		strcpy(gainp, argv[2]);
-		strcpy(end_strfile, argv[3]);
-		strcpy(FA->rrgfile, end_strfile);
+		strncpy(dockinp, argv[1], MAX_PATH__-1); dockinp[MAX_PATH__-1]='\0';
+		strncpy(gainp, argv[2], MAX_PATH__-1); gainp[MAX_PATH__-1]='\0';
+		strncpy(end_strfile, argv[3], MAX_PATH__-1); end_strfile[MAX_PATH__-1]='\0';
+		strncpy(FA->rrgfile, end_strfile, MAX_PATH__-1); FA->rrgfile[MAX_PATH__-1]='\0';
 	}
 	else {
 		// ── New mode: receptor ligand [options] ──
@@ -280,10 +280,6 @@ int main(int argc, char **argv){
 			using O = json::Object;
 			config = json::merge(config, V(O{{"advanced", V(O{{"assume_folded", V(true)}})}}));
 		}
-		if (use_folded) {
-			config = merge_json(config, nlohmann::json{{"advanced", {{"assume_folded", true}}}});
-		}
-
 		// Apply config to FA/GB structs
 		apply_config(config, FA, GB);
 
@@ -303,7 +299,7 @@ int main(int argc, char **argv){
 		// Set output prefix for end_strfile
 		strncpy(end_strfile, output_prefix.c_str(), MAX_PATH__ - 1);
 		end_strfile[MAX_PATH__ - 1] = '\0';
-		strcpy(FA->rrgfile, end_strfile);
+		strncpy(FA->rrgfile, end_strfile, MAX_PATH__-1); FA->rrgfile[MAX_PATH__-1]='\0';
 
 		dockinp[0] = '\0';
 		gainp[0] = '\0';
@@ -463,9 +459,8 @@ int main(int argc, char **argv){
 	//printf("=%8.5f\n",cf);
 
 	//-----------------------------------------------------------------------------------
-	strcpy(tmp_end_strfile,end_strfile);
-	strcat(tmp_end_strfile,"_INI.pdb");
-	strcpy(remark,"REMARK initial structure\n");
+	snprintf(tmp_end_strfile, MAX_PATH__, "%s_INI.pdb", end_strfile);
+	size_t remark_len = 0; remark[0] = '\0'; safe_remark_cat(remark, "REMARK initial structure\n", &remark_len);
 
 	// Should execute cf-vcfunction instead to avoid rotamer change for INI conf.
 	cf=ic2cf(FA,VC,atoms,residue,cleftgrid,FA->npar,FA->opt_par);
@@ -475,39 +470,39 @@ int main(int argc, char **argv){
 	printf("=%8.5f\n", get_cf_evalue(&cf));
 	//getchar();
   
-	sprintf(tmpremark,"REMARK CF=%8.5f\n", get_cf_evalue(&cf));
-	strcat(remark,tmpremark);
-	sprintf(tmpremark,"REMARK CF.app=%8.5f\n", get_apparent_cf_evalue(&cf));
-	strcat(remark,tmpremark);
+	snprintf(tmpremark,MAX_REMARK,"REMARK CF=%8.5f\n", get_cf_evalue(&cf));
+	safe_remark_cat(remark,tmpremark,&remark_len);
+	snprintf(tmpremark,MAX_REMARK,"REMARK CF.app=%8.5f\n", get_apparent_cf_evalue(&cf));
+	safe_remark_cat(remark,tmpremark,&remark_len);
 
 	for(i=0;i<FA->num_optres;i++){
     
 		res_ptr = &residue[FA->optres[i].rnum];
 		cf_ptr = &FA->optres[i].cf;
 
-		sprintf(tmpremark,"REMARK optimizable residue %s %c %d\n",
+		snprintf(tmpremark,MAX_REMARK,"REMARK optimizable residue %s %c %d\n",
 			res_ptr->name,res_ptr->chn,res_ptr->number);
-		strcat(remark,tmpremark);
-    
-		sprintf(tmpremark,"REMARK CF.com=%8.5f\n",cf_ptr->com);
-		strcat(remark,tmpremark);
-		sprintf(tmpremark,"REMARK CF.sas=%8.5f\n",cf_ptr->sas);
-		strcat(remark,tmpremark);
-		sprintf(tmpremark,"REMARK CF.wal=%8.5f\n",cf_ptr->wal);
-		strcat(remark,tmpremark);
-		sprintf(tmpremark,"REMARK CF.con=%8.5f\n",cf_ptr->con);
-		strcat(remark,tmpremark);
-		sprintf(tmpremark,"REMARK Residue has an overall SAS of %.3f\n",cf_ptr->totsas);
-		strcat(remark,tmpremark);
+		safe_remark_cat(remark,tmpremark,&remark_len);
+
+		snprintf(tmpremark,MAX_REMARK,"REMARK CF.com=%8.5f\n",cf_ptr->com);
+		safe_remark_cat(remark,tmpremark,&remark_len);
+		snprintf(tmpremark,MAX_REMARK,"REMARK CF.sas=%8.5f\n",cf_ptr->sas);
+		safe_remark_cat(remark,tmpremark,&remark_len);
+		snprintf(tmpremark,MAX_REMARK,"REMARK CF.wal=%8.5f\n",cf_ptr->wal);
+		safe_remark_cat(remark,tmpremark,&remark_len);
+		snprintf(tmpremark,MAX_REMARK,"REMARK CF.con=%8.5f\n",cf_ptr->con);
+		safe_remark_cat(remark,tmpremark,&remark_len);
+		snprintf(tmpremark,MAX_REMARK,"REMARK Residue has an overall SAS of %.3f\n",cf_ptr->totsas);
+		safe_remark_cat(remark,tmpremark,&remark_len);
 		
 	}
 	
 	for(i=0;i<FA->npar;i++){
-		sprintf(tmpremark,"REMARK [%8.3f]\n",FA->opt_par[i]);
-		strcat(remark,tmpremark);
+		snprintf(tmpremark,MAX_REMARK,"REMARK [%8.3f]\n",FA->opt_par[i]);
+		safe_remark_cat(remark,tmpremark,&remark_len);
 	}
-	sprintf(tmpremark,"REMARK inputs: %s & %s",dockinp,gainp);
-	strcat(remark,tmpremark);
+	snprintf(tmpremark,MAX_REMARK,"REMARK inputs: %s & %s",dockinp,gainp);
+	safe_remark_cat(remark,tmpremark,&remark_len);
 	
 	if (FA->htpmode == false) {write_pdb(FA,atoms,residue,tmp_end_strfile,remark);}
 

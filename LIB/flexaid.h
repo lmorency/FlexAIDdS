@@ -37,6 +37,16 @@
 #define MAX_SHORTEST_PATH 25        // max number of atom to reach any atom of the same molecule
 #define MAX_PATH__ 255              // max size of path length
 #define MAX_REMARK 5000             // max size of comment length
+
+// Safe remark buffer append: prevents buffer overflow in remark accumulation.
+// Usage: safe_remark_cat(remark, tmpremark, &remark_len);
+static inline void safe_remark_cat(char* remark, const char* src, size_t* cur_len) {
+    size_t src_len = strlen(src);
+    if (*cur_len + src_len < MAX_REMARK - 1) {
+        memcpy(remark + *cur_len, src, src_len + 1);
+        *cur_len += src_len;
+    }
+}
 #define MAX_NUM_RES 250             // max number of residues allowed 
 #define MAX_NUM_MODES 5             // max number of normal modes
 #define MAX_NUM_ATM 10000           // max number of atoms allowed 

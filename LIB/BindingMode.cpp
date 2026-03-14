@@ -268,68 +268,69 @@ void BindingMode::output_BindingMode(int num_result, char* end_strfile, char* tm
 
 	CF = ic2cf(this->Population->FA, this->Population->VC, this->Population->atoms, this->Population->residue, this->Population->cleftgrid, this->Population->GB->num_genes, this->Population->FA->opt_par);
 
-	strcpy(remark, "REMARK optimized structure\n");
+	size_t remark_len = 0;
+	remark[0] = '\0';
+	safe_remark_cat(remark, "REMARK optimized structure\n", &remark_len);
 
-	sprintf(tmpremark, "REMARK Fast OPTICS clustering algorithm used to output the lowest CF as Binding Mode representative\n");
-	strcat(remark, tmpremark);
+	snprintf(tmpremark, MAX_REMARK, "REMARK Fast OPTICS clustering algorithm used to output the lowest CF as Binding Mode representative\n");
+	safe_remark_cat(remark, tmpremark, &remark_len);
 
-	sprintf(tmpremark, "REMARK CF=%8.5f\n", get_cf_evalue(&CF));
-	strcat(remark, tmpremark);
-	sprintf(tmpremark, "REMARK CF.app=%8.5f\n", get_apparent_cf_evalue(&CF));
-	strcat(remark, tmpremark);
+	snprintf(tmpremark, MAX_REMARK, "REMARK CF=%8.5f\n", get_cf_evalue(&CF));
+	safe_remark_cat(remark, tmpremark, &remark_len);
+	snprintf(tmpremark, MAX_REMARK, "REMARK CF.app=%8.5f\n", get_apparent_cf_evalue(&CF));
+	safe_remark_cat(remark, tmpremark, &remark_len);
 
 	for (int j = 0; j < this->Population->FA->num_optres; ++j)
 	{
 		pRes = &this->Population->residue[this->Population->FA->optres[j].rnum];
 		pCF = &this->Population->FA->optres[j].cf;
 
-		sprintf(tmpremark, "REMARK optimizable residue %s %c %d\n", pRes->name, pRes->chn, pRes->number);
-		strcat(remark, tmpremark);
+		snprintf(tmpremark, MAX_REMARK, "REMARK optimizable residue %s %c %d\n", pRes->name, pRes->chn, pRes->number);
+		safe_remark_cat(remark, tmpremark, &remark_len);
 
-		sprintf(tmpremark, "REMARK CF.com=%8.5f\n", pCF->com);
-		strcat(remark, tmpremark);
-		sprintf(tmpremark, "REMARK CF.sas=%8.5f\n", pCF->sas);
-		strcat(remark, tmpremark);
-		sprintf(tmpremark, "REMARK CF.wal=%8.5f\n", pCF->wal);
-		strcat(remark, tmpremark);
-		sprintf(tmpremark, "REMARK CF.con=%8.5f\n", pCF->con);
-		strcat(remark, tmpremark);
-		sprintf(tmpremark, "REMARK Residue has an overall SAS of %.3f\n", pCF->totsas);
-		strcat(remark, tmpremark);
+		snprintf(tmpremark, MAX_REMARK, "REMARK CF.com=%8.5f\n", pCF->com);
+		safe_remark_cat(remark, tmpremark, &remark_len);
+		snprintf(tmpremark, MAX_REMARK, "REMARK CF.sas=%8.5f\n", pCF->sas);
+		safe_remark_cat(remark, tmpremark, &remark_len);
+		snprintf(tmpremark, MAX_REMARK, "REMARK CF.wal=%8.5f\n", pCF->wal);
+		safe_remark_cat(remark, tmpremark, &remark_len);
+		snprintf(tmpremark, MAX_REMARK, "REMARK CF.con=%8.5f\n", pCF->con);
+		safe_remark_cat(remark, tmpremark, &remark_len);
+		snprintf(tmpremark, MAX_REMARK, "REMARK Residue has an overall SAS of %.3f\n", pCF->totsas);
+		safe_remark_cat(remark, tmpremark, &remark_len);
 	}
 
-	sprintf(tmpremark, "REMARK Binding Mode:%d Best CF in Binding Mode:%8.5f OPTICS Center (CF):%8.5f Binding Mode Total CF:%8.5f Binding Mode Frequency:%d\n",
+	snprintf(tmpremark, MAX_REMARK, "REMARK Binding Mode:%d Best CF in Binding Mode:%8.5f OPTICS Center (CF):%8.5f Binding Mode Total CF:%8.5f Binding Mode Frequency:%d\n",
 		num_result, Rep_lowCF->CF, Rep_lowOPTICS->CF, this->compute_energy(), this->get_BindingMode_size());
-	strcat(remark, tmpremark);
+	safe_remark_cat(remark, tmpremark, &remark_len);
 	{
 		double vib_corr = this->compute_vibrational_correction();
 		if (std::abs(vib_corr) > 1e-12) {
-			sprintf(tmpremark, "REMARK Vibrational correction (ENCoM): %10.4f kcal/mol\n", vib_corr);
-			strcat(remark, tmpremark);
+			snprintf(tmpremark, MAX_REMARK, "REMARK Vibrational correction (ENCoM): %10.4f kcal/mol\n", vib_corr);
+			safe_remark_cat(remark, tmpremark, &remark_len);
 		}
 	}
 	for (int j = 0; j < this->Population->FA->npar; ++j)
 	{
-		sprintf(tmpremark, "REMARK [%8.3f]\n", this->Population->FA->opt_par[j]);
-		strcat(remark, tmpremark);
+		snprintf(tmpremark, MAX_REMARK, "REMARK [%8.3f]\n", this->Population->FA->opt_par[j]);
+		safe_remark_cat(remark, tmpremark, &remark_len);
 	}
 
 	if (this->Population->FA->refstructure == 1)
 	{
 		bool Hungarian = false;
-		sprintf(tmpremark, "REMARK %8.5f RMSD to ref. structure (no symmetry correction)\n",
+		snprintf(tmpremark, MAX_REMARK, "REMARK %8.5f RMSD to ref. structure (no symmetry correction)\n",
 			calc_rmsd(this->Population->FA, this->Population->atoms, this->Population->residue, this->Population->cleftgrid, this->Population->FA->npar, this->Population->FA->opt_par, Hungarian));
-		strcat(remark, tmpremark);
+		safe_remark_cat(remark, tmpremark, &remark_len);
 		Hungarian = true;
-		sprintf(tmpremark, "REMARK %8.5f RMSD to ref. structure     (symmetry corrected)\n",
+		snprintf(tmpremark, MAX_REMARK, "REMARK %8.5f RMSD to ref. structure     (symmetry corrected)\n",
 			calc_rmsd(this->Population->FA, this->Population->atoms, this->Population->residue, this->Population->cleftgrid, this->Population->FA->npar, this->Population->FA->opt_par, Hungarian));
-		strcat(remark, tmpremark);
+		safe_remark_cat(remark, tmpremark, &remark_len);
 	}
-	sprintf(tmpremark, "REMARK inputs: %s & %s\n", dockinp, gainp);
-	strcat(remark, tmpremark);
-	sprintf(sufix, "_%d_%d.pdb", minPoints, num_result);
-	strcpy(tmp_end_strfile, end_strfile);
-	strcat(tmp_end_strfile, sufix);
+	snprintf(tmpremark, MAX_REMARK, "REMARK inputs: %s & %s\n", dockinp, gainp);
+	safe_remark_cat(remark, tmpremark, &remark_len);
+	snprintf(sufix, sizeof(sufix), "_%d_%d.pdb", minPoints, num_result);
+	snprintf(tmp_end_strfile, MAX_PATH__, "%s%s", end_strfile, sufix);
 	write_pdb(this->Population->FA, this->Population->atoms, this->Population->residue, tmp_end_strfile, remark);
 }
 
@@ -350,58 +351,59 @@ void BindingMode::output_dynamic_BindingMode(int num_result, char* end_strfile, 
 
 		CF = ic2cf(this->Population->FA, this->Population->VC, this->Population->atoms, this->Population->residue, this->Population->cleftgrid, this->Population->GB->num_genes, this->Population->FA->opt_par);
 
-		strcpy(remark, "REMARK optimized structure\n");
-		sprintf(tmpremark, "REMARK Fast OPTICS clustering algorithm used to output the lowest OPTICS ordering as Binding Mode representative\n");
-		strcat(remark, tmpremark);
+		size_t remark_len = 0;
+		remark[0] = '\0';
+		safe_remark_cat(remark, "REMARK optimized structure\n", &remark_len);
+		snprintf(tmpremark, MAX_REMARK, "REMARK Fast OPTICS clustering algorithm used to output the lowest OPTICS ordering as Binding Mode representative\n");
+		safe_remark_cat(remark, tmpremark, &remark_len);
 
-		sprintf(tmpremark, "REMARK CF=%8.5f\n", get_cf_evalue(&CF));
-		strcat(remark, tmpremark);
-		sprintf(tmpremark, "REMARK CF.app=%8.5f\n", get_apparent_cf_evalue(&CF));
-		strcat(remark, tmpremark);
+		snprintf(tmpremark, MAX_REMARK, "REMARK CF=%8.5f\n", get_cf_evalue(&CF));
+		safe_remark_cat(remark, tmpremark, &remark_len);
+		snprintf(tmpremark, MAX_REMARK, "REMARK CF.app=%8.5f\n", get_apparent_cf_evalue(&CF));
+		safe_remark_cat(remark, tmpremark, &remark_len);
 
 		for (int j = 0; j < this->Population->FA->num_optres; ++j)
 		{
 			pRes = &this->Population->residue[this->Population->FA->optres[j].rnum];
 			pCF = &this->Population->FA->optres[j].cf;
 
-			sprintf(tmpremark, "REMARK optimizable residue %s %c %d\n", pRes->name, pRes->chn, pRes->number);
-			strcat(remark, tmpremark);
+			snprintf(tmpremark, MAX_REMARK, "REMARK optimizable residue %s %c %d\n", pRes->name, pRes->chn, pRes->number);
+			safe_remark_cat(remark, tmpremark, &remark_len);
 
-			sprintf(tmpremark, "REMARK CF.com=%8.5f\n", pCF->com);
-			strcat(remark, tmpremark);
-			sprintf(tmpremark, "REMARK CF.sas=%8.5f\n", pCF->sas);
-			strcat(remark, tmpremark);
-			sprintf(tmpremark, "REMARK CF.wal=%8.5f\n", pCF->wal);
-			strcat(remark, tmpremark);
-			sprintf(tmpremark, "REMARK CF.con=%8.5f\n", pCF->con);
-			strcat(remark, tmpremark);
-			sprintf(tmpremark, "REMARK Residue has an overall SAS of %.3f\n", pCF->totsas);
-			strcat(remark, tmpremark);
+			snprintf(tmpremark, MAX_REMARK, "REMARK CF.com=%8.5f\n", pCF->com);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK CF.sas=%8.5f\n", pCF->sas);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK CF.wal=%8.5f\n", pCF->wal);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK CF.con=%8.5f\n", pCF->con);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK Residue has an overall SAS of %.3f\n", pCF->totsas);
+			safe_remark_cat(remark, tmpremark, &remark_len);
 		}
 
 		for (int j = 0; j < this->Population->FA->npar; ++j)
 		{
-			sprintf(tmpremark, "REMARK [%8.3f]\n", this->Population->FA->opt_par[j]);
-			strcat(remark, tmpremark);
+			snprintf(tmpremark, MAX_REMARK, "REMARK [%8.3f]\n", this->Population->FA->opt_par[j]);
+			safe_remark_cat(remark, tmpremark, &remark_len);
 		}
 
 		if (this->Population->FA->refstructure == 1)
 		{
 			bool Hungarian = false;
-			sprintf(tmpremark, "REMARK %8.5f RMSD to ref. structure (no symmetry correction)\n",
+			snprintf(tmpremark, MAX_REMARK, "REMARK %8.5f RMSD to ref. structure (no symmetry correction)\n",
 				calc_rmsd(this->Population->FA, this->Population->atoms, this->Population->residue, this->Population->cleftgrid, this->Population->FA->npar, this->Population->FA->opt_par, Hungarian));
-			strcat(remark, tmpremark);
+			safe_remark_cat(remark, tmpremark, &remark_len);
 			Hungarian = true;
-			sprintf(tmpremark, "REMARK %8.5f RMSD to ref. structure     (symmetry corrected)\n",
+			snprintf(tmpremark, MAX_REMARK, "REMARK %8.5f RMSD to ref. structure     (symmetry corrected)\n",
 				calc_rmsd(this->Population->FA, this->Population->atoms, this->Population->residue, this->Population->cleftgrid, this->Population->FA->npar, this->Population->FA->opt_par, Hungarian));
-			strcat(remark, tmpremark);
+			safe_remark_cat(remark, tmpremark, &remark_len);
 		}
-		sprintf(tmpremark, "REMARK inputs: %s & %s\n", dockinp, gainp);
-		strcat(remark, tmpremark);
+		snprintf(tmpremark, MAX_REMARK, "REMARK inputs: %s & %s\n", dockinp, gainp);
+		safe_remark_cat(remark, tmpremark, &remark_len);
 
-		sprintf(sufix, "_%d_MODEL_%d.pdb", minPoints, num_result);
-		strcpy(tmp_end_strfile, end_strfile);
-		strcat(tmp_end_strfile, sufix);
+		snprintf(sufix, sizeof(sufix), "_%d_MODEL_%d.pdb", minPoints, num_result);
+		snprintf(tmp_end_strfile, MAX_PATH__, "%s%s", end_strfile, sufix);
 		if (Pose == this->Poses.begin() && Pose + 1 == this->Poses.end())
 		{
 			write_MODEL_pdb(true, true, nModel, this->Population->FA, this->Population->atoms, this->Population->residue, tmp_end_strfile, remark);

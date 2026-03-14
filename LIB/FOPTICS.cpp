@@ -212,9 +212,8 @@ void FastOPTICS::output_OPTICS(char* end_strfile, char* tmp_end_strfile)
     char sufix[25];
 
     // priting OPTICS variable to '__minPoints.optics' file
-    sprintf(sufix,"__%d.optics",this->minPoints);
-    strcpy(tmp_end_strfile,end_strfile);
-	strcat(tmp_end_strfile,sufix);
+    snprintf(sufix,sizeof(sufix),"__%d.optics",this->minPoints);
+    snprintf(tmp_end_strfile,MAX_PATH__,"%s%s",end_strfile,sufix);
     FILE* outfile;// = fopen(tmp_end_strfile,"w");
 	if(!OpenFile_B(tmp_end_strfile,"w",&outfile))
 	{
@@ -244,9 +243,8 @@ void FastOPTICS::output_3d_OPTICS_ordering(char* end_strfile, char* tmp_end_strf
     char remark[MAX_REMARK];
 	char tmpremark[MAX_REMARK];
 
-	sprintf(sufix, "__%d.optics.pdb", this->minPoints);
-	strcpy(tmp_end_strfile, end_strfile);
-	strcat(tmp_end_strfile,sufix);
+	snprintf(sufix, sizeof(sufix), "__%d.optics.pdb", this->minPoints);
+	snprintf(tmp_end_strfile, MAX_PATH__, "%s%s", end_strfile, sufix);
 	FILE* outfile;
 	if(!OpenFile_B(tmp_end_strfile, "w", &outfile))
 	{
@@ -259,51 +257,53 @@ void FastOPTICS::output_3d_OPTICS_ordering(char* end_strfile, char* tmp_end_strf
 		{
 			for(int k = 0; k < this->GB->num_genes; ++k) this->FA->opt_par[k] = Pose->chrom->genes[k].to_ic;
 			CF = ic2cf(this->FA, this->VC, this->atoms, this->residue, this->cleftgrid, this->GB->num_genes, this->FA->opt_par);
-			strcpy(remark,"REMARK optimized structure\n");
-			sprintf(tmpremark,"REMARK Fast OPTICS clustering algorithm used to order Poses in OPTICS\n");
-			strcat(remark,tmpremark);
-			sprintf(tmpremark,"REMARK CF=%8.5f\n",get_cf_evalue(&CF));
-			strcat(remark,tmpremark);
-			sprintf(tmpremark,"REMARK CF.app=%8.5f\n",get_apparent_cf_evalue(&CF));
-			strcat(remark,tmpremark);
+			size_t remark_len = 0;
+			remark[0] = '\0';
+			safe_remark_cat(remark, "REMARK optimized structure\n", &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK Fast OPTICS clustering algorithm used to order Poses in OPTICS\n");
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK CF=%8.5f\n",get_cf_evalue(&CF));
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK CF.app=%8.5f\n",get_apparent_cf_evalue(&CF));
+			safe_remark_cat(remark, tmpremark, &remark_len);
 
 			for(int j = 0; j < this->FA->num_optres; ++j)
 			{
 				pRes = &this->residue[this->FA->optres[j].rnum];
 				pCF  = &this->FA->optres[j].cf;
 
-		        sprintf(tmpremark,"REMARK optimizable residue %s %c %d\n", pRes->name, pRes->chn, pRes->number);
-		        strcat(remark,tmpremark);
+		        snprintf(tmpremark, MAX_REMARK, "REMARK optimizable residue %s %c %d\n", pRes->name, pRes->chn, pRes->number);
+		        safe_remark_cat(remark, tmpremark, &remark_len);
 
-		        sprintf(tmpremark ,"REMARK CF.com=%8.5f\n", pCF->com);
-		        strcat(remark, tmpremark);
-		        sprintf(tmpremark ,"REMARK CF.sas=%8.5f\n", pCF->sas);
-		        strcat(remark, tmpremark);
-		        sprintf(tmpremark ,"REMARK CF.wal=%8.5f\n", pCF->wal);
-		        strcat(remark, tmpremark);
-		        sprintf(tmpremark ,"REMARK CF.con=%8.5f\n", pCF->con);
-		        strcat(remark, tmpremark);
-		        sprintf(tmpremark, "REMARK Residue has an overall SAS of %.3f\n", pCF->totsas);
-		        strcat(remark, tmpremark);
+		        snprintf(tmpremark, MAX_REMARK, "REMARK CF.com=%8.5f\n", pCF->com);
+		        safe_remark_cat(remark, tmpremark, &remark_len);
+		        snprintf(tmpremark, MAX_REMARK, "REMARK CF.sas=%8.5f\n", pCF->sas);
+		        safe_remark_cat(remark, tmpremark, &remark_len);
+		        snprintf(tmpremark, MAX_REMARK, "REMARK CF.wal=%8.5f\n", pCF->wal);
+		        safe_remark_cat(remark, tmpremark, &remark_len);
+		        snprintf(tmpremark, MAX_REMARK, "REMARK CF.con=%8.5f\n", pCF->con);
+		        safe_remark_cat(remark, tmpremark, &remark_len);
+		        snprintf(tmpremark, MAX_REMARK, "REMARK Residue has an overall SAS of %.3f\n", pCF->totsas);
+		        safe_remark_cat(remark, tmpremark, &remark_len);
 			}
 
 		    for(int j=0; j < this->FA->npar; ++j)
 			{
-				sprintf(tmpremark, "REMARK [%8.3f]\n",this->FA->opt_par[j]);
-				strcat(remark,tmpremark);
+				snprintf(tmpremark, MAX_REMARK, "REMARK [%8.3f]\n",this->FA->opt_par[j]);
+				safe_remark_cat(remark, tmpremark, &remark_len);
 			}
 
 			// 4. if(REF) prints RMSD to REF
 			if(this->FA->refstructure == 1)
 			{
 				bool Hungarian = false;
-				sprintf(tmpremark,"REMARK %8.5f RMSD to ref. structure (no symmetry correction)\n",
+				snprintf(tmpremark, MAX_REMARK, "REMARK %8.5f RMSD to ref. structure (no symmetry correction)\n",
 				calc_rmsd(this->FA,this->atoms,this->residue,this->cleftgrid,this->FA->npar,this->FA->opt_par, Hungarian));
-				strcat(remark,tmpremark);
+				safe_remark_cat(remark, tmpremark, &remark_len);
 				Hungarian = true;
-				sprintf(tmpremark,"REMARK %8.5f RMSD to ref. structure     (symmetry corrected)\n",
+				snprintf(tmpremark, MAX_REMARK, "REMARK %8.5f RMSD to ref. structure     (symmetry corrected)\n",
 				calc_rmsd(this->FA,this->atoms,this->residue,this->cleftgrid,this->FA->npar,this->FA->opt_par, Hungarian));
-				strcat(remark,tmpremark);
+				safe_remark_cat(remark, tmpremark, &remark_len);
 			}
 
 			// 5. write_pdb(FA,atoms,residue,tmp_end_strfile,remark)
@@ -1000,9 +1000,8 @@ void RandomProjectedNeighborsAndDensities::swap_element_in_vectors(std::vector<f
 void RandomProjectedNeighborsAndDensities::output_projected_distance(char* end_strfile, char* tmp_end_strfile)
 {
 	char sufix[25];
-	sprintf(sufix, "__%d.projDist", this->top->minPoints);
-	strcpy(tmp_end_strfile, end_strfile);
-	strcat(tmp_end_strfile,sufix);
+	snprintf(sufix, sizeof(sufix), "__%d.projDist", this->top->minPoints);
+	snprintf(tmp_end_strfile, MAX_PATH__, "%s%s", end_strfile, sufix);
 	FILE* outfile;
 	if(!OpenFile_B(tmp_end_strfile,"w",&outfile))
 	{
