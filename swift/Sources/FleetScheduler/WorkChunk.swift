@@ -2,6 +2,7 @@
 //
 // Represents a chunk of docking work to be distributed across the fleet.
 // Encrypted with CryptoKit before iCloud transit.
+// Includes timeout, retry logic, and orphan recovery support.
 //
 // Copyright 2024-2026 Louis-Philippe Morency / NRGlab, Universite de Montreal
 // SPDX-License-Identifier: Apache-2.0
@@ -37,11 +38,29 @@ public struct WorkChunk: Sendable, Codable, Identifiable {
     /// Timestamp when the chunk was created
     public let createdAt: Date
 
+    /// Timestamp when the chunk was claimed (for timeout detection)
+    public var claimedAt: Date?
+
     /// Timestamp when the chunk was completed (nil if pending)
     public var completedAt: Date?
 
     /// Status of this chunk
     public var status: ChunkStatus
+
+    /// Number of times this chunk has been retried
+    public var retryCount: Int
+
+    /// Maximum number of retries before permanent failure
+    public let maxRetries: Int
+
+    /// Timeout in seconds — chunk is orphaned if not completed within this window
+    public let timeoutSeconds: TimeInterval
+
+    /// Parent chunk ID (set when a chunk was split from a larger chunk)
+    public var parentChunkID: UUID?
+
+    /// Priority level (higher = scheduled first)
+    public var priority: ChunkPriority
 
     public enum ChunkStatus: String, Sendable, Codable {
         case pending
@@ -49,11 +68,25 @@ public struct WorkChunk: Sendable, Codable, Identifiable {
         case running
         case completed
         case failed
+        case orphaned        // Timed out, eligible for reclaim
+        case permanentlyFailed  // Exceeded max retries
+    }
+
+    public enum ChunkPriority: Int, Sendable, Codable, Comparable {
+        case low = 0
+        case normal = 1
+        case high = 2      // Retried chunks get elevated priority
+        case critical = 3  // Final retry attempt
+
+        public static func < (lhs: ChunkPriority, rhs: ChunkPriority) -> Bool {
+            lhs.rawValue < rhs.rawValue
+        }
     }
 
     public init(
         jobID: UUID, index: Int, totalChunks: Int,
-        configData: Data, gaParameters: GAChunkParameters
+        configData: Data, gaParameters: GAChunkParameters,
+        maxRetries: Int = 3, timeoutSeconds: TimeInterval = 3600
     ) {
         self.id = UUID()
         self.jobID = jobID
@@ -63,6 +96,74 @@ public struct WorkChunk: Sendable, Codable, Identifiable {
         self.gaParameters = gaParameters
         self.createdAt = Date()
         self.status = .pending
+        self.retryCount = 0
+        self.maxRetries = maxRetries
+        self.timeoutSeconds = timeoutSeconds
+        self.priority = .normal
+    }
+
+    // MARK: - Timeout & Retry
+
+    /// Whether this chunk has exceeded its timeout and should be reclaimed.
+    public var isTimedOut: Bool {
+        guard let claimed = claimedAt else { return false }
+        return Date().timeIntervalSince(claimed) > timeoutSeconds
+    }
+
+    /// Whether this chunk can be retried.
+    public var canRetry: Bool {
+        retryCount < maxRetries
+    }
+
+    /// Mark this chunk as orphaned and prepare for retry.
+    /// Returns nil if max retries exceeded (becomes permanently failed).
+    public mutating func markOrphanedForRetry() -> Bool {
+        retryCount += 1
+        claimedBy = nil
+        claimedAt = nil
+
+        if retryCount >= maxRetries {
+            status = .permanentlyFailed
+            return false
+        }
+
+        status = .orphaned
+        // Elevate priority on retry so it gets picked up faster
+        priority = retryCount >= maxRetries - 1 ? .critical : .high
+        return true
+    }
+
+    /// Claim this chunk for a device.
+    public mutating func claim(by deviceID: String) {
+        claimedBy = deviceID
+        claimedAt = Date()
+        status = .claimed
+    }
+
+    /// Mark this chunk as running.
+    public mutating func markRunning() {
+        status = .running
+    }
+
+    /// Mark this chunk as completed.
+    public mutating func markCompleted() {
+        status = .completed
+        completedAt = Date()
+    }
+
+    /// Mark this chunk as failed (device-reported failure, not timeout).
+    public mutating func markFailed() {
+        if canRetry {
+            _ = markOrphanedForRetry()
+        } else {
+            status = .permanentlyFailed
+        }
+    }
+
+    /// Wall time since claim (for progress tracking).
+    public var elapsedSinceClaim: TimeInterval? {
+        guard let claimed = claimedAt else { return nil }
+        return Date().timeIntervalSince(claimed)
     }
 }
 
@@ -106,7 +207,17 @@ public struct ChunkResult: Sendable, Codable, Identifiable {
     /// Timestamp of completion
     public let completedAt: Date
 
-    public init(chunkID: UUID, jobID: UUID, resultData: Data, computedBy: String, computeTimeSeconds: Double) {
+    /// Thermal state of device at completion (for fleet health tracking)
+    public let thermalStateAtCompletion: String?
+
+    /// Battery level at completion (for fleet health tracking)
+    public let batteryLevelAtCompletion: Double?
+
+    public init(
+        chunkID: UUID, jobID: UUID, resultData: Data,
+        computedBy: String, computeTimeSeconds: Double,
+        thermalState: String? = nil, batteryLevel: Double? = nil
+    ) {
         self.id = UUID()
         self.chunkID = chunkID
         self.jobID = jobID
@@ -114,6 +225,8 @@ public struct ChunkResult: Sendable, Codable, Identifiable {
         self.computedBy = computedBy
         self.computeTimeSeconds = computeTimeSeconds
         self.completedAt = Date()
+        self.thermalStateAtCompletion = thermalState
+        self.batteryLevelAtCompletion = batteryLevel
     }
 }
 

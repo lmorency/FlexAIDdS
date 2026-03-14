@@ -5,6 +5,7 @@
 //   – Log-sum-exp reduction (numerical stability critical path)
 //
 // Dispatch priority: CUDA > Metal > AVX-512 > AVX2 > OpenMP > Scalar
+// Metal path uses persistent device/pipeline caching from ShannonMetalBridge.
 //
 // Apache-2.0 © 2026 Le Bonhomme Pharma
 #include "hardware_dispatch.h"
@@ -14,6 +15,7 @@
 #include <cmath>
 #include <numeric>
 #include <limits>
+#include <sstream>
 
 #ifdef _OPENMP
 #  include <omp.h>
@@ -34,7 +36,33 @@
 #  include <immintrin.h>
 #endif
 
+#ifdef FLEXAIDS_HAS_METAL_SHANNON
+#  include "ShannonThermoStack/ShannonMetalBridge.h"
+#endif
+
 namespace flexaids {
+
+// ─── DispatchTelemetry ──────────────────────────────────────────────────────
+
+std::string DispatchTelemetry::summary() const {
+    std::ostringstream ss;
+    ss << backend_name(backend) << ": "
+       << elements << " elements in "
+       << wall_time_ms << " ms ("
+       << throughput_meps << " M elem/s)";
+    return ss.str();
+}
+
+static DispatchTelemetry make_telemetry(
+    HardwareBackend backend,
+    std::chrono::steady_clock::time_point start,
+    int64_t elements)
+{
+    auto end = std::chrono::steady_clock::now();
+    double ms = std::chrono::duration<double, std::milli>(end - start).count();
+    double meps = ms > 0.0 ? (elements / 1e6) / (ms / 1000.0) : 0.0;
+    return { backend, ms, elements, meps };
+}
 
 // ─── backend_name ────────────────────────────────────────────────────────────
 
@@ -88,6 +116,7 @@ HardwareBackend select_cpu_backend() {
 static BoltzmannBatchResult boltzmann_scalar(
     std::span<const double> energies, double beta)
 {
+    auto start = std::chrono::steady_clock::now();
     const int n = static_cast<int>(energies.size());
     double E_min = *std::min_element(energies.begin(), energies.end());
 
@@ -98,7 +127,8 @@ static BoltzmannBatchResult boltzmann_scalar(
     double sum_w = std::accumulate(weights.begin(), weights.end(), 0.0);
     double log_Z = std::log(sum_w) - beta * E_min;
 
-    return { std::move(weights), log_Z, E_min };
+    auto telemetry = make_telemetry(HardwareBackend::SCALAR, start, n);
+    return { std::move(weights), log_Z, E_min, telemetry };
 }
 
 // ─── Boltzmann batch: OpenMP path ────────────────────────────────────────────
@@ -107,6 +137,7 @@ static BoltzmannBatchResult boltzmann_scalar(
 static BoltzmannBatchResult boltzmann_openmp(
     std::span<const double> energies, double beta)
 {
+    auto start = std::chrono::steady_clock::now();
     const int n = static_cast<int>(energies.size());
 
     // Parallel min
@@ -125,7 +156,8 @@ static BoltzmannBatchResult boltzmann_openmp(
     }
 
     double log_Z = std::log(sum_w) - beta * E_min;
-    return { std::move(weights), log_Z, E_min };
+    auto telemetry = make_telemetry(HardwareBackend::OPENMP, start, n);
+    return { std::move(weights), log_Z, E_min, telemetry };
 }
 #endif
 
@@ -135,6 +167,7 @@ static BoltzmannBatchResult boltzmann_openmp(
 static BoltzmannBatchResult boltzmann_avx512(
     std::span<const double> energies, double beta)
 {
+    auto start = std::chrono::steady_clock::now();
     const int n = static_cast<int>(energies.size());
 
     // Find E_min with AVX-512 reduction
@@ -166,10 +199,10 @@ static BoltzmannBatchResult boltzmann_avx512(
         int tid = omp_get_thread_num();
         int nt  = omp_get_num_threads();
         int chunk = (n + nt - 1) / nt;
-        int start = tid * chunk;
-        int end   = std::min(start + chunk, n);
+        int start_idx = tid * chunk;
+        int end   = std::min(start_idx + chunk, n);
 
-        int j = start;
+        int j = start_idx;
         for (; j + 7 < end; j += 8) {
             __m512d ve  = _mm512_loadu_pd(energies.data() + j);
             __m512d arg = _mm512_mul_pd(_mm512_sub_pd(ve, vEmin), vneg_beta);
@@ -206,7 +239,8 @@ static BoltzmannBatchResult boltzmann_avx512(
 #endif
 
     double log_Z = std::log(sum_w) - beta * E_min;
-    return { std::move(weights), log_Z, E_min };
+    auto telemetry = make_telemetry(HardwareBackend::AVX512, start, n);
+    return { std::move(weights), log_Z, E_min, telemetry };
 }
 #endif  // HAS_AVX512_RT
 
@@ -216,6 +250,7 @@ static BoltzmannBatchResult boltzmann_avx512(
 static BoltzmannBatchResult boltzmann_eigen(
     std::span<const double> energies, double beta)
 {
+    auto start = std::chrono::steady_clock::now();
     const int n = static_cast<int>(energies.size());
     Eigen::Map<const Eigen::ArrayXd> E(energies.data(), n);
 
@@ -226,7 +261,30 @@ static BoltzmannBatchResult boltzmann_eigen(
 
     std::vector<double> weights(n);
     Eigen::Map<Eigen::ArrayXd>(weights.data(), n) = w;
-    return { std::move(weights), log_Z, E_min };
+    auto telemetry = make_telemetry(HardwareBackend::AVX2, start, n);
+    return { std::move(weights), log_Z, E_min, telemetry };
+}
+#endif
+
+// ─── Boltzmann batch: Metal GPU path ─────────────────────────────────────────
+
+#ifdef FLEXAIDS_HAS_METAL_SHANNON
+static BoltzmannBatchResult boltzmann_metal(
+    std::span<const double> energies, double beta)
+{
+    auto start = std::chrono::steady_clock::now();
+    const int n = static_cast<int>(energies.size());
+
+    std::vector<double> energy_vec(energies.begin(), energies.end());
+    double sum_w = 0.0;
+    double E_min = 0.0;
+
+    auto weights = ShannonMetalBridge::compute_boltzmann_weights_metal(
+        energy_vec, beta, sum_w, E_min);
+
+    double log_Z = std::log(sum_w) - beta * E_min;
+    auto telemetry = make_telemetry(HardwareBackend::METAL, start, n);
+    return { std::move(weights), log_Z, E_min, telemetry };
 }
 #endif
 
@@ -237,7 +295,17 @@ BoltzmannBatchResult compute_boltzmann_batch(
     double                  beta)
 {
     if (energies.empty())
-        return { {}, 0.0, 0.0 };
+        return { {}, 0.0, 0.0, { HardwareBackend::SCALAR, 0.0, 0, 0.0 } };
+
+    HardwareBackend best = select_backend();
+
+    // Metal GPU path (for batch sizes where GPU overhead is worthwhile)
+#ifdef FLEXAIDS_HAS_METAL_SHANNON
+    if (best == HardwareBackend::METAL && energies.size() >= 256) {
+        if (ShannonMetalBridge::is_metal_available())
+            return boltzmann_metal(energies, beta);
+    }
+#endif
 
     HardwareBackend cpu = select_cpu_backend();
 
@@ -271,6 +339,14 @@ double log_sum_exp_dispatch(std::span<const double> values) {
     double x_max = *std::max_element(values.begin(), values.end());
     if (!std::isfinite(x_max))
         return x_max;
+
+    // Metal GPU path for large arrays
+#ifdef FLEXAIDS_HAS_METAL_SHANNON
+    if (n >= 1024 && ShannonMetalBridge::is_metal_available()) {
+        std::vector<double> vals(values.begin(), values.end());
+        return ShannonMetalBridge::log_sum_exp_metal(vals);
+    }
+#endif
 
 #if HAS_AVX512_RT
     {
@@ -328,6 +404,9 @@ DispatchReport get_dispatch_report() {
             break;
         case HardwareBackend::METAL:
             reason = "Metal GPU detected (" + hw.metal_gpu_name + ")";
+#ifdef FLEXAIDS_HAS_METAL_SHANNON
+            reason += " [Boltzmann + LogSumExp + Histogram kernels cached]";
+#endif
             break;
         case HardwareBackend::AVX512:
             reason = "AVX-512 F+DQ+BW detected on CPU";
