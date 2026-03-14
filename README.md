@@ -24,8 +24,10 @@ FlexAID∆S extends the [FlexAID](https://doi.org/10.1021/acs.jcim.5b00078) dock
 - Torsional elastic network model (tENCoM) for backbone vibrational entropy
 - Full ligand flexibility: torsions, ring conformers, chiral center discrimination
 - Co-translational / co-transcriptional assembly (NATURaL module)
-- Hardware acceleration: CUDA, Metal, AVX-512, AVX2, OpenMP
+- Unified hardware dispatch with automatic backend selection (CUDA, Metal, AVX-512, AVX2, OpenMP)
+- Distributed docking across Apple devices (Bonhomme Fleet) with iCloud coordination
 - Python package with docking API, result analysis, and PyMOL visualization
+- Swift (macOS/iOS) and TypeScript (PWA) packages for cross-platform access
 
 ---
 
@@ -108,6 +110,7 @@ for mode in results.rank_by_free_energy():
 - **Multi-format input** — MOL2, SDF/MOL V2000, and legacy INP
 
 #### Hardware Acceleration
+- **Unified hardware dispatch** — automatic backend selection at runtime (CUDA > Metal > AVX-512 > AVX2 > OpenMP > scalar)
 - **CUDA** — batch CF evaluation and Shannon entropy histograms (Volta through Hopper)
 - **Metal** — Apple Silicon GPU for Shannon entropy, cavity detection, and evaluation
 - **SIMD** — AVX-512 and AVX2 vectorised geometric primitives
@@ -119,6 +122,15 @@ for mode in results.rank_by_free_energy():
 - **Co-translational assembly** (NATURaL) — ribosome-speed chain growth with Sec translocon TM insertion
 - **Automatic cavity detection** — SURFNET gap-sphere algorithm with Metal GPU support
 - **[FreeNRG](https://github.com/lmorency/FreeNRG) integration** — unified free energy framework bridging FlexAID∆S and NRGRank
+
+#### Distributed Docking (Bonhomme Fleet)
+- **Fleet scheduler** — distribute docking across Apple devices via iCloud Drive with automatic work-stealing
+- **Device-aware scheduling** — battery, thermal state, and TFLOPS-based compute weighting
+- **Orphan recovery** — timed-out chunks reclaimed with exponential backoff and priority elevation
+- **Encrypted transit** — ChaChaPoly-encrypted work chunks for secure distributed computation
+- **Swift package** — native macOS/iOS actors wrapping StatMechEngine and ENCoM (macOS 14+, iOS 17+)
+- **Intelligence oracle** — on-device AI analysis via Apple FoundationModels with rule-based fallback
+- **TypeScript SDK + PWA** — real-time Fleet dashboard, Mol* 3D viewer, and result inspector
 
 ---
 
@@ -146,25 +158,6 @@ cmake .. -DCMAKE_BUILD_TYPE=Release \
 cmake --build . -j $(nproc)
 ```
 
-<details>
-<summary><strong>All CMake Options</strong></summary>
-
-| Option                    | Default | Description                              |
-|:--------------------------|:--------|:-----------------------------------------|
-| `FLEXAIDS_USE_CUDA`       | OFF     | CUDA GPU batch evaluation                |
-| `FLEXAIDS_USE_METAL`      | OFF     | Metal GPU acceleration (macOS only)      |
-| `FLEXAIDS_USE_AVX2`       | ON      | AVX2 SIMD acceleration                   |
-| `FLEXAIDS_USE_AVX512`     | OFF     | AVX-512 SIMD acceleration                |
-| `FLEXAIDS_USE_OPENMP`     | ON      | OpenMP thread parallelism                |
-| `FLEXAIDS_USE_EIGEN`      | ON      | Eigen3 vectorised linear algebra         |
-| `BUILD_PYTHON_BINDINGS`   | OFF     | Build pybind11 Python extension (`_core`)|
-| `BUILD_TESTING`           | OFF     | Build GoogleTest unit tests              |
-| `ENABLE_TENCOM_BENCHMARK` | OFF     | Build standalone tENCoM benchmark binary |
-| `ENABLE_TENCOM_TOOL`      | OFF     | Build tENCoM vibrational entropy tool    |
-| `ENABLE_VCFBATCH_BENCHMARK`| OFF    | Build VoronoiCFBatch benchmark binary    |
-
-</details>
-
 ### Build Variants
 
 ```bash
@@ -190,13 +183,15 @@ cmake --build . -j $(nproc)
 | `ENABLE_TENCOM_TOOL`      | **ON**  | tENCoM vibrational entropy tool          |
 | `FLEXAIDS_USE_CUDA`       | OFF     | CUDA GPU acceleration                    |
 | `FLEXAIDS_USE_METAL`      | OFF     | Metal GPU acceleration (macOS)           |
-| `FLEXAIDS_USE_AVX2`       | ON      | AVX2 SIMD                               |
-| `FLEXAIDS_USE_AVX512`     | OFF     | AVX-512 SIMD                            |
-| `FLEXAIDS_USE_OPENMP`     | ON      | OpenMP parallelism                       |
-| `FLEXAIDS_USE_EIGEN`      | ON      | Eigen3 linear algebra                    |
-| `BUILD_PYTHON_BINDINGS`   | OFF     | pybind11 Python extensions               |
+| `FLEXAIDS_USE_AVX2`       | ON      | AVX2 SIMD acceleration                   |
+| `FLEXAIDS_USE_AVX512`     | OFF     | AVX-512 SIMD acceleration                |
+| `FLEXAIDS_USE_OPENMP`     | ON      | OpenMP thread parallelism                |
+| `FLEXAIDS_USE_EIGEN`      | ON      | Eigen3 vectorised linear algebra         |
+| `FLEXAIDS_USE_256_MATRIX` | ON      | 256×256 soft contact matrix system       |
+| `BUILD_PYTHON_BINDINGS`   | OFF     | pybind11 Python extension (`_core`)      |
 | `BUILD_TESTING`           | OFF     | GoogleTest unit tests                    |
-| `ENABLE_TENCOM_BENCHMARK` | OFF     | Standalone tENCoM benchmark              |
+| `ENABLE_TENCOM_BENCHMARK` | OFF     | Standalone tENCoM benchmark binary       |
+| `ENABLE_VCFBATCH_BENCHMARK`| OFF    | VoronoiCFBatch benchmark binary          |
 
 </details>
 
@@ -662,6 +657,18 @@ Automatic binding site detection via gap-sphere algorithm. Metal GPU acceleratio
 
 Co-translational / co-transcriptional assembly module. RibosomeElongation (Zhao 2011 master equation, *E. coli* K-12 and Human HEK293), TransloconInsertion (Sec61 lateral gating, Hessa 2007), and DualAssemblyEngine for incremental chain growth with CF + Shannon entropy at each step.
 
+### Hardware Dispatch
+
+Unified runtime backend selection (`LIB/hardware_dispatch.{h,cpp}`). Automatically selects the fastest available backend: CUDA → Metal → AVX-512+OpenMP → AVX-512 → AVX2+OpenMP → OpenMP → scalar. Provides `compute_boltzmann_batch()` and `log_sum_exp_dispatch()` with per-call telemetry (wall time, throughput in MEPS).
+
+### 256×256 Soft Contact Matrix
+
+Precomputed energy matrix over 256 mega-cluster bins for O(1) pairwise scoring lookup during Shannon entropy computation.
+
+### Bonhomme Fleet
+
+Distributed docking system for Apple ecosystem (`swift/`, `typescript/`). Fleet scheduler coordinates work chunks across devices via iCloud Drive with battery/thermal-aware weighting, orphan recovery, and ChaChaPoly encryption. Includes a Swift actor layer (FlexAIDRunner, FleetScheduler), Intelligence Oracle (Apple FoundationModels), and a TypeScript PWA with real-time Fleet dashboard and Mol* 3D viewer.
+
 ### Additional Components
 
 - **CleftDetector** — binding pocket identification for GA search space definition
@@ -703,6 +710,8 @@ FlexAIDdS/
 │   ├── tests/               # pytest suite
 │   └── setup.py
 ├── pymol_plugin/           # PyMOL visualization plugin
+├── swift/                  # Swift package (Apple ecosystem, Fleet scheduler)
+├── typescript/             # TypeScript SDK, PWA viewer, Fleet dashboard
 ├── docs/                   # Documentation
 ├── cmake/                  # CMake helpers
 ├── .github/workflows/      # CI/CD
