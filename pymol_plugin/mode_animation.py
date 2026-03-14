@@ -129,12 +129,7 @@ def animate_binding_modes(
         # Load the base PDB into a new state, then update coordinates
         cmd.load(str(best1.path), obj_name, state=frame_idx + 1)
 
-        # Update coordinates for this state using alter_state
-        flat_coords = []
-        for c in interp:
-            flat_coords.extend(c)
-
-        # Use stored for coordinate update
+        # Use stored for coordinate update via alter_state
         stored_key = f"_morph_coords_{frame_idx}"
         cmd.stored.__dict__[stored_key] = iter(interp)
 

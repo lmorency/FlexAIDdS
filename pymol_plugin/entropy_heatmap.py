@@ -26,18 +26,30 @@ except ImportError as exc:
     ) from exc
 
 
-def _read_pose_coords(pdb_path: str) -> List[Tuple[float, float, float]]:
+def _read_pose_coords(
+    pdb_path: str,
+    ligand_only: bool = True,
+) -> List[Tuple[float, float, float]]:
     """Extract heavy-atom coordinates from a PDB file.
 
-    Returns a list of (x, y, z) tuples for all ATOM/HETATM records
-    that are not hydrogen atoms.
+    Args:
+        pdb_path: Path to PDB file.
+        ligand_only: If True, only read HETATM records (ligand atoms).
+            This dramatically reduces coordinate count and improves
+            heatmap performance.  Set False to include protein atoms.
+
+    Returns a list of (x, y, z) tuples for non-hydrogen atoms.
     """
     coords = []
     try:
         with open(pdb_path) as fh:
             for line in fh:
-                if not (line.startswith("ATOM") or line.startswith("HETATM")):
-                    continue
+                if ligand_only:
+                    if not line.startswith("HETATM"):
+                        continue
+                else:
+                    if not (line.startswith("ATOM") or line.startswith("HETATM")):
+                        continue
                 element = line[76:78].strip() if len(line) >= 78 else ""
                 atom_name = line[12:16].strip()
                 if element == "H" or (not element and atom_name.startswith("H")):
@@ -48,6 +60,9 @@ def _read_pose_coords(pdb_path: str) -> List[Tuple[float, float, float]]:
                 coords.append((x, y, z))
     except (OSError, ValueError):
         pass
+    # Fall back to all atoms if no HETATM found
+    if not coords and ligand_only:
+        return _read_pose_coords(pdb_path, ligand_only=False)
     return coords
 
 
@@ -111,13 +126,16 @@ def _compute_spatial_entropy(
     nz = max(1, int((z_max - z_min) / grid_spacing) + 1)
 
     # Cap grid size to avoid excessive computation
-    max_points = 50
+    max_points = 30
     nx = min(nx, max_points)
     ny = min(ny, max_points)
     nz = min(nz, max_points)
 
     inv_2sigma2 = 1.0 / (2.0 * sigma * sigma)
     n_poses = len(pose_coords_list)
+
+    # Distance cutoff: beyond 4*sigma the Gaussian contribution is < 0.02%
+    r2_cutoff = (4.0 * sigma) ** 2
 
     results = []
 
@@ -137,7 +155,8 @@ def _compute_spatial_entropy(
                         dy = gy - ay
                         dz = gz - az
                         r2 = dx * dx + dy * dy + dz * dz
-                        density += math.exp(-r2 * inv_2sigma2)
+                        if r2 < r2_cutoff:
+                            density += math.exp(-r2 * inv_2sigma2)
                     pose_densities.append(density)
 
                 total = sum(pose_densities)

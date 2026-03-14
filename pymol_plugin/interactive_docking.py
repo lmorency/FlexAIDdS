@@ -12,8 +12,8 @@ Usage:
 from __future__ import annotations
 
 import os
+import shutil
 import tempfile
-import threading
 from pathlib import Path
 from typing import Optional
 
@@ -195,10 +195,11 @@ def dock_interactive(
 
     radius = _get_selection_radius(site_selection)
 
-    # Create temporary working directory
+    # Create temporary working directory (cleaned up after loading results)
     work_dir = tempfile.mkdtemp(prefix="flexaids_dock_")
     receptor_pdb = os.path.join(work_dir, "receptor.pdb")
     config_path = os.path.join(work_dir, "dock.inp")
+    cleanup_work_dir = True
 
     # Save receptor
     print(f"Preparing docking...")
@@ -249,7 +250,8 @@ def dock_interactive(
         if output_pdbs:
             from . import results_adapter
             results_adapter.load_docking_results(work_dir, prefix="dock")
-            print(f"Results loaded into PyMOL with prefix 'dock'.")
+            cleanup_work_dir = False  # Keep dir since PyMOL refs the PDBs
+            print("Results loaded into PyMOL with prefix 'dock'.")
         else:
             print("No output PDB files generated.")
 
@@ -264,3 +266,5 @@ def dock_interactive(
         print(f"ERROR: Unexpected error: {exc}")
     finally:
         callback.running = False
+        if cleanup_work_dir:
+            shutil.rmtree(work_dir, ignore_errors=True)
