@@ -527,11 +527,7 @@ inline void dot3_batch(const float* a, const float* b, float* out, int N) noexce
 
 // RMSD between two coordinate arrays (N atoms, interleaved xyz)
 inline float rmsd(const float* a, const float* b, int N) noexcept {
-#if FLEXAIDS_HAS_AVX512
-    return std::sqrt(sum_sq_distances_avx512(a, b, N) / static_cast<float>(N));
-#else
     return std::sqrt(sum_sq_distances(a, b, N) / static_cast<float>(N));
-#endif
 }
 
 }  // namespace simd
