@@ -92,6 +92,7 @@ FastOPTICS::FastOPTICS(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* 
     this->chroms = chrom;
     this->gene_lim = gen_lim;
 	this->N = nChrom;
+	this->useGPU = false;
 
 	// FastOPTICS
     this->nDimensions = this->FA->num_het_atm*3;	// use with Vectorized_Cartesian_Coordinates()
@@ -127,6 +128,19 @@ FastOPTICS::FastOPTICS(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* 
 	}
 
 };
+
+// GPU-accelerated constructor: delegates to default constructor then sets GPU flag
+FastOPTICS::FastOPTICS(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, genlim* gen_lim, atom* atoms, resid* residue, gridpoint* cleftgrid, int nChrom, BindingPopulation& Population, int nPoints, bool useGPU)
+	: FastOPTICS(FA, GB, VC, chrom, gen_lim, atoms, residue, cleftgrid, nChrom, Population, nPoints)
+{
+	this->useGPU = useGPU;
+#ifndef FLEXAIDS_USE_CUDA
+	if (useGPU) {
+		fprintf(stderr, "Warning: GPU requested but FLEXAIDS_USE_CUDA not enabled — falling back to CPU\n");
+		this->useGPU = false;
+	}
+#endif
+}
 
 void FastOPTICS::Execute_FastOPTICS(char* end_strfile, char* tmp_end_strfile)
 {

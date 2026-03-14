@@ -319,6 +319,7 @@ if(FLEXAIDS_USE_CUDA)
         LIB/cuda_eval.cu                          # existing CF batch kernel
         LIB/ShannonThermoStack/shannon_cuda.cu    # Shannon entropy histogram kernel
         LIB/tencm_cuda.cu                         # TENCoM contact discovery + Hessian assembly
+        LIB/gpu_fast_optics.cu                    # GPU-accelerated FastOPTICS neighbour search
     )
     target_compile_definitions(FlexAID PRIVATE FLEXAIDS_USE_CUDA)
     if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
