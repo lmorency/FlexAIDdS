@@ -165,8 +165,15 @@ cmake .. -DCMAKE_BUILD_TYPE=Release -DFLEXAIDS_USE_AVX512=ON -DFLEXAIDS_USE_OPEN
 cmake --build . -j $(nproc)
 ```
 
-<details>
-<summary><strong>All CMake Options</strong></summary>
+| Binary | Description |
+|:-------|:------------|
+| **`FlexAID`** | Standard docking executable |
+| **`FlexAIDdS`** | Ultra-fast docking (LTO + `-march=native` + stripped) |
+| **`tENCoM`** | Ultra-fast vibrational entropy tool (same optimizations) |
+
+### HPC Deployment
+
+For cluster / HPC nodes, build once on the target architecture:
 
 | Option                    | Default | Description                              |
 |:--------------------------|:--------|:-----------------------------------------|

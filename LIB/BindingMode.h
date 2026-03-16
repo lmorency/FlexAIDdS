@@ -62,6 +62,7 @@ class BindingMode // aggregation of poses (Cluster)
 			void	 					add_Pose(Pose&);
 			void	 					clear_Poses();
 			int	  						get_BindingMode_size() const;
+			const Pose&					get_pose(int index) const;
 			
 			// ═══ LEGACY INTERFACE (backward compatibility) ═══
 			double	 					compute_energy() const;      // returns Helmholtz free energy F = H - TS
@@ -84,6 +85,10 @@ class BindingMode // aggregation of poses (Cluster)
 			const Pose&	get_pose(int index) const;
 		std::vector<Pose>::const_iterator elect_Representative(bool useOPTICSordering) const;
 			inline bool const 			operator<(const BindingMode&);
+
+			// ═══ PUBLIC ACCESSORS (for bindings) ═══
+			const Pose&					get_pose(int index) const { return Poses.at(index); }
+			const std::vector<Pose>&	get_poses() const { return Poses; }
 
  	protected:
 		std::vector<Pose> Poses;
@@ -119,7 +124,7 @@ class BindingPopulation
 		 	void	add_BindingMode(BindingMode&);
 		 	// return the number of BindinMonde (size getter)
 		 	int	 	get_Population_size();
-		 	// access individual BindingMode by index (bounds-checked)
+		 	// access individual binding mode by index (bounds-checked)
 		 	const BindingMode&	get_binding_mode(int index) const;
 		 	BindingMode&		get_binding_mode(int index);
 		 	// output BindingMode up to nResults results
@@ -136,6 +141,9 @@ class BindingPopulation
 		 	double	get_shannon_entropy() const;
 		 	/// ΔG matrix between all pairs of binding modes (upper triangle, row-major)
 		 	std::vector<std::vector<double>> get_deltaG_matrix() const;
+		 	// ═══ PUBLIC ACCESSORS (for bindings) ═══
+		 	const BindingMode& get_binding_mode(int index) const { return BindingModes.at(index); }
+		 	const std::vector<BindingMode>& get_binding_modes() const { return BindingModes; }
 
 	protected:
 		double PartitionFunction;	// sum of all Boltzmann_weight (DEPRECATED: use StatMechEngine)

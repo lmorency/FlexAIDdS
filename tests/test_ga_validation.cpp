@@ -153,6 +153,62 @@ TEST(BatchResultTest, CfAndAppEvalueConsistency) {
         EXPECT_DOUBLE_EQ(result.app_evalue[i], expected)
             << "Apparent evalue mismatch at index " << i;
     }
+
+    gene genes[3];
+    genes[0].to_ic = 45.0;
+    genes[1].to_ic = -90.0;
+    genes[2].to_ic = 0.0;
+
+    atom a;
+    std::memset(&a, 0, sizeof(atom));
+    resid r;
+    std::memset(&r, 0, sizeof(resid));
+
+    cfstr result = voronoi_cf::eval_span(
+        &fa, &gb, &vc,
+        std::span<const genlim>(gl, 3),
+        std::span<atom>(&a, 1),
+        std::span<resid>(&r, 1),
+        nullptr,
+        std::span<const gene>(genes, 3),
+        test_sum_function
+    );
+
+    // Values within bounds: 45 + (-90) + 0 = -45.0
+    EXPECT_DOUBLE_EQ(result.com, -45.0);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Scoring ordering invariant: more negative com → better score
+// ═══════════════════════════════════════════════════════════════════════
+
+TEST(ScoringInvariant, MoreNegativeComIsBetter) {
+    cfstr good, bad;
+    std::memset(&good, 0, sizeof(cfstr));
+    std::memset(&bad, 0, sizeof(cfstr));
+
+    good.com = -20.0;  // strong complementarity
+    bad.com  = -5.0;   // weak complementarity
+
+    EXPECT_LT(get_apparent_cf_evalue(&good), get_apparent_cf_evalue(&bad))
+        << "More negative com should give lower (better) apparent evalue";
+    EXPECT_LT(get_cf_evalue(&good), get_cf_evalue(&bad))
+        << "More negative com should give lower (better) full evalue";
+}
+
+TEST(ScoringInvariant, WallPenaltyWorsensScore) {
+    cfstr no_clash, clash;
+    std::memset(&no_clash, 0, sizeof(cfstr));
+    std::memset(&clash, 0, sizeof(cfstr));
+
+    no_clash.com = -10.0;
+    no_clash.wal = 0.0;
+
+    clash.com = -10.0;
+    clash.wal = 5.0;  // steric clash penalty
+
+    EXPECT_LT(get_apparent_cf_evalue(&no_clash), get_apparent_cf_evalue(&clash))
+        << "Wall penalty should worsen the score";
 }
 
 // ═══════════════════════════════════════════════════════════════════════

@@ -1763,6 +1763,12 @@ void read_gainputs(FA_Global* FA,GB_Global* GB,int* gen_int,int* sz_part,char fi
 	char buffer[MAX_PATH__];         /* a line from the INPUT file */
 	char field[9];           /* field names on INPUT file */
 
+	// Direct mode: GA params already set by apply_config — skip file reading
+	if(file[0] == '\0'){
+		printf("read_gainputs: using pre-configured GA parameters (direct mode)\n");
+		return;
+	}
+
 	//printf("file here is <%s>\n",file);
 	infile_ptr=NULL;
 	if(!OpenFile_B(file,"r",&infile_ptr)){
