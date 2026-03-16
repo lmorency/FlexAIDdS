@@ -740,6 +740,7 @@ if(BUILD_TESTING)
         LIB/tencm.cpp
         LIB/encom.cpp
         LIB/BindingMode.cpp
+        LIB/fast_optics.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         LIB/CleftDetector.cpp
         LIB/NATURaL/NATURaLDualAssembly.cpp
@@ -914,6 +915,7 @@ if(BUILD_TESTING)
         LIB/tencm.cpp
         LIB/encom.cpp
         LIB/BindingMode.cpp
+        LIB/fast_optics.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         LIB/CleftDetector.cpp
         LIB/NATURaL/NATURaLDualAssembly.cpp
@@ -954,6 +956,7 @@ if(BUILD_TESTING)
         LIB/tencm.cpp
         LIB/encom.cpp
         LIB/BindingMode.cpp
+        LIB/fast_optics.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         LIB/CleftDetector.cpp
         LIB/NATURaL/NATURaLDualAssembly.cpp
@@ -994,6 +997,7 @@ if(BUILD_TESTING)
         LIB/tencm.cpp
         LIB/encom.cpp
         LIB/BindingMode.cpp
+        LIB/fast_optics.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         LIB/CleftDetector.cpp
         LIB/NATURaL/NATURaLDualAssembly.cpp
@@ -1034,6 +1038,7 @@ if(BUILD_TESTING)
         LIB/tencm.cpp
         LIB/encom.cpp
         LIB/BindingMode.cpp
+        LIB/fast_optics.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         LIB/CleftDetector.cpp
         LIB/NATURaL/NATURaLDualAssembly.cpp

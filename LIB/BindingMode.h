@@ -125,6 +125,8 @@ class BindingPopulation
 		 	double	compute_delta_G(const BindingMode& mode1, const BindingMode& mode2) const;
 		 	/// Get global ensemble StatMechEngine aggregating all binding modes
 		 	statmech::StatMechEngine get_global_ensemble() const;
+		 	/// Get super-cluster filtered ensemble (dominant energy basin only)
+		 	statmech::StatMechEngine get_super_cluster_ensemble() const;
 
 	protected:
 		double PartitionFunction;	// sum of all Boltzmann_weight (DEPRECATED: use StatMechEngine)

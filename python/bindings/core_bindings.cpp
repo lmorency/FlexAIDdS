@@ -218,6 +218,8 @@ PYBIND11_MODULE(_core, m) {
             "ΔG between two binding modes (kcal/mol); positive = mode1 less favoured")
         .def("get_global_ensemble", &BindingPopulation::get_global_ensemble,
             "StatMechEngine aggregating all poses across all binding modes")
+        .def("get_super_cluster_ensemble", &BindingPopulation::get_super_cluster_ensemble,
+            "StatMechEngine with super-cluster filtered poses (dominant energy basin only)")
         .def("__len__", &BindingPopulation::get_Population_size)
         .def("__repr__", [](const BindingPopulation& p) {
             return "<BindingPopulation n_modes=" +
