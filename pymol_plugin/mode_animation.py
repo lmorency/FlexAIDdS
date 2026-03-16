@@ -76,7 +76,7 @@ def _read_atom_coords(pdb_path: str) -> List[List[float]]:
     Returns a list of [x, y, z] lists preserving atom order.
     """
     coords = []
-    with open(pdb_path) as fh:
+    with open(pdb_path, encoding="utf-8") as fh:
         for line in fh:
             if line.startswith("ATOM") or line.startswith("HETATM"):
                 x = float(line[30:38])
@@ -186,6 +186,11 @@ def animate_binding_modes(
     for frame_idx in range(1, n_frames):
         t = frame_idx / (n_frames - 1)
         interp = _interpolate_coords(coords1, coords2, t)
+
+        # Pad to match full PDB atom count so alter_state iterator
+        # doesn't exhaust early when coords2 has fewer atoms
+        if len(interp) < len(coords1):
+            interp.extend(coords1[len(interp):])
 
         # Load the base PDB into a new state, then update coordinates
         cmd.load(str(best1.path), obj_name, state=frame_idx + 1)

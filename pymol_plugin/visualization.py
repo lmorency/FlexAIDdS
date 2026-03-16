@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 try:
-    from pymol import cmd, stored
+    from pymol import cmd
     import pymol  # noqa: F401
 except ImportError as exc:
     raise ImportError("PyMOL not available") from exc
@@ -145,6 +145,11 @@ def load_binding_modes(output_dir: str, temperature: float = 300.0) -> None:
             record.pdb_objects.append(obj_name)
 
         _loaded_modes[mode_name] = record
+
+    # Sync with results_adapter so entropy_heatmap, animation, ITC work
+    # regardless of whether user loaded via flexaids_load or flexaids_load_results
+    from . import results_adapter
+    results_adapter._loaded_result = result
 
     n_modes = len(_loaded_modes)
     n_poses = sum(len(rec.pdb_objects) for rec in _loaded_modes.values())
@@ -296,10 +301,3 @@ def export_to_nrgsuite(output_dir: str, nrgsuite_file: str) -> None:
         return
 
     print(f"Exported {len(_loaded_modes)} binding modes to {out_path}")
-
-
-cmd.extend("flexaids_load", load_binding_modes)
-cmd.extend("flexaids_show_ensemble", show_pose_ensemble)
-cmd.extend("flexaids_color_boltzmann", color_by_boltzmann_weight)
-cmd.extend("flexaids_thermo", show_thermodynamics)
-cmd.extend("flexaids_export", export_to_nrgsuite)

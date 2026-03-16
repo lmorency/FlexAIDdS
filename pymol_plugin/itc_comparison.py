@@ -55,7 +55,7 @@ def _parse_itc_csv_multi(csv_path: str) -> List[Dict[str, Any]]:
     import csv
 
     results: List[Dict[str, float]] = []
-    with open(csv_path) as fh:
+    with open(csv_path, encoding="utf-8") as fh:
         reader = csv.DictReader(fh)
         for row in reader:
             entry: Dict[str, Any] = {}

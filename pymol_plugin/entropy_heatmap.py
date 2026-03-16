@@ -49,7 +49,7 @@ def _read_pose_coords(
     """
     coords = []
     try:
-        with open(pdb_path) as fh:
+        with open(pdb_path, encoding="utf-8") as fh:
             for line in fh:
                 if ligand_only:
                     if not line.startswith("HETATM"):
@@ -135,9 +135,11 @@ def _compute_spatial_entropy_numpy(
             contrib = np.where(mask, np.exp(-r2 * inv_2sigma2), 0.0)
             densities[:, p_idx] += contrib.sum(axis=1)
 
-    # Shannon entropy per grid point
+    # Shannon entropy per grid point (two-stage filter matching pure-Python)
     totals = densities.sum(axis=1)  # (n_grid,)
-    valid = totals > 0.1
+    # Stage 1: skip near-zero density (avoids division noise)
+    # Stage 2: only include points with meaningful density
+    valid = (totals > 1e-12) & (totals > 0.1)
 
     results = []
     if not np.any(valid):
@@ -151,7 +153,7 @@ def _compute_spatial_entropy_numpy(
     entropy = -np.sum(probs * log_p, axis=1)
 
     max_s = math.log(n_poses) if n_poses > 1 else 1.0
-    entropy_norm = entropy / max_s if max_s > 0 else entropy
+    entropy_norm = entropy / max_s if max_s > 0 else np.zeros_like(entropy)
 
     valid_pts = grid_pts[valid]
     # Bulk conversion: combine coords and entropy into one array, then .tolist()
@@ -380,6 +382,10 @@ def render_entropy_heatmap(
     grid_spacing = float(grid_spacing)
     sigma = float(sigma)
     renderer = str(renderer).strip().lower()
+    if renderer not in ("cgo", "pseudoatom"):
+        print(f"WARNING: Unknown renderer '{renderer}'. "
+              "Valid options: cgo, pseudoatom. Defaulting to 'cgo'.")
+        renderer = "cgo"
 
     print(f"Computing entropy heatmap for mode {mode_id} "
           f"(grid={grid_spacing}A, sigma={sigma}A, renderer={renderer})...")

@@ -165,8 +165,19 @@ class FlexAIDSPanel(QtWidgets.QDialog):
         if directory:
             self.file_path_edit.setText(directory)
 
+    def _disable_viz_buttons(self):
+        """Disable all visualization buttons (called before load attempts)."""
+        for btn in (
+            self.show_ensemble_btn, self.color_cf_btn,
+            self.color_free_energy_btn, self.show_representative_btn,
+            self.print_details_btn, self.entropy_heatmap_btn,
+            self.animate_btn, self.itc_plot_btn, self.export_to_nrg_btn,
+        ):
+            btn.setEnabled(False)
+
     def _load_results(self):
         """Load docking results from the selected output directory."""
+        self._disable_viz_buttons()
         output_dir = Path(self.file_path_edit.text().strip())
         if not output_dir.exists():
             QtWidgets.QMessageBox.warning(

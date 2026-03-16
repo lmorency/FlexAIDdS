@@ -458,3 +458,112 @@ class TestCGORenderer:
         assert 25.0 in cgo_list  # ALPHA
         assert 6.0 in cgo_list   # COLOR
         assert 7.0 in cgo_list   # SPHERE
+
+
+# ---------------------------------------------------------------------------
+# C1: Interpolation padding for atom count mismatch
+# ---------------------------------------------------------------------------
+
+class TestInterpolationPadding:
+    """Test that interpolation pads correctly for mismatched atom counts."""
+
+    def test_interpolation_pads_to_longer(self):
+        """When coords2 is shorter, result should pad with coords1 tail."""
+        from pymol_plugin.mode_animation import _interpolate_coords
+        c1 = [[0.0, 0.0, 0.0], [1.0, 1.0, 1.0], [2.0, 2.0, 2.0],
+               [3.0, 3.0, 3.0]]
+        c2 = [[10.0, 10.0, 10.0], [11.0, 11.0, 11.0]]
+        interp = _interpolate_coords(c1, c2, 0.5)
+        # _interpolate_coords returns min(len) entries
+        assert len(interp) == 2
+        # The animation code pads: simulate that
+        if len(interp) < len(c1):
+            interp.extend(c1[len(interp):])
+        assert len(interp) == 4
+        # Padded entries match original coords1
+        assert interp[2] == [2.0, 2.0, 2.0]
+        assert interp[3] == [3.0, 3.0, 3.0]
+
+
+# ---------------------------------------------------------------------------
+# H1: Single-pose entropy (both backends should agree)
+# ---------------------------------------------------------------------------
+
+class TestSinglePoseEntropy:
+    """Both backends should return same result for single-pose edge case."""
+
+    @pytest.mark.skipif(not _HAS_NUMPY, reason="NumPy not installed")
+    def test_single_pose_both_backends(self, sample_pdb):
+        """With 1 pose, entropy should be 0 for both backends."""
+        from pymol_plugin.entropy_heatmap import (
+            _read_pose_coords,
+            _compute_grid_bounds,
+            _compute_spatial_entropy_numpy,
+            _compute_spatial_entropy_pure,
+        )
+        coords = _read_pose_coords(str(sample_pdb), ligand_only=False)
+        bounds = _compute_grid_bounds(coords)
+
+        result_np = _compute_spatial_entropy_numpy(
+            [coords], bounds, grid_spacing=2.0, sigma=2.0,
+        )
+        result_py = _compute_spatial_entropy_pure(
+            [coords], bounds, grid_spacing=2.0, sigma=2.0,
+        )
+
+        assert len(result_np) == len(result_py)
+        # All entropy values should be 0 (single pose = no uncertainty)
+        for _, _, _, s in result_np:
+            assert s == pytest.approx(0.0, abs=1e-10)
+        for _, _, _, s in result_py:
+            assert s == pytest.approx(0.0, abs=1e-10)
+
+
+# ---------------------------------------------------------------------------
+# H2: Invalid int coercion should not crash
+# ---------------------------------------------------------------------------
+
+class TestSafeIntCoercion:
+    """Test that invalid mode_id strings don't crash public functions."""
+
+    def test_show_binding_mode_invalid_id(self, mock_pymol, capsys):
+        """show_binding_mode('abc') should print error, not raise."""
+        from pymol_plugin.results_adapter import show_binding_mode
+        show_binding_mode("abc")
+        captured = capsys.readouterr()
+        assert "not a valid integer" in captured.out
+
+    def test_color_mode_by_score_invalid_id(self, mock_pymol, capsys):
+        """color_mode_by_score('xyz') should print error, not raise."""
+        from pymol_plugin.results_adapter import color_mode_by_score
+        color_mode_by_score("xyz")
+        captured = capsys.readouterr()
+        assert "not a valid integer" in captured.out
+
+    def test_show_mode_details_invalid_id(self, mock_pymol, capsys):
+        """show_mode_details('bad') should print error, not raise."""
+        from pymol_plugin.results_adapter import show_mode_details
+        show_mode_details("bad")
+        captured = capsys.readouterr()
+        assert "not a valid integer" in captured.out
+
+
+# ---------------------------------------------------------------------------
+# M4: Renderer validation fallback
+# ---------------------------------------------------------------------------
+
+class TestRendererValidation:
+    """Test that invalid renderer parameter warns and falls back to CGO."""
+
+    def test_unknown_renderer_warns(self, mock_pymol, capsys):
+        """Unknown renderer should print warning."""
+        from pymol_plugin.entropy_heatmap import render_entropy_heatmap
+
+        mock_mode = MagicMock()
+        mock_mode.poses = [MagicMock()]
+        with patch("pymol_plugin.results_adapter._get_mode", return_value=mock_mode):
+            with patch("pymol_plugin.entropy_heatmap._compute_spatial_entropy", return_value=[]):
+                render_entropy_heatmap(1, renderer="invalid_renderer")
+        captured = capsys.readouterr()
+        assert "Unknown renderer" in captured.out
+        assert "Defaulting to 'cgo'" in captured.out

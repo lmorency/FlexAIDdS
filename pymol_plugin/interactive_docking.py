@@ -129,7 +129,7 @@ def _write_minimal_config(
     n_results: int = 10,
 ) -> None:
     """Write a minimal FlexAID configuration file."""
-    with open(config_path, "w") as fh:
+    with open(config_path, "w", encoding="utf-8") as fh:
         fh.write(f"PDBNAM {receptor_pdb}\n")
         fh.write(f"INPLIG {ligand_file}\n")
         fh.write(f"METOPT GA\n")
@@ -182,10 +182,11 @@ def _run_docking_worker(
         output_pdbs = [p for p in pdb_files if p.name != "receptor.pdb"]
 
         if output_pdbs:
-            from . import results_adapter
-            results_adapter.load_docking_results(work_dir, prefix="dock")
+            # Do NOT call cmd.load() from this thread — PyMOL cmd is
+            # not thread-safe.  Store the path and let the user load.
             cleanup_work_dir = False
-            print("Results loaded into PyMOL with prefix 'dock'.")
+            print(f"Docking complete. {len(output_pdbs)} output PDB(s) generated.")
+            print(f"Load results with:\n  flexaids_load_results {work_dir}")
         else:
             print("No output PDB files generated.")
 
@@ -270,19 +271,21 @@ def dock_interactive(
         print(f"ERROR: Ligand file not found: {ligand_file}")
         return
 
-    # Get binding site center
+    # Get binding site center and radius from the same source
     center = _get_selection_center(site_selection)
+    radius_source = site_selection
     if center is None:
         print(
             f"WARNING: Selection '{site_selection}' is empty or invalid. "
             "Using receptor center as binding site."
         )
         center = _get_selection_center(receptor_obj)
+        radius_source = receptor_obj
         if center is None:
             print("ERROR: Could not determine binding site center.")
             return
 
-    radius = _get_selection_radius(site_selection)
+    radius = _get_selection_radius(radius_source)
 
     work_dir = tempfile.mkdtemp(prefix="flexaids_dock_")
     receptor_pdb = os.path.join(work_dir, "receptor.pdb")
