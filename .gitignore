@@ -68,3 +68,6 @@ python/**/*.so
 !*.pdb
 !*.inp.pdb
 !*.clef.pdb
+# website (GitHub Pages)
+!site
+!site/**
