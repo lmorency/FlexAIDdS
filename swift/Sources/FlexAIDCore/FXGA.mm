@@ -443,14 +443,12 @@ extern "C" int fx_population_size(FXBindingPopulationRef pop) {
 }
 
 extern "C" FXBindingModeRef fx_population_get_mode(FXBindingPopulationRef pop, int index) {
-    // Note: BindingModes are stored in a private vector inside BindingPopulation.
-    // Access requires friend or public getter. Since BindingMode is a friend of
-    // BindingPopulation, we use the population's internal vector indirectly.
-    // For now, this returns null — requires adding a public accessor to BindingPopulation.
-    // TODO: Add get_binding_mode(int index) to BindingPopulation class
-    (void)pop;
-    (void)index;
-    return nullptr;
+    if (!pop || !pop->pop) return nullptr;
+    if (index < 0 || index >= pop->pop->get_Population_size()) return nullptr;
+
+    auto* impl = new FXBindingModeImpl();
+    impl->mode = const_cast<BindingMode*>(&pop->pop->get_binding_mode(index));
+    return impl;
 }
 
 extern "C" FXStatMechEngineRef fx_population_global_ensemble(FXBindingPopulationRef pop) {
@@ -475,11 +473,13 @@ extern "C" FXStatMechEngineRef fx_population_global_ensemble(FXBindingPopulation
 }
 
 extern "C" double fx_population_delta_G(FXBindingPopulationRef pop, int mode1_index, int mode2_index) {
-    // Requires access to individual BindingModes — see TODO above
-    (void)pop;
-    (void)mode1_index;
-    (void)mode2_index;
-    return 0.0;
+    if (!pop || !pop->pop) return 0.0;
+    int n = pop->pop->get_Population_size();
+    if (mode1_index < 0 || mode1_index >= n || mode2_index < 0 || mode2_index >= n) return 0.0;
+
+    const auto& m1 = pop->pop->get_binding_mode(mode1_index);
+    const auto& m2 = pop->pop->get_binding_mode(mode2_index);
+    return pop->pop->compute_delta_G(m1, m2);
 }
 
 // ─── BindingMode access ─────────────────────────────────────────────────────
@@ -533,10 +533,15 @@ extern "C" double* fx_mode_boltzmann_weights(FXBindingModeRef mode, int* out_cou
 
 extern "C" FXPoseInfo fx_mode_get_pose(FXBindingModeRef mode, int index) {
     FXPoseInfo info = {};
-    // Requires access to BindingMode::Poses (protected)
-    // TODO: Add public pose accessor to BindingMode class
-    (void)mode;
-    (void)index;
+    if (!mode || !mode->mode) return info;
+    if (index < 0 || index >= mode->mode->get_BindingMode_size()) return info;
+
+    const Pose& p = mode->mode->get_pose(index);
+    info.chrom_index = p.chrom_index;
+    info.order = p.order;
+    info.reach_dist = p.reachDist;
+    info.cf = p.CF;
+    info.boltzmann_weight = p.boltzmann_weight;
     return info;
 }
 

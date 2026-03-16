@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import math
+import sys
 import tempfile
 import textwrap
 from pathlib import Path
 from typing import List
 
 import pytest
+
+# Ensure pymol_plugin (repo root) is importable for Phase 3 tests
+_repo_root = Path(__file__).resolve().parent.parent
+if str(_repo_root) not in sys.path:
+    sys.path.insert(0, str(_repo_root))
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -15,9 +15,8 @@ from typing import List, Optional
 @dataclass
 class WHAMBin:
     """One bin from a WHAM free energy profile."""
-    coordinate: float = 0.0
+    coord_center: float = 0.0
     free_energy: float = 0.0
-    probability: float = 0.0
     count: int = 0
 
 
@@ -25,21 +24,23 @@ class WHAMBin:
 class TIPoint:
     """One lambda point for thermodynamic integration."""
     lambda_val: float = 0.0
-    dH_dlambda: float = 0.0
+    dV_dlambda: float = 0.0
 
 
 @dataclass
 class Replica:
     """Parallel tempering replica."""
+    id: int = 0
     temperature: float = 300.0
-    energies: List[float] = field(default_factory=list)
+    beta: float = 0.0
+    current_energy: float = 0.0
 
 
 @dataclass
 class State:
     """Microstate in the statistical mechanics ensemble."""
     energy: float = 0.0
-    multiplicity: int = 1
+    count: int = 1
 
 
 @dataclass

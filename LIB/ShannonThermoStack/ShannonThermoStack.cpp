@@ -71,6 +71,55 @@ void ShannonEnergyMatrix::initialise() {
     initialised_ = true;
 }
 
+bool ShannonEnergyMatrix::initialise_from_file(const std::string& path) {
+    FILE* fp = fopen(path.c_str(), "rb");
+    if (!fp) return false;
+
+    // Read and verify SHNN magic header
+    char magic[4];
+    if (fread(magic, 1, 4, fp) != 4 ||
+        magic[0] != 'S' || magic[1] != 'H' ||
+        magic[2] != 'N' || magic[3] != 'N') {
+        fclose(fp);
+        return false;
+    }
+
+    uint32_t version = 0, dim = 0;
+    if (fread(&version, sizeof(uint32_t), 1, fp) != 1 ||
+        fread(&dim, sizeof(uint32_t), 1, fp) != 1) {
+        fclose(fp);
+        return false;
+    }
+
+    if (static_cast<int>(dim) != SHANNON_BINS) {
+        fclose(fp);
+        return false;
+    }
+
+    std::vector<float> buf(SHANNON_BINS * SHANNON_BINS);
+    size_t nread = fread(buf.data(), sizeof(float),
+                         SHANNON_BINS * SHANNON_BINS, fp);
+    fclose(fp);
+    if (static_cast<int>(nread) != SHANNON_BINS * SHANNON_BINS)
+        return false;
+
+    matrix_.resize(SHANNON_BINS * SHANNON_BINS);
+    for (int k = 0; k < SHANNON_BINS * SHANNON_BINS; ++k)
+        matrix_[k] = static_cast<double>(buf[k]);
+
+    initialised_ = true;
+    return true;
+}
+
+void ShannonEnergyMatrix::initialise_from_data(const float* data, int count) {
+    int expected = SHANNON_BINS * SHANNON_BINS;
+    if (count < expected) count = expected;  // clamp
+    matrix_.resize(expected);
+    for (int k = 0; k < expected; ++k)
+        matrix_[k] = static_cast<double>(data[k]);
+    initialised_ = true;
+}
+
 // ─── entropy from bin counts (Eigen-vectorised) ───────────────────────────────
 static double entropy_from_counts(const int* counts, int num_bins, int total) {
     if (total == 0) return 0.0;

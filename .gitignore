@@ -28,6 +28,7 @@
 !tests/**
 # build system
 !CMakeLists.txt
+!CMakePresets.json
 !LICENSE
 !README.md
 !CLAUDE.md
@@ -46,6 +47,10 @@
 !typescript/**
 typescript/**/node_modules
 typescript/**/dist
+# pymol plugin
+!pymol_plugin
+!pymol_plugin/**
+pymol_plugin/**/__pycache__
 # python package
 !python
 !python/**

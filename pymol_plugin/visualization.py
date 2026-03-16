@@ -192,8 +192,21 @@ def show_pose_ensemble(mode_name: str, show_all: bool = True) -> None:
     print(f"Showing {label} for {mode_name} ({len(rec.pdb_objects)} PDB objects).")
 
 
+def _burgundy_purple_rgb(t: float):
+    """Interpolate burgundy red → purple blue.
+
+    t = 0.0 → burgundy red (0.502, 0.0, 0.125)
+    t = 1.0 → purple blue  (0.294, 0.0, 0.510)
+    """
+    t = max(0.0, min(1.0, t))
+    r = 0.502 + t * (0.294 - 0.502)
+    g = 0.0
+    b = 0.125 + t * (0.510 - 0.125)
+    return [r, g, b]
+
+
 def color_by_boltzmann_weight(mode_name: str) -> None:
-    """Color poses by Boltzmann weight (blue = low probability, red = high)."""
+    """Color poses by Boltzmann weight (burgundy = high probability, purple = low)."""
     if not _loaded_modes:
         print("ERROR: No modes loaded. Use 'flexaids_load' first.")
         return
@@ -219,14 +232,16 @@ def color_by_boltzmann_weight(mode_name: str) -> None:
 
     for index, (obj, weight) in enumerate(zip(rec.pdb_objects, weights)):
         t = (weight - w_min) / w_range
+        # High weight = burgundy red (t=1 → frac=0), low weight = purple blue (t=0 → frac=1)
+        frac = 1.0 - t
         color_name = f"flexaids_bw_{mode_name}_{index}"
-        cmd.set_color(color_name, [t, 0.0, 1.0 - t])
+        cmd.set_color(color_name, _burgundy_purple_rgb(frac))
         cmd.color(color_name, obj)
         cmd.enable(obj)
 
     print(
         f"Colored {len(rec.pdb_objects)} poses for {mode_name} by Boltzmann weight "
-        "(blue=low, red=high)."
+        "(burgundy=high, purple=low)."
     )
 
 
