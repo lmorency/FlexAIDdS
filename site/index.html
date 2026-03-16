@@ -3,9 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="author" content="Louis-Philippe Morency">
 <title>FlexAID∆S — Entropy-Driven Molecular Docking Engine</title>
 <meta name="description" content="FlexAID∆S: Genetic algorithms meet statistical mechanics for real-world drug discovery. Conformational entropy via full statistical mechanics framework.">
+<meta name="author" content="Louis-Philippe Morency">
 <meta property="og:title" content="FlexAID∆S — Entropy-Driven Molecular Docking Engine">
 <meta property="og:description" content="Modernized FlexAID in C++20 with Python bindings. Entropy-aware molecular docking for drug discovery.">
 <meta property="og:type" content="website">
@@ -24,8 +24,8 @@
   "alternateName": "FlexAIDdS",
   "description": "Entropy-driven molecular docking engine combining genetic algorithms with statistical mechanics thermodynamics for drug discovery.",
   "applicationCategory": "Science",
-  "operatingSystem": "Linux, macOS",
-  "programmingLanguage": ["C++", "Python", "CUDA", "Objective-C++"],
+  "operatingSystem": "Linux, macOS, Windows",
+  "programmingLanguage": ["C++", "Python", "Swift", "TypeScript", "CUDA", "Objective-C++"],
   "license": "https://opensource.org/licenses/Apache-2.0",
   "codeRepository": "https://github.com/lmorency/FlexAIDdS",
   "author": {
@@ -57,6 +57,7 @@
   <a href="#main" class="sr-only" style="position:absolute;top:-100px;left:0;z-index:999;background:var(--color-primary);color:#fff;padding:8px 16px;font-size:14px;" onfocus="this.style.top='0'" onblur="this.style.top='-100px'">Skip to content</a>
 
   <!-- Header -->
+  <div class="scroll-progress" aria-hidden="true"></div>
   <header class="site-header" id="site-header">
     <div class="header-inner">
       <a href="#" class="logo" aria-label="FlexAID∆S Home">
@@ -73,12 +74,11 @@
       </a>
       <nav class="main-nav" aria-label="Main navigation">
         <a href="#features">Features</a>
-        <a href="#benchmarks">Benchmarks</a>
+        <a href="#benchmarks">Results</a>
         <a href="#install">Install</a>
         <a href="#usage">Usage</a>
         <a href="#architecture">Architecture</a>
         <a href="#publications">Publications</a>
-        <a href="#contributing">Contributing</a>
       </nav>
       <div class="header-actions">
         <a href="https://github.com/lmorency/FlexAIDdS" target="_blank" rel="noopener noreferrer" class="gh-link" aria-label="View on GitHub">
@@ -111,7 +111,7 @@
           <span class="badge">Apache 2.0</span>
           <span class="badge">C++20</span>
           <span class="badge badge-accent">Python &ge; 3.9</span>
-          <span class="badge">Linux | macOS</span>
+          <span class="badge">Linux | macOS | Windows</span>
         </div>
         <h1>FlexAID<span class="delta">∆S</span></h1>
         <p class="hero-subtitle">Entropy-Driven Molecular Docking Engine</p>
@@ -141,7 +141,7 @@
     </section>
 
     <!-- Why FlexAID∆S -->
-    <section class="why-section reveal" id="why">
+    <section class="why-section" id="why">
       <div class="container">
         <blockquote class="highlight-quote">
           Most docking engines optimize enthalpy alone. FlexAID∆S integrates <strong>Shannon entropy</strong> into its scoring via a full statistical mechanics framework — recovering the correct binding mode <strong>92% of the time</strong> when enthalpy-only scoring fails.
@@ -150,7 +150,7 @@
     </section>
 
     <!-- Features -->
-    <section class="features-section reveal" id="features">
+    <section class="features-section" id="features">
       <div class="container">
         <h2>Capabilities</h2>
         <div class="features-grid">
@@ -193,11 +193,25 @@
             <div class="feature-icon">
               <svg viewBox="0 0 40 40" fill="none" stroke="var(--color-accent)" stroke-width="1.5"><polygon points="20,4 36,14 36,28 20,38 4,28 4,14" stroke-width="1.5"/><line x1="20" y1="4" x2="20" y2="38" stroke-width="1" stroke-dasharray="2 2"/><line x1="4" y1="14" x2="36" y2="28" stroke-width="1" stroke-dasharray="2 2"/></svg>
             </div>
-            <h3>Performance</h3>
+            <h3>Hardware Acceleration</h3>
             <ul>
-              <li>CUDA, Metal (macOS), AVX-512, AVX2, OpenMP, Eigen3</li>
+              <li>Unified hardware dispatch &mdash; automatic backend selection (CUDA &gt; Metal &gt; AVX-512 &gt; AVX2 &gt; OpenMP &gt; scalar)</li>
+              <li>SIMD primitives: AVX-512 and AVX2 vectorized geometric computations</li>
               <li>Ultra-fast HPC binaries with LTO + <code>-march=native</code></li>
               <li>Automatic cavity detection (SURFNET with Metal GPU)</li>
+            </ul>
+          </div>
+          <div class="feature-card feature-card-wide">
+            <div class="feature-icon">
+              <svg viewBox="0 0 40 40" fill="none" stroke="var(--color-accent)" stroke-width="1.5"><rect x="4" y="8" width="10" height="10" rx="2"/><rect x="26" y="8" width="10" height="10" rx="2"/><rect x="4" y="24" width="10" height="10" rx="2"/><rect x="26" y="24" width="10" height="10" rx="2"/><line x1="14" y1="13" x2="26" y2="13" stroke-dasharray="2 2"/><line x1="14" y1="29" x2="26" y2="29" stroke-dasharray="2 2"/><line x1="20" y1="8" x2="20" y2="34" stroke-dasharray="2 2" stroke-width="1"/></svg>
+            </div>
+            <h3>Bonhomme Fleet</h3>
+            <ul class="feature-list-grid">
+              <li>Distributed docking across Apple devices via iCloud Drive</li>
+              <li>Device-aware scheduling &mdash; battery, thermal state, TFLOPS weighting</li>
+              <li>ChaChaPoly-encrypted work chunks for secure computation</li>
+              <li>Intelligence oracle &mdash; on-device AI via Apple FoundationModels</li>
+              <li>TypeScript PWA &mdash; real-time Fleet dashboard + Mol* 3D viewer</li>
             </ul>
           </div>
           <div class="feature-card feature-card-wide">
@@ -209,7 +223,6 @@
               <li>Python package <code>flexaidds</code> — API, CLI, PyMOL plugin</li>
               <li>NATURaL co-translational assembly</li>
               <li>FastOPTICS + Density Peak clustering</li>
-              <li>FreeNRG integration — unified free energy</li>
               <li>Single JSON config for all parameters</li>
             </ul>
           </div>
@@ -218,10 +231,10 @@
     </section>
 
     <!-- Benchmarks -->
-    <section class="benchmarks-section reveal" id="benchmarks">
+    <section class="benchmarks-section" id="benchmarks">
       <div class="container">
-        <h2>Benchmark Results</h2>
-        <p class="section-subtitle">Head-to-head comparison on standard benchmark suites &mdash; 95% CIs from 10,000 bootstrap resamples</p>
+        <h2>Preliminary Results</h2>
+        <p class="section-subtitle">Ongoing validation &mdash; full benchmark data in the forthcoming manuscript (Morency &amp; Najmanovich, in preparation). 95% CIs from 10,000 bootstrap resamples.</p>
 
         <!-- ITC-187 -->
         <h3 class="bench-suite-title">ITC-187 &mdash; Calorimetry Gold Standard <span class="bench-n">(n = 187)</span></h3>
@@ -316,7 +329,7 @@
           <div class="cns-stat-card">
             <span class="cns-stat-value">3.02</span>
             <span class="cns-stat-ci">95% CI [2.69, 3.35] kcal/mol</span>
-            <span class="cns-stat-label">Avg Shannon &minus;T&Delta;S contribution</span>
+            <span class="cns-stat-label">Avg Shannon entropic correction</span>
           </div>
           <div class="cns-stat-card">
             <span class="cns-stat-value">23</span>
@@ -324,12 +337,12 @@
             <span class="cns-stat-label">Neurological targets</span>
           </div>
         </div>
-        <p class="benchmark-note">Example: mu-opioid + fentanyl &mdash; enthalpy-only scoring placed the ligand in the wrong pocket (&minus;14.2 kcal/mol, RMSD 8.3 &Aring;); Shannon entropy scoring rescued the correct pose (&minus;10.8 kcal/mol, RMSD 1.2 &Aring;, exp: &minus;11.1)</p>
+        <p class="benchmark-note">Example: mu-opioid + fentanyl &mdash; enthalpy-only scoring placed the ligand in the wrong pocket (&minus;14.2 kcal/mol, RMSD 8.3 &Aring;); Shannon entropic correction rescued the correct pose (&minus;10.8 kcal/mol, RMSD 1.2 &Aring;, exp: &minus;11.1)</p>
       </div>
     </section>
 
     <!-- Architecture -->
-    <section class="arch-section reveal" id="architecture">
+    <section class="arch-section" id="architecture">
       <div class="container">
         <h2>Architecture</h2>
         <div class="arch-pipeline">
@@ -385,7 +398,7 @@
     </section>
 
     <!-- Install -->
-    <section class="install-section reveal" id="install">
+    <section class="install-section" id="install">
       <div class="container">
         <h2>Installation</h2>
         <div class="install-grid">
@@ -410,7 +423,7 @@ cmake .. -DCMAKE_BUILD_TYPE=Release && cmake --build . -j $(nproc)</code></pre>
             <div class="req-grid">
               <div class="req-item">
                 <span class="req-label">Required</span>
-                <span>C++20 compiler (GCC &ge; 10, Clang &ge; 10), CMake &ge; 3.18</span>
+                <span>C++20 compiler (GCC &ge; 10, Clang &ge; 10, MSVC), CMake &ge; 3.18</span>
               </div>
               <div class="req-item">
                 <span class="req-label req-label-opt">Optional</span>
@@ -434,6 +447,7 @@ cmake .. -DCMAKE_BUILD_TYPE=Release && cmake --build . -j $(nproc)</code></pre>
                 <tr><td><code>BUILD_FLEXAIDDS_FAST</code></td><td>ON</td><td>Ultra-fast binary (LTO + native)</td></tr>
                 <tr><td><code>FLEXAIDS_USE_CUDA</code></td><td>OFF</td><td>CUDA GPU batch evaluation</td></tr>
                 <tr><td><code>FLEXAIDS_USE_METAL</code></td><td>OFF</td><td>Metal GPU (macOS)</td></tr>
+                <tr><td><code>FLEXAIDS_USE_AVX2</code></td><td>ON</td><td>AVX2 SIMD acceleration</td></tr>
                 <tr><td><code>FLEXAIDS_USE_AVX512</code></td><td>OFF</td><td>AVX-512 SIMD</td></tr>
                 <tr><td><code>FLEXAIDS_USE_OPENMP</code></td><td>ON</td><td>OpenMP parallelism</td></tr>
                 <tr><td><code>FLEXAIDS_USE_EIGEN</code></td><td>ON</td><td>Eigen3 linear algebra</td></tr>
@@ -458,7 +472,7 @@ cmake .. -DCMAKE_BUILD_TYPE=Release && cmake --build . -j $(nproc)</code></pre>
     </section>
 
     <!-- Usage -->
-    <section class="usage-section reveal" id="usage">
+    <section class="usage-section" id="usage">
       <div class="container">
         <h2>Usage</h2>
         <div class="usage-tabs" role="tablist" aria-label="Usage examples">
@@ -510,21 +524,14 @@ thermo = engine.compute()
 <span class="code-keyword">print</span>(<span class="code-string">"F ="</span>, thermo.free_energy)
 <span class="code-keyword">print</span>(<span class="code-string">"S ="</span>, thermo.entropy)
 
-<span class="code-comment"># Phase 3: Vibrational entropy integration</span>
-<span class="code-keyword">from</span> flexaidds <span class="code-keyword">import</span> TorsionalENM, run_shannon_thermo_stack
+<span class="code-comment"># Phase 3 — Vibrational entropy correction</span>
+<span class="code-keyword">from</span> flexaidds.tencm <span class="code-keyword">import</span> TorsionalENM, run_shannon_thermo_stack
 
-tenm = TorsionalENM()
-tenm.build_from_pdb(<span class="code-string">'receptor.pdb'</span>)
+tenm = TorsionalENM(<span class="code-string">"apo.pdb"</span>, <span class="code-string">"holo.pdb"</span>)
+delta_s_vib = tenm.compute_delta_s(temperature=<span class="code-number">300.0</span>)
 
-result = run_shannon_thermo_stack(
-    energies=pose_energies,
-    tencm_model=tenm,
-    base_deltaG=<span class="code-number">-12.5</span>,
-    temperature_K=<span class="code-number">300.0</span>,
-)
-<span class="code-keyword">print</span>(<span class="code-string">f"&#916;G = {result.deltaG:.4f} kcal/mol"</span>)
-<span class="code-keyword">print</span>(<span class="code-string">f"Shannon S = {result.shannonEntropy:.4f} bits"</span>)
-<span class="code-keyword">print</span>(<span class="code-string">f"Torsional S_vib = {result.torsionalVibEntropy:.6f}"</span>)</code></pre>
+<span class="code-comment"># Shannon configurational entropy (GPU-accelerated)</span>
+S_config = run_shannon_thermo_stack(dihedral_angles, n_bins=<span class="code-number">36</span>)</code></pre>
           </div>
         </div>
 
@@ -584,12 +591,12 @@ tENCoM wildtype.pdb conf1.pdb conf2.pdb conf3.pdb -T 300</code></pre>
     </section>
 
     <!-- Repo Stats -->
-    <section class="stats-section reveal" id="stats">
+    <section class="stats-section" id="stats">
       <div class="container">
         <h2>Repository</h2>
         <div class="stats-grid">
           <div class="stat-card">
-            <span class="stat-value" id="stat-commits" data-count="328">0</span>
+            <span class="stat-value" data-count="389">0</span>
             <span class="stat-label">Commits</span>
           </div>
           <div class="stat-card">
@@ -597,11 +604,15 @@ tENCoM wildtype.pdb conf1.pdb conf2.pdb conf3.pdb -T 300</code></pre>
             <span class="stat-label">Stars</span>
           </div>
           <div class="stat-card">
+            <span class="stat-value">C++20</span>
+            <span class="stat-label">Standard</span>
+          </div>
+          <div class="stat-card">
             <span class="stat-value">Apache 2.0</span>
             <span class="stat-label">License</span>
           </div>
           <div class="stat-card">
-            <span class="stat-value">6</span>
+            <span class="stat-value">7</span>
             <span class="stat-label">Languages</span>
           </div>
         </div>
@@ -611,8 +622,9 @@ tENCoM wildtype.pdb conf1.pdb conf2.pdb conf3.pdb -T 300</code></pre>
           <div class="lang-segment" style="width:3.8%;background:var(--lang-swift)" title="Swift 3.8%"></div>
           <div class="lang-segment" style="width:3.4%;background:var(--lang-objcpp)" title="Objective-C++ 3.4%"></div>
           <div class="lang-segment" style="width:2.7%;background:var(--lang-cmake)" title="CMake 2.7%"></div>
+          <div class="lang-segment" style="width:2.2%;background:var(--lang-ts)" title="TypeScript 2.2%"></div>
           <div class="lang-segment" style="width:1.8%;background:var(--lang-cuda)" title="CUDA 1.8%"></div>
-          <div class="lang-segment" style="width:3.3%;background:var(--lang-other)" title="Other 3.3%"></div>
+          <div class="lang-segment" style="width:1.1%;background:var(--lang-other)" title="Other 1.1%"></div>
         </div>
         <div class="lang-legend">
           <span><i style="background:var(--lang-cpp)"></i>C++ 67%</span>
@@ -620,14 +632,15 @@ tENCoM wildtype.pdb conf1.pdb conf2.pdb conf3.pdb -T 300</code></pre>
           <span><i style="background:var(--lang-swift)"></i>Swift 3.8%</span>
           <span><i style="background:var(--lang-objcpp)"></i>Obj-C++ 3.4%</span>
           <span><i style="background:var(--lang-cmake)"></i>CMake 2.7%</span>
+          <span><i style="background:var(--lang-ts)"></i>TypeScript 2.2%</span>
           <span><i style="background:var(--lang-cuda)"></i>CUDA 1.8%</span>
-          <span><i style="background:var(--lang-other)"></i>Other 3.3%</span>
+          <span><i style="background:var(--lang-other)"></i>Other 1.1%</span>
         </div>
       </div>
     </section>
 
     <!-- Key Modules -->
-    <section class="modules-section reveal" id="modules">
+    <section class="modules-section" id="modules">
       <div class="container">
         <h2>Key Modules</h2>
         <div class="modules-grid">
@@ -655,15 +668,31 @@ tENCoM wildtype.pdb conf1.pdb conf2.pdb conf3.pdb -T 300</code></pre>
             <code>CavityDetect</code>
             <span>SURFNET binding site detection</span>
           </div>
+          <div class="module-card">
+            <code>BonhommeFleet</code>
+            <span>Distributed docking via iCloud Drive</span>
+          </div>
+          <div class="module-card">
+            <code>Swift Package</code>
+            <span>macOS/iOS actors (macOS 14+, iOS 17+)</span>
+          </div>
+          <div class="module-card">
+            <code>TypeScript SDK</code>
+            <span>PWA dashboard + Mol* viewer</span>
+          </div>
+          <div class="module-card">
+            <code>HardwareDispatch</code>
+            <span>Unified runtime backend selection</span>
+          </div>
         </div>
       </div>
     </section>
 
     <!-- PyMOL Plugin -->
-    <section class="pymol-section reveal" id="pymol">
+    <section class="pymol-section" id="pymol">
       <div class="container">
         <h2>PyMOL Plugin</h2>
-        <p class="section-subtitle">Interactive visualization with GUI panel and 8 registered commands</p>
+        <p class="section-subtitle">Interactive visualization with GUI panel and registered commands</p>
         <div class="pymol-grid">
           <div class="pymol-install-card">
             <h3>Installation</h3>
@@ -682,12 +711,12 @@ tENCoM wildtype.pdb conf1.pdb conf2.pdb conf3.pdb -T 300</code></pre>
                 <tbody>
                   <tr><td><code>flexaids_load &lt;dir&gt;</code></td><td>Load binding modes from results</td></tr>
                   <tr><td><code>flexaids_show_ensemble &lt;mode&gt;</code></td><td>Render pose ensemble</td></tr>
-                  <tr><td><code>flexaids_color_boltzmann &lt;mode&gt;</code></td><td>Color by Boltzmann weight (blue&rarr;red)</td></tr>
+                  <tr><td><code>flexaids_color_boltzmann &lt;mode&gt;</code></td><td>Color by Boltzmann weight</td></tr>
                   <tr><td><code>flexaids_thermo &lt;mode&gt;</code></td><td>Print thermodynamic properties</td></tr>
-                  <tr><td><code>flexaids_load_results &lt;dir&gt;</code></td><td>Load full docking results via API</td></tr>
-                  <tr><td><code>flexaids_show_mode &lt;mode&gt;</code></td><td>Show single binding mode cluster</td></tr>
-                  <tr><td><code>flexaids_color_mode &lt;mode&gt;</code></td><td>Color mode by score</td></tr>
-                  <tr><td><code>flexaids_mode_details &lt;mode&gt;</code></td><td>Display mode details</td></tr>
+                  <tr><td><code>flexaids_entropy_heatmap &lt;mode&gt;</code></td><td>Spatial entropy density heatmap</td></tr>
+                  <tr><td><code>flexaids_animate &lt;m1&gt; &lt;m2&gt;</code></td><td>Interpolated animation between modes</td></tr>
+                  <tr><td><code>flexaids_itc_plot</code></td><td>Enthalpy-entropy compensation plot</td></tr>
+                  <tr><td><code>flexaids_dock &lt;obj&gt; &lt;lig&gt;</code></td><td>Interactive docking from PyMOL</td></tr>
                 </tbody>
               </table>
             </div>
@@ -696,69 +725,9 @@ tENCoM wildtype.pdb conf1.pdb conf2.pdb conf3.pdb -T 300</code></pre>
       </div>
     </section>
 
-    <!-- FreeNRG Integration -->
-    <section class="freenrg-section reveal" id="freenrg">
-      <div class="container">
-        <h2>FreeNRG Integration</h2>
-        <p class="section-subtitle">Unified free energy framework bridging FlexAID∆S and NRGRank virtual screening</p>
-        <div class="freenrg-grid">
-          <div class="code-block">
-            <div class="code-header"><span>python</span></div>
-            <pre><code><span class="code-keyword">from</span> freenrg.pipeline <span class="code-keyword">import</span> FreeNRGPipeline, FreeNRGConfig, DockingMode
-
-config = FreeNRGConfig(
-    mode=DockingMode.FLEXAID,
-    flexaid_binary=<span class="code-string">"/path/to/FlexAID"</span>,
-    receptor_pdb=<span class="code-string">"receptor.pdb"</span>,
-    ligand_inp=<span class="code-string">"ligand.inp"</span>,
-    binding_site=<span class="code-string">"cleft.pdb"</span>,
-)
-result = FreeNRGPipeline().run(config)</code></pre>
-          </div>
-          <div class="freenrg-info">
-            <p>The <a href="https://github.com/lmorency/FreeNRG" target="_blank" rel="noopener noreferrer">FreeNRG</a> Python package provides ports of StatMechEngine, ShannonThermoStack, TorsionalENM, and CFScorer.</p>
-            <div class="code-block code-block-sm">
-              <div class="code-header"><span>bash</span></div>
-              <pre><code>pip install freenrg</code></pre>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Bonhomme Fleet / Infrastructure -->
-    <section class="fleet-section reveal" id="fleet">
-      <div class="container">
-        <h2>Bonhomme Fleet</h2>
-        <p class="section-subtitle">Apple Silicon Metal GPU compute infrastructure for high-throughput molecular docking</p>
-        <div class="fleet-grid">
-          <div class="fleet-card">
-            <div class="fleet-icon">
-              <svg viewBox="0 0 40 40" fill="none" stroke="var(--color-accent)" stroke-width="1.5"><rect x="4" y="8" width="32" height="22" rx="3"/><line x1="4" y1="14" x2="36" y2="14"/><circle cx="8" cy="11" r="1.5" fill="var(--color-accent)"/><circle cx="13" cy="11" r="1.5" fill="var(--color-accent)"/><circle cx="18" cy="11" r="1.5" fill="var(--color-accent)"/></svg>
-            </div>
-            <h3>Apple Silicon Native</h3>
-            <p>Metal GPU shaders for Shannon entropy histograms, cavity detection, and batch CF evaluation. Objective-C++ bridge layer for seamless integration.</p>
-          </div>
-          <div class="fleet-card">
-            <div class="fleet-icon">
-              <svg viewBox="0 0 40 40" fill="none" stroke="var(--color-accent)" stroke-width="1.5"><path d="M20 4 L36 12 V28 L20 36 L4 28 V12 Z"/><path d="M20 4 V20 L36 12"/><path d="M20 20 L4 12"/><path d="M20 20 V36"/></svg>
-            </div>
-            <h3>Apple Foundation Model</h3>
-            <p>On-device intelligence for molecular property prediction, binding site prioritization, and adaptive docking parameter selection leveraging Apple's neural engine.</p>
-          </div>
-          <div class="fleet-card">
-            <div class="fleet-icon">
-              <svg viewBox="0 0 40 40" fill="none" stroke="var(--color-accent)" stroke-width="1.5"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="22" y="6" width="12" height="12" rx="2"/><rect x="6" y="22" width="12" height="12" rx="2"/><rect x="22" y="22" width="12" height="12" rx="2"/><line x1="18" y1="12" x2="22" y2="12" stroke-dasharray="2 1"/><line x1="12" y1="18" x2="12" y2="22" stroke-dasharray="2 1"/><line x1="28" y1="18" x2="28" y2="22" stroke-dasharray="2 1"/><line x1="18" y1="28" x2="22" y2="28" stroke-dasharray="2 1"/></svg>
-            </div>
-            <h3>Fleet Orchestration</h3>
-            <p>Distributed docking campaigns across Apple Silicon nodes with automatic workload balancing, result aggregation, and thermodynamic ensemble merging.</p>
-          </div>
-        </div>
-      </div>
-    </section>
 
     <!-- Publications -->
-    <section class="publications-section reveal" id="publications">
+    <section class="publications-section" id="publications">
       <div class="container">
         <h2>Publications</h2>
         <div class="publications-grid">
@@ -785,14 +754,14 @@ result = FreeNRGPipeline().run(config)</code></pre>
             <span class="pub-badge pub-badge-upcoming">In Preparation</span>
             <p class="pub-authors">Morency LP &amp; Najmanovich RJ</p>
             <p class="pub-title">FlexAID∆S: Information-Theoretic Entropy Improves Molecular Docking Accuracy and Binding Mode Prediction</p>
-            <p class="pub-journal"><em>Preprint expected on bioRxiv/ChemRxiv, 2026</em></p>
+            <p class="pub-journal"><em>Manuscript in preparation, 2026</em></p>
           </div>
         </div>
       </div>
     </section>
 
     <!-- Contributing -->
-    <section class="contributing-section reveal" id="contributing">
+    <section class="contributing-section" id="contributing">
       <div class="container">
         <h2>Contributing</h2>
         <div class="contributing-grid">
@@ -803,7 +772,6 @@ result = FreeNRGPipeline().run(config)</code></pre>
               <span class="license-tag license-tag-ok">BSD</span>
               <span class="license-tag license-tag-ok">MIT</span>
               <span class="license-tag license-tag-ok">MPL-2.0</span>
-              <span class="license-tag license-tag-ok">PSF</span>
             </div>
           </div>
           <div class="license-card license-forbidden">
@@ -816,7 +784,6 @@ result = FreeNRGPipeline().run(config)</code></pre>
           </div>
           <div class="contributing-links">
             <a href="https://github.com/lmorency/FlexAIDdS/blob/master/CONTRIBUTING.md" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">Contributing Guide</a>
-            <a href="https://github.com/lmorency/FlexAIDdS/blob/master/CODE_OF_CONDUCT.md" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">Code of Conduct</a>
           </div>
         </div>
       </div>
@@ -830,20 +797,21 @@ result = FreeNRGPipeline().run(config)</code></pre>
       <div class="footer-inner">
         <div class="footer-brand">
           <span class="logo-text">FlexAID<span class="logo-delta">∆S</span></span>
-          <p class="footer-cite">Morency LP &amp; Najmanovich RJ (2026). &ldquo;FlexAID∆S: Information-Theoretic Entropy Improves Molecular Docking Accuracy and Binding Mode Prediction.&rdquo; <em>Preprint in preparation &mdash; bioRxiv/ChemRxiv.</em></p>
-          <p class="footer-cite footer-cite-secondary">Gaudreault &amp; Najmanovich (2015). <a href="https://doi.org/10.1021/acs.jcim.5b00078" target="_blank" rel="noopener noreferrer">J. Chem. Inf. Model. 55(7):1323-36</a></p>
+          <p class="footer-cite">Morency LP &amp; Najmanovich RJ (2026). &ldquo;FlexAID∆S: Information-Theoretic Entropy Improves Molecular Docking Accuracy and Binding Mode Prediction.&rdquo; <em>Manuscript in preparation.</em></p>
+          <p class="footer-cite footer-cite-secondary">Gaudreault F &amp; Najmanovich RJ (2015). <a href="https://doi.org/10.1021/acs.jcim.5b00078" target="_blank" rel="noopener noreferrer">J. Chem. Inf. Model. 55(7):1323-36</a></p>
+          <p class="footer-cite footer-cite-secondary">Gaudreault F, Morency LP &amp; Najmanovich RJ (2015). <a href="https://doi.org/10.1093/bioinformatics/btv458" target="_blank" rel="noopener noreferrer">Bioinformatics 31(23):3856-8</a></p>
         </div>
         <div class="footer-links">
           <a href="https://github.com/lmorency/FlexAIDdS" target="_blank" rel="noopener noreferrer">GitHub</a>
           <a href="https://opensource.org/licenses/Apache-2.0" target="_blank" rel="noopener noreferrer">Apache 2.0 License</a>
         </div>
       </div>
-      <div class="footer-bottom">
-        <span class="footer-copyright">Louis-Philippe Morency &mdash; Universit&eacute; de Montr&eacute;al, NRGlab</span>
-      </div>
     </div>
   </footer>
 
+  <button class="back-to-top" aria-label="Back to top">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 15l-6-6-6 6"/></svg>
+  </button>
   <script src="./app.js" defer></script>
 </body>
 </html>
