@@ -15,6 +15,7 @@
 #include "../../LIB/BindingMode.h"
 #endif
 #include "../../LIB/encom.h"
+#include "../../LIB/fast_optics.hpp"
 
 namespace py = pybind11;
 using namespace statmech;
@@ -336,4 +337,40 @@ PYBIND11_MODULE(_core, m) {
             &encom::ENCoMEngine::free_energy_with_vibrations,
             py::arg("F_electronic"), py::arg("S_vib_kcal_mol_K"), py::arg("temperature_K"),
             "F_total = F_elec − T·S_vib  (kcal/mol)");
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // FastOPTICS: lightweight super-cluster extraction
+    // ═══════════════════════════════════════════════════════════════════════
+
+    py::enum_<ClusterMode>(m, "ClusterMode",
+        "Clustering mode for FastOPTICS extraction")
+        .value("FULL_OPTICS", ClusterMode::FULL_OPTICS, "Full OPTICS hierarchy walk")
+        .value("SUPER_CLUSTER_ONLY", ClusterMode::SUPER_CLUSTER_ONLY,
+               "Fast super-cluster extraction (~40%% faster)")
+        .export_values();
+
+    py::class_<Point>(m, "Point", "N-dimensional point for OPTICS clustering")
+        .def(py::init<>())
+        .def(py::init([](std::vector<double> c) {
+            Point p; p.coords = std::move(c); return p;
+        }), py::arg("coords"))
+        .def_readwrite("coords", &Point::coords);
+
+    py::class_<Reachability>(m, "Reachability",
+        "OPTICS ordering entry with point index and reachability distance")
+        .def_readonly("index", &Reachability::index)
+        .def_readonly("reach", &Reachability::reach);
+
+    // Use a distinct Python name to avoid collision with legacy FOPTICS
+    py::class_<::FastOPTICS>(m, "FastOPTICSLight",
+        "Lightweight FastOPTICS clustering with super-cluster extraction")
+        .def(py::init<const std::vector<Point>&, int, double>(),
+            py::arg("points"), py::arg("min_pts") = 4, py::arg("eps") = 0.0,
+            "Build OPTICS ordering from points")
+        .def("get_ordering", &::FastOPTICS::getOrdering,
+            py::return_value_policy::reference_internal,
+            "Return the OPTICS reachability ordering")
+        .def("extract_super_cluster", &::FastOPTICS::extractSuperCluster,
+            py::arg("mode") = ClusterMode::FULL_OPTICS,
+            "Extract cluster indices (SUPER_CLUSTER_ONLY for fast mode)");
 }

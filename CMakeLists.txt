@@ -239,6 +239,7 @@ target_sources(FlexAID PRIVATE
         LIB/DensityPeak_Cluster.cpp
         LIB/FastOPTICS_cluster.cpp
         LIB/FOPTICS.cpp
+        LIB/fast_optics.cpp
         LIB/BindingMode.cpp
         LIB/rna_structure.cpp
         LIB/shortest_path.cpp
@@ -1062,7 +1063,21 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME GAValidationTests COMMAND test_ga_validation)
 
-    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_hardware_detect_dispatch, test_tencom_diff, test_ptm_attachment, test_gaboom, test_vcontacts, test_cleft_cavity, test_encom, test_ring_conformer_library, test_sugar_pucker, test_chiral_center, test_cavity_detect, test_binding_mode_statmech, test_binding_mode_advanced, test_ga_core, test_ga_validation")
+    # test_fast_optics — lightweight FastOPTICS super-cluster extraction tests
+    add_executable(test_fast_optics
+        tests/test_fast_optics.cpp
+        LIB/fast_optics.cpp
+    )
+    target_include_directories(test_fast_optics PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_fast_optics PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_fast_optics PRIVATE /O2)
+    else()
+        target_compile_options(test_fast_optics PRIVATE -O2)
+    endif()
+    add_test(NAME FastOPTICSTests COMMAND test_fast_optics)
+
+    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_hardware_detect_dispatch, test_tencom_diff, test_ptm_attachment, test_gaboom, test_vcontacts, test_cleft_cavity, test_encom, test_ring_conformer_library, test_sugar_pucker, test_chiral_center, test_cavity_detect, test_binding_mode_statmech, test_binding_mode_advanced, test_ga_core, test_ga_validation, test_fast_optics")
 endif()
 
 # ─── Swift Bridge (macOS only) ────────────────────────────────────────────

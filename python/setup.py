@@ -33,6 +33,7 @@ ext_modules = [
             f"{_rel_lib}/encom.cpp",
             f"{_rel_lib}/tencm.cpp",
             f"{_rel_lib}/ShannonThermoStack/ShannonThermoStack.cpp",
+            f"{_rel_lib}/fast_optics.cpp",
         ],
         include_dirs=[
             str(LIB_DIR),

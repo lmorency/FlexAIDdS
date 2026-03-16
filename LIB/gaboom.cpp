@@ -27,6 +27,7 @@
 #include "statmech.h"
 #include "tencm.h"
 #include "ShannonThermoStack/ShannonThermoStack.h"
+#include "fast_optics.hpp"
 #include "NATURaL/NATURaLDualAssembly.h"
 
 // in milliseconds
@@ -406,6 +407,27 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		statmech::StatMechEngine sme(T_K);
 		for(int s = 0; s < n_chrom_snapshot; ++s)
 			sme.add_sample((*chrom_snapshot)[s].evalue);
+
+		// Optional super-cluster pre-filtering for faster Shannon entropy collapse
+		if (FA->use_super_cluster && n_chrom_snapshot > 4) {
+			std::vector<Point> energy_pts(n_chrom_snapshot);
+			for (int s = 0; s < n_chrom_snapshot; ++s)
+				energy_pts[s].coords = { (*chrom_snapshot)[s].evalue };
+
+			FastOPTICS foptics(energy_pts, std::max(4, n_chrom_snapshot / 20));
+			auto sc_indices = foptics.extractSuperCluster(ClusterMode::SUPER_CLUSTER_ONLY);
+
+			if (!sc_indices.empty() && sc_indices.size() < static_cast<size_t>(n_chrom_snapshot)) {
+				statmech::StatMechEngine sme_filtered(T_K);
+				for (size_t idx : sc_indices)
+					sme_filtered.add_sample((*chrom_snapshot)[idx].evalue);
+
+				printf("--- SuperCluster pre-filter: %zu / %d poses selected ---\n",
+				       sc_indices.size(), n_chrom_snapshot);
+				sme = sme_filtered;
+			}
+		}
+
 		statmech::Thermodynamics td = sme.compute();
 		printf("--- Thermodynamics (T = %.1f K, N = %d conformers) ---\n",
 		       td.temperature, n_chrom_snapshot);

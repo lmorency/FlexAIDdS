@@ -180,6 +180,31 @@ class BindingPopulation:
             for pose in mode._poses:
                 engine.add_sample(pose.energy)
         return engine.compute()
+
+    def compute_super_cluster_thermodynamics(self) -> Thermodynamics:
+        """Compute thermodynamics using only the super-cluster subset.
+
+        Extracts the dominant energy basin via SuperCluster, then
+        computes canonical ensemble thermodynamics on the filtered set.
+
+        Returns:
+            Thermodynamics for the super-cluster subset.
+        """
+        from .supercluster import SuperCluster
+        all_energies = [p.energy for m in self._modes for p in m._poses]
+        if not all_energies:
+            return Thermodynamics(
+                temperature=self._temperature, log_Z=0.0,
+                free_energy=float('inf'), mean_energy=float('inf'),
+                mean_energy_sq=float('inf'), heat_capacity=0.0,
+                entropy=0.0, std_energy=0.0,
+            )
+        sc = SuperCluster(all_energies)
+        filtered = sc.filter_energies()
+        engine = StatMechEngine(self._temperature)
+        for e in filtered:
+            engine.add_sample(e)
+        return engine.compute()
     
     @property
     def n_modes(self) -> int:
@@ -257,7 +282,7 @@ class Docking:
         _flag_keys = {
             "DEEFLX", "ROTOBS", "NORMAR", "USEACS", "EXCHET", "INCHOH",
             "NOINTR", "OMITBU", "VINDEX", "HTPMOD", "OUTRNG", "USEDEE",
-            "NRGSUI", "SCOLIG", "SCOOUT", "ROTOUT",
+            "NRGSUI", "SCOLIG", "SCOOUT", "ROTOUT", "SUPCLU",
         }
 
         # Initialise list accumulators so callers can always iterate them.

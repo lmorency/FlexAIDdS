@@ -39,6 +39,7 @@ except ImportError:
     kB_SI = 1.380649e-23    # J K⁻¹
     HAS_CORE_BINDINGS = False
 
+from .supercluster import SuperCluster
 from .tencom_results import FlexModeResult, FlexPopulationResult, parse_tencom_pdb, parse_tencom_json
 
 
@@ -144,6 +145,8 @@ __all__ = [
     "compute_shannon_entropy",
     "compute_torsional_vibrational_entropy",
     "run_shannon_thermo_stack",
+    # Super-cluster extraction
+    "SuperCluster",
     # Physical constants
     "kB_kcal",
     "kB_SI",

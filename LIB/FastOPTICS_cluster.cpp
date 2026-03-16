@@ -1,4 +1,5 @@
 #include "FOPTICS.h"
+#include "fast_optics.hpp"
 
 void FastOPTICS_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, genlim* gene_lim, atom* atoms, resid* residue, gridpoint* cleftgrid, int nChrom, char* end_strfile, char* tmp_end_strfile, char* dockinp, char* gainp)
 {
@@ -6,7 +7,19 @@ void FastOPTICS_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome*
     // A value of ~nChrom/20 gives a 5 % neighbourhood, consistent with
     // typical OPTICS minPts heuristics for molecular-docking pose sets.
     int minPoints = std::max(5, nChrom / 20);
-	
+
+    // Optional super-cluster pre-filter using lightweight FastOPTICS
+    if (FA->use_super_cluster && nChrom > 4) {
+        std::vector<Point> energy_pts(nChrom);
+        for (int i = 0; i < nChrom; ++i)
+            energy_pts[i].coords = { chrom[i].evalue };
+
+        ::FastOPTICS sc_optics(energy_pts, std::max(4, nChrom / 20));
+        auto sc_indices = sc_optics.extractSuperCluster(ClusterMode::SUPER_CLUSTER_ONLY);
+        printf("--- SuperCluster pre-filter (FastOPTICS_cluster): %zu / %d poses in super-cluster ---\n",
+               sc_indices.size(), nChrom);
+    }
+
     // BindingPopulation() : BindingPopulation constructor *non-overridable*
     BindingPopulation Population1(FA,GB,VC,chrom,gene_lim,atoms,residue,cleftgrid,nChrom);
     BindingPopulation Population2(FA,GB,VC,chrom,gene_lim,atoms,residue,cleftgrid,nChrom);

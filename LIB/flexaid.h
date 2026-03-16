@@ -338,6 +338,7 @@ struct FA_Global_struct{
 	float maxdst;                        // max distance from a protein atom to PCG 
 	float cluster_rmsd;                  // rmsd between poses when clustering
 	char  clustering_algorithm[3];
+	bool  use_super_cluster;             // use SUPER_CLUSTER_ONLY mode for faster clustering
 	uint temperature;					 // temperature parameter 
 	double beta;						 // Metropolis ß parament == 1/T *may be worth trying 1/kT*
 	float permeability;                  // allow permeability or not between atoms
