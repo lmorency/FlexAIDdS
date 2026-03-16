@@ -103,20 +103,27 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 
 	printf("num_genes=%d\n",GB->num_genes);
 
-	//GB->rrg_skip=0;
-	GB->adaptive_ga=0;
-	GB->num_print=10;
-	GB->print_int=1;
-	GB->seed = 0;
+	printf("file in GA is <%s>\n",gainpfile);
 
-	GB->ssnum = 1000;
-	GB->pbfrac = 1.0;
-	GB->duplicates = 0;
-	GB->intragenes = 0;
+	if (gainpfile[0] != '\0') {
+		//GB->rrg_skip=0;
+		GB->adaptive_ga=0;
+		GB->num_print=10;
+		GB->print_int=1;
+		GB->seed = 0;
+
+	// Entropy convergence defaults (opt-in)
+	GB->entropy_convergence    = 0;
+	GB->entropy_check_interval = 10;
+	GB->entropy_window         = 5;
+	GB->entropy_rel_threshold  = 0.01;
 
 	printf("file in GA is <%s>\n",gainpfile);
 
-	read_gainputs(FA,GB,&geninterval,&popszpartition,gainpfile);
+		read_gainputs(FA,GB,&geninterval,&popszpartition,gainpfile);
+	} else {
+		printf("No GA input file — using pre-configured parameters\n");
+	}
 	unsigned int tt;
 	if (GB->seed==0)
 	{
@@ -262,6 +269,13 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	int save_num_chrom = (int)(GB->num_chrom*SAVE_CHROM_FRACTION);
 	int nrejected = 0;
 
+	// Entropy convergence tracking
+	std::vector<double> entropy_history;
+	bool entropy_converged = false;
+	if (GB->entropy_convergence) {
+		entropy_history.reserve(GB->max_generations / GB->entropy_check_interval + 1);
+	}
+
 	////////////////////////////////
 	////// Genetic Algorithm ///////
 	////////////////////////////////
@@ -357,6 +371,27 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		//printf("------fitness stats-------\navg=%8.3f\tmax=%8.3f\n",GB->fit_avg,GB->fit_max);
         //getchar();
 
+		// Entropy convergence check (opt-in via ENTRCNVG config keyword)
+		if (GB->entropy_convergence &&
+		    ((i + 1) % GB->entropy_check_interval == 0)) {
+			std::vector<double> pop_energies(GB->num_chrom);
+			for (int c = 0; c < GB->num_chrom; ++c)
+				pop_energies[c] = (*chrom)[c].evalue;
+			double H = shannon_thermo::compute_shannon_entropy(
+				pop_energies, shannon_thermo::DEFAULT_HIST_BINS);
+			entropy_history.push_back(H);
+
+			if (shannon_thermo::detect_entropy_plateau(
+			        entropy_history, GB->entropy_window,
+			        GB->entropy_rel_threshold)) {
+				printf("Entropy convergence at generation %d "
+				       "(H=%.4f nats, stable for %d checks)\n",
+				       i + 1, H, GB->entropy_window);
+				entropy_converged = true;
+				break;
+			}
+		}
+
 		nrejected = reproduce(FA,GB,VC,(*chrom),(*gene_lim),atoms,residue,(*cleftgrid),
 				      GB->rep_model,GB->mut_rate,GB->cross_rate,print,dice,duplicates,target);
 
@@ -376,6 +411,8 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	}
 
 	printf("%d ligand conformers rejected\n", nrejected);
+	if (entropy_converged)
+		printf("GA terminated early by entropy convergence\n");
 
 	QuickSort((*chrom),0,GB->num_chrom-1,true);
 
@@ -429,7 +466,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 						sme, tencm_model, td.free_energy, T_K);
 
 				printf("--- ShannonThermoStack (vibrational entropy integration) ---\n");
-				printf("  Shannon conf entropy    = %10.4f bits\n", ftr.shannonEntropy);
+				printf("  Shannon conf entropy    = %10.4f nats\n", ftr.shannonEntropy);
 				printf("  Torsional vib entropy   = %10.6f kcal/(mol·K)\n", ftr.torsionalVibEntropy);
 				printf("  Entropy contribution    = %10.4f kcal/mol (-TΔS)\n", ftr.entropyContribution);
 				printf("  Total ΔG (F + vib corr) = %10.4f kcal/mol\n", ftr.deltaG);
@@ -558,7 +595,7 @@ void fitness_stats(GB_Global* GB, const chromosome* chrom,int pop_size){
 	GB->fit_avg=0.0;
 
 	flag=1;
-	for(i=0;i<pop_size-i;i++){
+	for(i=0;i<pop_size;i++){
 		if (flag){
 			GB->fit_max=chrom[i].fitnes;
 			flag=0;
@@ -1763,6 +1800,12 @@ void read_gainputs(FA_Global* FA,GB_Global* GB,int* gen_int,int* sz_part,char fi
 	char buffer[MAX_PATH__];         /* a line from the INPUT file */
 	char field[9];           /* field names on INPUT file */
 
+	// Direct mode: GA params already set by apply_config — skip file reading
+	if(file[0] == '\0'){
+		printf("read_gainputs: using pre-configured GA parameters (direct mode)\n");
+		return;
+	}
+
 	//printf("file here is <%s>\n",file);
 	// In direct mode (no .ga.inp file), all GA params are set via
 	// apply_config().  Skip file parsing when the path is empty.
@@ -1840,6 +1883,14 @@ void read_gainputs(FA_Global* FA,GB_Global* GB,int* gen_int,int* sz_part,char fi
 			sscanf(buffer,"%s %d",field,&GB->print_int);
 		}else if(strncmp(buffer,"PRINTRRG",8) == 0){
 			sscanf(buffer,"%s %d",field,&GB->rrg_skip);
+		}else if(strncmp(buffer,"ENTRCNVG",8) == 0){
+			sscanf(buffer,"%s %d",field,&GB->entropy_convergence);
+		}else if(strncmp(buffer,"ENTRCHKI",8) == 0){
+			sscanf(buffer,"%s %d",field,&GB->entropy_check_interval);
+		}else if(strncmp(buffer,"ENTRWIND",8) == 0){
+			sscanf(buffer,"%s %d",field,&GB->entropy_window);
+		}else if(strncmp(buffer,"ENTRTHRS",8) == 0){
+			sscanf(buffer,"%s %lf",field,&GB->entropy_rel_threshold);
 		}else{
 			// ...
 		}
@@ -2094,7 +2145,7 @@ void QuickSort(chromosome* list, int beg, int end, bool energy)
             while ( (l<=r) && ( ( energy && QS_ASC(list[l].evalue,piv) <= 0 ) ||
 								( !energy && QS_DSC(list[l].fitnes,piv) <= 0 ) ) ) l++;
             while ( (l<=r) && ( ( energy && QS_ASC(list[r].evalue,piv) > 0 ) ||
-								( !energy && QS_DSC(list[r].fitnes,piv) ) ) ) r--;
+								( !energy && QS_DSC(list[r].fitnes,piv) > 0 ) ) ) r--;
 
             if (l>r) break;
 

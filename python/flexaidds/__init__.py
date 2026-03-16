@@ -40,6 +40,19 @@ except ImportError:
     HAS_CORE_BINDINGS = False
 
 from .tencom_results import FlexModeResult, FlexPopulationResult, parse_tencom_pdb, parse_tencom_json
+from .energy_matrix import (
+    EnergyMatrix,
+    MatrixEntry,
+    DensityPoint,
+    encode_256_type,
+    decode_256_type,
+    base_to_sybyl,
+    sybyl_to_base,
+    parse_dat_file,
+    write_dat_file,
+    SYBYL_TYPE_NAMES,
+    SYBYL_RADII,
+)
 
 
 def dock(
@@ -160,6 +173,18 @@ __all__ = [
     "ENCoMEngine",
     "NormalMode",
     "VibrationalEntropy",
+    # Energy matrix I/O and 256-type encoding (always available — pure Python)
+    "EnergyMatrix",
+    "MatrixEntry",
+    "DensityPoint",
+    "encode_256_type",
+    "decode_256_type",
+    "base_to_sybyl",
+    "sybyl_to_base",
+    "parse_dat_file",
+    "write_dat_file",
+    "SYBYL_TYPE_NAMES",
+    "SYBYL_RADII",
 ]
 
 # C++ core extras (only available when compiled)

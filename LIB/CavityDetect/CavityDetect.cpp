@@ -49,12 +49,13 @@ float CavityDetector::distance(const float* a, const float* b) const {
 static float max_free_radius_scalar(
         const float* mid,
         const std::vector<atom>& atoms,
+        const std::size_t* neighbor_indices, std::size_t neighbor_count,
         std::size_t skip_i, std::size_t skip_j,
         float r_current)
 {
     float r = r_current;
-    const std::size_t N = atoms.size();
-    for (std::size_t k = 0; k < N; ++k) {
+    for (std::size_t n = 0; n < neighbor_count; ++n) {
+        const std::size_t k = neighbor_indices[n];
         if (k == skip_i || k == skip_j) continue;
         const float* ck = atoms[k].coor;
         const float dx = mid[0] - ck[0];
@@ -67,34 +68,33 @@ static float max_free_radius_scalar(
 }
 
 #ifdef USE_AVX512
-// AVX-512 inner loop: process 16 atoms at once.
-// Returns the minimum of (dist(mid, atom_k.coor) - atom_k.radius) over all k.
+// AVX-512 inner loop: process 16 neighbor atoms at once.
 static float max_free_radius_avx512(
         const float* mid,
         const std::vector<atom>& atoms,
+        const std::size_t* neighbor_indices, std::size_t neighbor_count,
         std::size_t skip_i, std::size_t skip_j,
         float r_init)
 {
-    const std::size_t N = atoms.size();
     __m512 vr = _mm512_set1_ps(r_init);
     const __m512 vmx = _mm512_set1_ps(mid[0]);
     const __m512 vmy = _mm512_set1_ps(mid[1]);
     const __m512 vmz = _mm512_set1_ps(mid[2]);
 
-    // Mask out skip indices
     const __mmask16 full = 0xFFFF;
-
-    // Temporary arrays for gather (atoms may not be contiguous in memory)
     alignas(64) float cx[16], cy[16], cz[16], cr[16];
 
-    std::size_t k = 0;
-    for (; k + 16 <= N; k += 16) {
+    std::size_t n = 0;
+    for (; n + 16 <= neighbor_count; n += 16) {
+        __mmask16 mask = full;
         for (int lane = 0; lane < 16; ++lane) {
-            std::size_t idx = k + static_cast<std::size_t>(lane);
+            std::size_t idx = neighbor_indices[n + static_cast<std::size_t>(lane)];
             cx[lane] = atoms[idx].coor[0];
             cy[lane] = atoms[idx].coor[1];
             cz[lane] = atoms[idx].coor[2];
             cr[lane] = atoms[idx].radius;
+            if (idx == skip_i || idx == skip_j)
+                mask &= ~(static_cast<__mmask16>(1) << lane);
         }
         __m512 vx = _mm512_load_ps(cx);
         __m512 vy = _mm512_load_ps(cy);
@@ -110,21 +110,15 @@ static float max_free_radius_avx512(
         __m512 dist  = _mm512_sqrt_ps(dist2);
         __m512 gap   = _mm512_sub_ps(dist, vrad);
 
-        // Zero out lanes for skipped atoms
-        __mmask16 mask = full;
-        for (int lane = 0; lane < 16; ++lane) {
-            std::size_t idx = k + static_cast<std::size_t>(lane);
-            if (idx == skip_i || idx == skip_j)
-                mask &= ~(static_cast<__mmask16>(1) << lane);
-        }
         vr = _mm512_mask_min_ps(vr, mask, vr, gap);
     }
 
     // Reduce 16-lane vector to scalar
     float r = _mm512_reduce_min_ps(vr);
 
-    // Scalar tail
-    for (; k < N; ++k) {
+    // Scalar tail for remaining neighbors
+    for (; n < neighbor_count; ++n) {
+        const std::size_t k = neighbor_indices[n];
         if (k == skip_i || k == skip_j) continue;
         const float* ck = atoms[k].coor;
         const float dx = mid[0] - ck[0];
@@ -138,14 +132,14 @@ static float max_free_radius_avx512(
 #endif // USE_AVX512
 
 #ifdef USE_AVX2
-// AVX2 inner loop: 8 atoms at once.
+// AVX2 inner loop: 8 neighbor atoms at once.
 static float max_free_radius_avx2(
         const float* mid,
         const std::vector<atom>& atoms,
+        const std::size_t* neighbor_indices, std::size_t neighbor_count,
         std::size_t skip_i, std::size_t skip_j,
         float r_init)
 {
-    const std::size_t N = atoms.size();
     __m256 vr = _mm256_set1_ps(r_init);
     const __m256 vmx = _mm256_set1_ps(mid[0]);
     const __m256 vmy = _mm256_set1_ps(mid[1]);
@@ -153,10 +147,10 @@ static float max_free_radius_avx2(
 
     alignas(32) float cx[8], cy[8], cz[8], cr[8];
 
-    std::size_t k = 0;
-    for (; k + 8 <= N; k += 8) {
+    std::size_t n = 0;
+    for (; n + 8 <= neighbor_count; n += 8) {
         for (int lane = 0; lane < 8; ++lane) {
-            std::size_t idx = k + static_cast<std::size_t>(lane);
+            std::size_t idx = neighbor_indices[n + static_cast<std::size_t>(lane)];
             cx[lane] = atoms[idx].coor[0];
             cy[lane] = atoms[idx].coor[1];
             cz[lane] = atoms[idx].coor[2];
@@ -176,13 +170,13 @@ static float max_free_radius_avx2(
         __m256 dist  = _mm256_sqrt_ps(dist2);
         __m256 gap   = _mm256_sub_ps(dist, vrad);
 
-        // Mask skip lanes with +inf so they don't affect min
+        // Mask skip lanes with large value so they don't affect min
         for (int lane = 0; lane < 8; ++lane) {
-            std::size_t idx = k + static_cast<std::size_t>(lane);
+            std::size_t idx = neighbor_indices[n + static_cast<std::size_t>(lane)];
             if (idx == skip_i || idx == skip_j) {
                 alignas(32) float tmp[8];
                 _mm256_store_ps(tmp, gap);
-                tmp[lane] = 1e38f;  // Use large value instead of infinity for -ffast-math safety
+                tmp[lane] = 1e38f;
                 gap = _mm256_load_ps(tmp);
             }
         }
@@ -195,8 +189,9 @@ static float max_free_radius_avx2(
     float r = r_init;
     for (int i = 0; i < 8; ++i) r = std::min(r, lane_vals[i]);
 
-    // Scalar tail
-    for (; k < N; ++k) {
+    // Scalar tail for remaining neighbors
+    for (; n < neighbor_count; ++n) {
+        const std::size_t k = neighbor_indices[n];
         if (k == skip_i || k == skip_j) continue;
         const float* ck = atoms[k].coor;
         const float dx = mid[0] - ck[0];
@@ -213,15 +208,16 @@ static float max_free_radius_avx2(
 static inline float max_free_radius(
         const float* mid,
         const std::vector<atom>& atoms,
+        const std::size_t* neighbor_indices, std::size_t neighbor_count,
         std::size_t skip_i, std::size_t skip_j,
         float r_init)
 {
 #ifdef USE_AVX512
-    return max_free_radius_avx512(mid, atoms, skip_i, skip_j, r_init);
+    return max_free_radius_avx512(mid, atoms, neighbor_indices, neighbor_count, skip_i, skip_j, r_init);
 #elif defined(USE_AVX2)
-    return max_free_radius_avx2(mid, atoms, skip_i, skip_j, r_init);
+    return max_free_radius_avx2(mid, atoms, neighbor_indices, neighbor_count, skip_i, skip_j, r_init);
 #else
-    return max_free_radius_scalar(mid, atoms, skip_i, skip_j, r_init);
+    return max_free_radius_scalar(mid, atoms, neighbor_indices, neighbor_count, skip_i, skip_j, r_init);
 #endif
 }
 
@@ -314,6 +310,9 @@ void CavityDetector::detect(float min_radius, float max_radius) {
     const std::size_t N = m_atoms.size();
     if (N < 2) return;
 
+    // Build spatial grid for O(K) neighbor lookups instead of O(N)
+    m_grid.build(m_atoms);
+
     // ── Metal primary path (Apple Silicon, FLEXAIDS_USE_METAL) ────────────
 #ifdef FLEXAIDS_USE_METAL
     {
@@ -361,6 +360,12 @@ void CavityDetector::detect(float min_radius, float max_radius) {
     std::vector<std::vector<DetectedSphere>> thread_spheres(
             static_cast<std::size_t>(n_threads));
 
+    // Per-thread scratch buffers for grid neighbor queries (zero-allocation hot path)
+    const std::size_t max_neighbors = 512;
+    std::vector<std::vector<std::size_t>> thread_scratch(
+            static_cast<std::size_t>(n_threads),
+            std::vector<std::size_t>(max_neighbors));
+
     // NOTE: MSVC's OpenMP 2.0 requires a *signed* integer loop variable.
     // std::size_t (unsigned) is rejected; use int with a cast inside.
     const int N_signed = static_cast<int>(N);
@@ -375,6 +380,8 @@ void CavityDetector::detect(float min_radius, float max_radius) {
 #else
             0;
 #endif
+        auto& scratch = thread_scratch[static_cast<std::size_t>(tid)];
+
         for (std::size_t j = i + 1; j < N; ++j) {
             // Midpoint between atoms i and j
             const float mid[3] = {
@@ -391,8 +398,9 @@ void CavityDetector::detect(float min_radius, float max_radius) {
             if (r < m_sphere_lwb) continue;
             if (r > m_sphere_upb) r = m_sphere_upb;
 
-            // Shrink r to avoid overlapping all other atoms (SURFNET clash test)
-            r = max_free_radius(mid, m_atoms, i, j, r);
+            // Query spatial grid for nearby atoms, then shrink r (SURFNET clash test)
+            std::size_t n_near = m_grid.query_neighbors(mid, scratch.data(), max_neighbors);
+            r = max_free_radius(mid, m_atoms, scratch.data(), n_near, i, j, r);
 
             if (r < m_sphere_lwb) continue;
             if (r > m_sphere_upb) r = m_sphere_upb;

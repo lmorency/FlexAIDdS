@@ -88,17 +88,17 @@ def test_fallback_stub_types_available():
         assert flexaidds.BoltzmannLUT is not None, "BoltzmannLUT should not be None"
 
         # Should be instantiable
-        wbin = flexaidds.WHAMBin(coordinate=1.0, free_energy=-5.0)
-        assert wbin.coordinate == 1.0
+        wbin = flexaidds.WHAMBin(coord_center=1.0, free_energy=-5.0)
+        assert wbin.coord_center == 1.0
 
-        ti = flexaidds.TIPoint(lambda_val=0.5, dH_dlambda=-2.0)
+        ti = flexaidds.TIPoint(lambda_val=0.5, dV_dlambda=-2.0)
         assert ti.lambda_val == 0.5
 
         rep = flexaidds.Replica(temperature=400.0)
         assert rep.temperature == 400.0
 
-        state = flexaidds.State(energy=-10.0, multiplicity=3)
-        assert state.multiplicity == 3
+        state = flexaidds.State(energy=-10.0, count=3)
+        assert state.count == 3
 
         lut = flexaidds.BoltzmannLUT(temperature=300.0)
         assert lut.temperature == 300.0
