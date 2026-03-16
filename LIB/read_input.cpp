@@ -33,7 +33,7 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 	char rotlib_file[MAX_PATH__];  /* rotamer library file */
 	char rotobs_file[MAX_PATH__];  /* rotamer observations file */
 
-	char rngopt[7];
+	char rngopt[7] = "";
 	char rngoptline[MAX_PATH__];
 
 	//char anam[5];            /* temporary atom name */
@@ -46,7 +46,6 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 	char a[7],b[7]; //,mol_name[4]; 
 
 	char gridfile[MAX_PATH__];
-	char gridfilename[MAX_PATH__];
 	//char sphfile[MAX_PATH__];
 	char tmpprotname[MAX_PATH__];
 
@@ -76,9 +75,11 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 	}
 
 	while (fgets(buffer, sizeof(buffer),infile_ptr)){
+		size_t blen = strlen(buffer);
+		if (blen > 0 && buffer[blen-1] == '\n')
+			buffer[--blen] = '\0';
 
-		buffer[strlen(buffer)-1] = '\0';
-        
+		if (blen < 6) continue;
 		for(i=0;i<6;++i) field[i]=buffer[i];
 		field[6]='\0';
 		

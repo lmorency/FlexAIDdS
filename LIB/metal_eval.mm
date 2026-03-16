@@ -309,11 +309,11 @@ void metal_eval_batch(MetalEvalCtx* ctx,
     }
 
     // Convert double genes to float for the GPU.
-    // Use max_genes stride for consistent buffer layout.
+    // Pack with n_genes stride to match kernel indexing (genes_f[chrom_id * n_genes + g]).
     float* genes_f = (float*)[ctx->buf_genes_f contents];
     for (int c = 0; c < pop_size; ++c)
         for (int g = 0; g < n_genes; ++g)
-            genes_f[c * ctx->max_genes + g] = (float)h_genes[c * n_genes + g];
+            genes_f[c * n_genes + g] = (float)h_genes[c * n_genes + g];
 
     // Build EvalParams.
     struct EvalParams {

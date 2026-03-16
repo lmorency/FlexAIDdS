@@ -1749,11 +1749,11 @@ void read_gainputs(FA_Global* FA,GB_Global* GB,int* gen_int,int* sz_part,char fi
 	}
 
 	while (fgets(buffer, sizeof(buffer),infile_ptr)){
-
-		if (buffer[strlen(buffer)-1] == '\n')
-			buffer[strlen(buffer)-1] = '\0';
-		if (buffer[strlen(buffer)-1] == '\r')
-			buffer[strlen(buffer)-1] = '\0';
+		size_t blen = strlen(buffer);
+		if (blen > 0 && buffer[blen-1] == '\n')
+			buffer[--blen] = '\0';
+		if (blen > 0 && buffer[blen-1] == '\r')
+			buffer[--blen] = '\0';
 
 
 		if(strncmp(buffer,"NUMCHROM",8) == 0){
@@ -1783,7 +1783,7 @@ void read_gainputs(FA_Global* FA,GB_Global* GB,int* gen_int,int* sz_part,char fi
 			//0         1         2
 			//012345678901234567890123456789
 			//POPINIMT IPFILE file.dat
-			if(strcmp(GB->pop_init_method,"IPFILE") == 0){
+			if(strcmp(GB->pop_init_method,"IPFILE") == 0 && blen > 16){
 				strncpy(GB->pop_init_file,&buffer[16],MAX_PATH__-1);
 				GB->pop_init_file[MAX_PATH__-1]='\0';
 			}

@@ -42,7 +42,8 @@
 // Usage: safe_remark_cat(remark, tmpremark, &remark_len);
 static inline void safe_remark_cat(char* remark, const char* src, size_t* cur_len) {
     size_t src_len = strlen(src);
-    if (*cur_len + src_len < MAX_REMARK - 1) {
+    size_t avail = (MAX_REMARK - 1) > *cur_len ? (MAX_REMARK - 1) - *cur_len : 0;
+    if (src_len > 0 && src_len <= avail) {
         memcpy(remark + *cur_len, src, src_len + 1);
         *cur_len += src_len;
     }

@@ -501,7 +501,7 @@ int main(int argc, char **argv){
 		snprintf(tmpremark,MAX_REMARK,"REMARK [%8.3f]\n",FA->opt_par[i]);
 		safe_remark_cat(remark,tmpremark,&remark_len);
 	}
-	snprintf(tmpremark,MAX_REMARK,"REMARK inputs: %s & %s",dockinp,gainp);
+	snprintf(tmpremark,MAX_REMARK,"REMARK inputs: %s & %s\n",dockinp,gainp);
 	safe_remark_cat(remark,tmpremark,&remark_len);
 	
 	if (FA->htpmode == false) {write_pdb(FA,atoms,residue,tmp_end_strfile,remark);}

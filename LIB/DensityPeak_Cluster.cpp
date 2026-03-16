@@ -39,7 +39,7 @@ void DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome
 	cfstr* pCF = NULL;
 
 	FILE* outfile_ptr = NULL;
-	char sufix[10];
+	char sufix[24];
 	char remark[MAX_REMARK];
 	char tmpremark[MAX_REMARK];
 

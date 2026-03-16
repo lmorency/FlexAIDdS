@@ -84,7 +84,8 @@ void shortest_path(resid* residue, int tot, atom* atoms)
 						fprintf(stderr,"ERROR: Shortest path buffer too short for the size of the molecule\n");
 						Terminate(25);
 					}
-					strcpy(residue->shortpath[j][qa],mark[qa].c_str());
+					strncpy(residue->shortpath[j][qa],mark[qa].c_str(),MAX_SHORTEST_PATH*6-1);
+					residue->shortpath[j][qa][MAX_SHORTEST_PATH*6-1] = '\0';
 					/*
 					  printf("shortest path from %d to %d is %s\n",
 					  atoms[fatm+j].number, atoms[fatm+qa].number, mark[qa].c_str());

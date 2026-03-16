@@ -19,7 +19,7 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 	int num_of_clusters = 0;
 	int n_unclus = 0;
 
-	char sufix[10];
+	char sufix[24];
 	char remark[MAX_REMARK];
 	char tmpremark[MAX_REMARK];
 
