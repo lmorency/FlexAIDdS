@@ -52,6 +52,9 @@ void BindingPopulation::Entropize()
 
 int BindingPopulation::get_Population_size() { return this->BindingModes.size(); }
 
+const BindingMode& BindingPopulation::get_binding_mode(int index) const { return this->BindingModes.at(index); }
+BindingMode& BindingPopulation::get_binding_mode(int index) { return this->BindingModes.at(index); }
+
 
 // output BindingMode up to nResults results
 void BindingPopulation::output_Population(int nResults, char* end_strfile, char* tmp_end_strfile, char* dockinp, char* gainp, int minPoints)
@@ -235,6 +238,8 @@ std::vector<statmech::WHAMBin> BindingMode::free_energy_profile(
 
 
 int BindingMode::get_BindingMode_size() const { return this->Poses.size(); }
+
+const Pose& BindingMode::get_pose(int index) const { return this->Poses.at(index); }
 
 
 void BindingMode::clear_Poses()

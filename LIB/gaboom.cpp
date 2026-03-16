@@ -558,7 +558,7 @@ void fitness_stats(GB_Global* GB, const chromosome* chrom,int pop_size){
 	GB->fit_avg=0.0;
 
 	flag=1;
-	for(i=0;i<pop_size-i;i++){
+	for(i=0;i<pop_size;i++){
 		if (flag){
 			GB->fit_max=chrom[i].fitnes;
 			flag=0;
@@ -2094,7 +2094,7 @@ void QuickSort(chromosome* list, int beg, int end, bool energy)
             while ( (l<=r) && ( ( energy && QS_ASC(list[l].evalue,piv) <= 0 ) ||
 								( !energy && QS_DSC(list[l].fitnes,piv) <= 0 ) ) ) l++;
             while ( (l<=r) && ( ( energy && QS_ASC(list[r].evalue,piv) > 0 ) ||
-								( !energy && QS_DSC(list[r].fitnes,piv) ) ) ) r--;
+								( !energy && QS_DSC(list[r].fitnes,piv) > 0 ) ) ) r--;
 
             if (l>r) break;
 
