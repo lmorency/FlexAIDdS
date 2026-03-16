@@ -21,6 +21,16 @@ from .boltz2 import (
     PocketContact,
     Boltz2Error,
 )
+from .benchmark import (
+    BenchmarkSystem,
+    MethodResult,
+    SystemBenchmarkResult,
+    BenchmarkResult,
+    BenchmarkSummary,
+    run_benchmark,
+    load_benchmark_dataset,
+    save_benchmark_dataset,
+)
 
 # Pure-Python thermodynamics (always available)
 from .thermodynamics import StatMechEngine, Thermodynamics, kB_kcal, kB_SI
@@ -183,6 +193,15 @@ __all__ = [
     "PocketConstraint",
     "PocketContact",
     "Boltz2Error",
+    # Benchmark
+    "BenchmarkSystem",
+    "MethodResult",
+    "SystemBenchmarkResult",
+    "BenchmarkResult",
+    "BenchmarkSummary",
+    "run_benchmark",
+    "load_benchmark_dataset",
+    "save_benchmark_dataset",
     # Availability flag
     "HAS_CORE_BINDINGS",
     # Core types (C++ when available, pure-Python fallback otherwise)
