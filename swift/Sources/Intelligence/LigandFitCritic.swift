@@ -75,17 +75,17 @@ public struct PoseQualityContext: Sendable, Codable {
         }
 
         // Simplified rank correlation (Spearman-like)
+        // Uses index-based ranking to avoid dictionary key collisions
         if topPoses.count >= 2 {
-            let cfOrder = topPoses.sorted { $0.cfScore < $1.cfScore }.enumerated().map { ($0.element.rank, $0.offset) }
-            let wOrder = topPoses.sorted { $0.boltzmannWeight > $1.boltzmannWeight }.enumerated().map { ($0.element.rank, $0.offset) }
-            let cfMap = Dictionary(cfOrder, uniquingKeysWith: { a, _ in a })
-            let wMap = Dictionary(wOrder, uniquingKeysWith: { a, _ in a })
+            let cfSorted = topPoses.sorted { $0.cfScore < $1.cfScore }
+            let wSorted = topPoses.sorted { $0.boltzmannWeight > $1.boltzmannWeight }
             var d2Sum = 0.0
             let n = Double(topPoses.count)
             for pose in topPoses {
-                let cfR = Double(cfMap[pose.rank] ?? 0)
-                let wR = Double(wMap[pose.rank] ?? 0)
-                d2Sum += (cfR - wR) * (cfR - wR)
+                let cfR = cfSorted.firstIndex(where: { $0.rank == pose.rank }) ?? 0
+                let wR = wSorted.firstIndex(where: { $0.rank == pose.rank }) ?? 0
+                let d = Double(cfR - wR)
+                d2Sum += d * d
             }
             self.scoreWeightCorrelation = 1.0 - (6.0 * d2Sum) / (n * (n * n - 1))
         } else {
@@ -136,8 +136,20 @@ public actor LigandFitCriticActor {
 
     /// Evaluate pose quality for a binding mode.
     public func evaluate(context: PoseQualityContext) async throws -> PoseQualityReport {
-        let prompt = buildPrompt(context: context)
+        var prompt = buildPrompt(context: context)
+        if estimateTokenCount(prompt) > 3800 {
+            prompt = buildPrompt(context: PoseQualityContext(
+                modeIndex: context.modeIndex,
+                topPoses: Array(context.topPoses.prefix(3)),
+                totalPoses: context.totalPoses,
+                modeFreeEnergy: context.modeFreeEnergy
+            ))
+        }
         return try await session.respond(to: prompt, generating: PoseQualityReport.self)
+    }
+
+    private func estimateTokenCount(_ text: String) -> Int {
+        Int(ceil(Double(text.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).count) * 1.3))
     }
 
     private func buildPrompt(context: PoseQualityContext) -> String {
@@ -197,6 +209,14 @@ public struct CrossPlatformPoseQualityReport: Sendable, Codable {
 /// Deterministic pose quality critic for non-Apple platforms.
 public struct RuleBasedLigandFitCritic: Sendable {
 
+    // Named thresholds for deterministic logic
+    private static let strongConsensusRMSD = 2.0
+    private static let moderateConsensusRMSD = 3.0
+    private static let highCorrelation = 0.8
+    private static let moderateCorrelation = 0.4
+    private static let largeRMSDSpread = 3.0
+    private static let maxConfidence = 0.95
+
     public init() {}
 
     /// Build a PoseQualityContext from a DockingResult binding mode.
@@ -206,8 +226,10 @@ public struct RuleBasedLigandFitCritic: Sendable {
         poses: [PoseResult],
         temperature: Double
     ) -> PoseQualityContext {
+        // Guard against invalid temperature (division by zero)
+        let safeTemp = temperature > 0 ? temperature : 298.15
         // Compute Boltzmann weights from CF scores
-        let beta = 1.0 / (kBkcal * temperature)
+        let beta = 1.0 / (kBkcal * safeTemp)
         let energies = poses.map(\.cf)
         let minE = energies.min() ?? 0
         let expWeights = energies.map { exp(-beta * ($0 - minE)) }
@@ -238,6 +260,15 @@ public struct RuleBasedLigandFitCritic: Sendable {
 
     /// Evaluate pose quality using threshold logic.
     public func evaluate(context: PoseQualityContext) -> CrossPlatformPoseQualityReport {
+        guard !context.topPoses.isEmpty else {
+            return CrossPlatformPoseQualityReport(
+                topPoseSummary: "No poses available for this binding mode.",
+                poseConsensus: "weak",
+                scoreWeightAlignment: "No data available.",
+                confidenceInTopPose: 0.0,
+                medicinalChemistryNote: "No poses to evaluate. Check docking parameters and re-run."
+            )
+        }
         let top = context.topPoses.first
 
         // Top pose summary
@@ -276,7 +307,7 @@ public struct RuleBasedLigandFitCritic: Sendable {
         if context.scoreWeightAligned { confidence += 0.15 }
         if context.rmsdSpread < 2.0 { confidence += 0.1 }
         if context.totalPoses >= 10 { confidence += 0.05 }
-        confidence = min(confidence, 0.95)
+        confidence = min(max(confidence, 0.0), 0.95)
 
         // Medicinal chemistry note
         let note: String

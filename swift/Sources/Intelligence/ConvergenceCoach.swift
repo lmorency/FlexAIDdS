@@ -107,8 +107,29 @@ public actor ConvergenceCoachActor {
 
     /// Get convergence advice for the current GA state.
     public func coach(snapshot: GAProgressSnapshot) async throws -> ConvergenceCoaching {
-        let prompt = buildPrompt(snapshot: snapshot)
+        var prompt = buildPrompt(snapshot: snapshot)
+        if estimateTokenCount(prompt) > 3800 {
+            // Truncate trajectory to last 5 entries
+            let truncated = GAProgressSnapshot(
+                currentGeneration: snapshot.currentGeneration,
+                maxGenerations: snapshot.maxGenerations,
+                bestFitness: snapshot.bestFitness,
+                meanFitness: snapshot.meanFitness,
+                populationDiversity: snapshot.populationDiversity,
+                generationsSinceImprovement: snapshot.generationsSinceImprovement,
+                fitnessTrajectory: Array(snapshot.fitnessTrajectory.suffix(5)),
+                diversityTrajectory: Array(snapshot.diversityTrajectory.suffix(5)),
+                isImproving: snapshot.isImproving,
+                isDiversityCollapsed: snapshot.isDiversityCollapsed,
+                populationSize: snapshot.populationSize
+            )
+            prompt = buildPrompt(snapshot: truncated)
+        }
         return try await session.respond(to: prompt, generating: ConvergenceCoaching.self)
+    }
+
+    private func estimateTokenCount(_ text: String) -> Int {
+        Int(ceil(Double(text.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).count) * 1.3))
     }
 
     private func buildPrompt(snapshot: GAProgressSnapshot) -> String {

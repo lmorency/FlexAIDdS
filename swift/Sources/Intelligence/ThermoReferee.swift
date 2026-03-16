@@ -246,7 +246,7 @@ public actor ThermoReferee {
         let kB = 0.001987206
         let sConfPhysical = sConf * kB
 
-        let vibrationalDominance: Double = sConfPhysical > 1e-10 ? sVib / sConfPhysical : (sVib > 0 ? .infinity : 0)
+        let vibrationalDominance: Double = sConfPhysical > 1e-10 ? sVib / sConfPhysical : 0.0
         let occupiedBins = decomp?.occupiedBins ?? 0
         let totalBins = decomp?.totalBins ?? 1
         let histogramOccupancy = Double(occupiedBins) / Double(max(totalBins, 1))
@@ -312,7 +312,7 @@ public actor ThermoReferee {
         p += "\nHistogram: \(context.occupiedBins)/\(context.totalBins) bins (\(String(format: "%.0f", context.histogramOccupancy * 100))%)"
         p += "\nModes: \(context.modeCount), best F=\(String(format: "%.2f", context.bestModeFreeEnergy))kcal/mol"
 
-        if context.vibrationalDominance > 3.0 {
+        if context.vibrationalDominance.isFinite && context.vibrationalDominance > 3.0 {
             p += "\nFLAG: S_vib >> S_conf (ratio=\(String(format: "%.1f", context.vibrationalDominance))x)"
         }
         if context.histogramOccupancy < 0.5 {

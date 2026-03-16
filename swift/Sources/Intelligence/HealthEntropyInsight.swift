@@ -95,8 +95,22 @@ public actor HealthEntropyInsightActor {
 
     /// Generate health-entropy insight.
     public func analyze(context: HealthEntropyContext) async throws -> HealthEntropyInsight {
-        let prompt = buildPrompt(context: context)
+        var prompt = buildPrompt(context: context)
+        if estimateTokenCount(prompt) > 3800 {
+            // Truncate history to last 2 snapshots
+            let truncated = HealthEntropyContext(
+                current: context.current,
+                history: Array(context.history.suffix(2)),
+                hrvTrend: context.hrvTrend,
+                convergenceTrend: context.convergenceTrend
+            )
+            prompt = buildPrompt(context: truncated)
+        }
         return try await session.respond(to: prompt, generating: HealthEntropyInsight.self)
+    }
+
+    private func estimateTokenCount(_ text: String) -> Int {
+        Int(ceil(Double(text.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).count) * 1.3))
     }
 
     private func buildPrompt(context: HealthEntropyContext) -> String {
@@ -106,9 +120,11 @@ public actor HealthEntropyInsightActor {
         p += "S=\(String(format: "%.4f", c.shannonS)), \(c.modeCount) modes, "
         p += "converged=\(c.isConverged)\n"
 
-        if let hrv = c.hrvSDNN { p += "HRV: \(String(format: "%.0f", hrv))ms" }
-        if let hr = c.restingHR { p += ", HR: \(String(format: "%.0f", hr))bpm" }
-        if let sleep = c.sleepHours { p += ", Sleep: \(String(format: "%.1f", sleep))h" }
+        var metrics: [String] = []
+        if let hrv = c.hrvSDNN { metrics.append("HRV: \(String(format: "%.0f", hrv))ms") }
+        if let hr = c.restingHR { metrics.append("HR: \(String(format: "%.0f", hr))bpm") }
+        if let sleep = c.sleepHours { metrics.append("Sleep: \(String(format: "%.1f", sleep))h") }
+        if !metrics.isEmpty { p += "\n" + metrics.joined(separator: ", ") }
 
         p += "\nHRV trend: \(context.hrvTrend), Convergence trend: \(context.convergenceTrend)"
 

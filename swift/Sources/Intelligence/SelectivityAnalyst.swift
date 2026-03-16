@@ -45,51 +45,44 @@ public struct TargetDockingSummary: Sendable, Codable {
     }
 }
 
+/// Pre-computed pairwise ΔΔG between two targets.
+public struct DeltaDeltaG: Sendable, Codable, Equatable {
+    public let targetA: String
+    public let targetB: String
+    public let ddg: Double
+
+    public init(targetA: String, targetB: String, ddg: Double) {
+        self.targetA = targetA
+        self.targetB = targetB
+        self.ddg = ddg
+    }
+}
+
 /// Context for multi-target selectivity analysis.
 public struct SelectivityContext: Sendable, Codable {
     /// Ligand identifier
     public let ligandName: String
     /// Target summaries (typically 2-4 targets)
     public let targets: [TargetDockingSummary]
-    /// Pre-computed ΔΔG (target A vs B), stored as [(targetA, targetB, ΔΔG)]
-    public let deltaDeltas: [(String, String, Double)]
+    /// Pre-computed pairwise ΔΔG values
+    public let deltaDeltas: [DeltaDeltaG]
 
     public init(ligandName: String, targets: [TargetDockingSummary]) {
         self.ligandName = ligandName
         self.targets = targets
         // Pre-compute pairwise ΔΔG
-        var deltas: [(String, String, Double)] = []
+        var deltas: [DeltaDeltaG] = []
         for i in 0..<targets.count {
             for j in (i+1)..<targets.count {
                 let ddg = targets[i].bestFreeEnergy - targets[j].bestFreeEnergy
-                deltas.append((targets[i].targetName, targets[j].targetName, ddg))
+                deltas.append(DeltaDeltaG(
+                    targetA: targets[i].targetName,
+                    targetB: targets[j].targetName,
+                    ddg: ddg
+                ))
             }
         }
         self.deltaDeltas = deltas
-    }
-
-    // Custom Codable for tuple array
-    private enum CodingKeys: String, CodingKey {
-        case ligandName, targets, deltaTargetA, deltaTargetB, deltaValues
-    }
-
-    public init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        ligandName = try c.decode(String.self, forKey: .ligandName)
-        targets = try c.decode([TargetDockingSummary].self, forKey: .targets)
-        let a = try c.decode([String].self, forKey: .deltaTargetA)
-        let b = try c.decode([String].self, forKey: .deltaTargetB)
-        let v = try c.decode([Double].self, forKey: .deltaValues)
-        deltaDeltas = zip(zip(a, b), v).map { ($0.0, $0.1, $1) }
-    }
-
-    public func encode(to encoder: Encoder) throws {
-        var c = encoder.container(keyedBy: CodingKeys.self)
-        try c.encode(ligandName, forKey: .ligandName)
-        try c.encode(targets, forKey: .targets)
-        try c.encode(deltaDeltas.map { $0.0 }, forKey: .deltaTargetA)
-        try c.encode(deltaDeltas.map { $0.1 }, forKey: .deltaTargetB)
-        try c.encode(deltaDeltas.map { $0.2 }, forKey: .deltaValues)
     }
 }
 
@@ -144,8 +137,20 @@ public actor SelectivityAnalystActor {
 
     /// Analyze selectivity across targets.
     public func analyze(context: SelectivityContext) async throws -> SelectivityAnalysis {
-        let prompt = buildPrompt(context: context)
+        var prompt = buildPrompt(context: context)
+        if estimateTokenCount(prompt) > 3800 {
+            // Truncate to first 2 targets
+            let truncated = SelectivityContext(
+                ligandName: context.ligandName,
+                targets: Array(context.targets.prefix(2))
+            )
+            prompt = buildPrompt(context: truncated)
+        }
         return try await session.respond(to: prompt, generating: SelectivityAnalysis.self)
+    }
+
+    private func estimateTokenCount(_ text: String) -> Int {
+        Int(ceil(Double(text.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).count) * 1.3))
     }
 
     private func buildPrompt(context: SelectivityContext) -> String {
@@ -161,8 +166,8 @@ public actor SelectivityAnalystActor {
             }
         }
 
-        for (a, b, ddg) in context.deltaDeltas {
-            p += "\nΔΔG(\(a) vs \(b)) = \(String(format: "%.2f", ddg)) kcal/mol"
+        for delta in context.deltaDeltas {
+            p += "\nΔΔG(\(delta.targetA) vs \(delta.targetB)) = \(String(format: "%.2f", delta.ddg)) kcal/mol"
         }
 
         // Entropy-driven selectivity check
@@ -209,6 +214,12 @@ public struct CrossPlatformSelectivityAnalysis: Sendable, Codable {
 
 /// Deterministic selectivity analyst for non-Apple platforms.
 public struct RuleBasedSelectivityAnalyst: Sendable {
+
+    // Named thresholds for selectivity determination
+    private static let inconclusiveEnthalpicThreshold = 0.5  // kcal/mol
+    private static let inconclusiveEntropicThreshold = 0.0001  // kcal/mol/K
+    private static let entropicDominanceRatio = 1.3
+    private static let enthalpicSignificanceThreshold = 2.0  // kcal/mol
 
     public init() {}
 

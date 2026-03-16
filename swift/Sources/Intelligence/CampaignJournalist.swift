@@ -126,8 +126,20 @@ public actor CampaignJournalistActor {
 
     /// Summarize a docking campaign.
     public func summarize(context: CampaignContext) async throws -> CampaignSummary {
-        let prompt = buildPrompt(context: context)
+        var prompt = buildPrompt(context: context)
+        if estimateTokenCount(prompt) > 3800 {
+            // Truncate to last 4 runs
+            let truncated = CampaignContext(
+                campaignKey: context.campaignKey,
+                runs: Array(context.runs.suffix(4))
+            )
+            prompt = buildPrompt(context: truncated)
+        }
         return try await session.respond(to: prompt, generating: CampaignSummary.self)
+    }
+
+    private func estimateTokenCount(_ text: String) -> Int {
+        Int(ceil(Double(text.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).count) * 1.3))
     }
 
     private func buildPrompt(context: CampaignContext) -> String {
@@ -183,13 +195,17 @@ public struct RuleBasedCampaignJournalist: Sendable {
     public init() {}
 
     /// Build a CampaignContext from AnalysisHistory entries.
+    /// Snapshots with unparseable free energy are skipped.
     public func buildContext(
         campaignKey: String,
         analyses: [OracleAnalysis]
     ) -> CampaignContext {
-        let snapshots: [RunSnapshot] = analyses.enumerated().map { i, analysis in
+        let snapshots: [RunSnapshot] = analyses.enumerated().compactMap { i, analysis in
             // Parse F and S from inputSummary (format: "T=300K, F=-10.20 kcal/mol, ...")
-            let freeEnergy = parseValue(from: analysis.inputSummary, key: "F=") ?? 0
+            guard let freeEnergy = parseValue(from: analysis.inputSummary, key: "F=") else {
+                // Skip snapshots with unparseable free energy rather than defaulting to 0
+                return nil
+            }
             let entropy = parseValue(from: analysis.inputSummary, key: "S_conf=") ?? parseValue(from: analysis.inputSummary, key: "S=") ?? 0
             let isConverged = analysis.inputSummary.contains("[converged]")
             let modeCount = analysis.structuredBullets.filter { $0.category == .entropy }.count > 0 ? 3 : 1
@@ -210,6 +226,17 @@ public struct RuleBasedCampaignJournalist: Sendable {
 
     /// Summarize a campaign using threshold logic.
     public func summarize(context: CampaignContext) -> CrossPlatformCampaignSummary {
+        guard !context.runs.isEmpty else {
+            return CrossPlatformCampaignSummary(
+                campaignKey: context.campaignKey,
+                runCount: 0,
+                progressNarrative: "No runs available for campaign '\(context.campaignKey)'.",
+                bestResult: "No data",
+                trend: "insufficient data",
+                nextStepRecommendation: "Run at least one docking campaign to begin analysis.",
+                readyForPublication: false
+            )
+        }
         let runs = context.runs
 
         // Trend detection

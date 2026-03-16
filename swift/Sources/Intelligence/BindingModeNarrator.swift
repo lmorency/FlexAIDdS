@@ -99,7 +99,10 @@ public actor BindingModeNarrator {
 
     /// Generate narratives for the top binding modes.
     public func narrate(context: PreComputedModeContext) async throws -> BindingModeNarrative {
-        let prompt = buildPrompt(context: context)
+        var prompt = buildPrompt(context: context)
+        if estimateTokenCount(prompt) > 3800 {
+            prompt = buildTruncatedPrompt(context: context)
+        }
         return try await session.respond(to: prompt, generating: BindingModeNarrative.self)
     }
 
@@ -107,6 +110,21 @@ public actor BindingModeNarrator {
     public func followUp(_ question: String) async throws -> String {
         let response = try await session.respond(to: question)
         return response.content
+    }
+
+    private func estimateTokenCount(_ text: String) -> Int {
+        Int(ceil(Double(text.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).count) * 1.3))
+    }
+
+    private func buildTruncatedPrompt(context: PreComputedModeContext) -> String {
+        // Truncate to top 2 modes
+        let truncatedContext = PreComputedModeContext(
+            temperature: context.temperature, totalModes: context.totalModes,
+            totalPoses: context.totalPoses, globalFreeEnergy: context.globalFreeEnergy,
+            modes: Array(context.modes.prefix(2)), entropyImbalance: context.entropyImbalance,
+            dominantModeIndex: context.dominantModeIndex
+        )
+        return buildPrompt(context: truncatedContext)
     }
 
     private func buildPrompt(context: PreComputedModeContext) -> String {

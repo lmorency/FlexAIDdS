@@ -107,8 +107,23 @@ public actor VibrationalInterpreterActor {
 
     /// Interpret vibrational mode data.
     public func interpret(context: VibrationalContext) async throws -> VibrationalInsight {
-        let prompt = buildPrompt(context: context)
+        var prompt = buildPrompt(context: context)
+        if estimateTokenCount(prompt) > 3800 {
+            let truncated = VibrationalContext(
+                totalSVib: context.totalSVib, totalSConf: context.totalSConf,
+                vibrationalDominance: context.vibrationalDominance,
+                temperature: context.temperature,
+                topModes: Array(context.topModes.prefix(3)),
+                totalModeCount: context.totalModeCount,
+                bindingRestrictsMotion: context.bindingRestrictsMotion
+            )
+            prompt = buildPrompt(context: truncated)
+        }
         return try await session.respond(to: prompt, generating: VibrationalInsight.self)
+    }
+
+    private func estimateTokenCount(_ text: String) -> Int {
+        Int(ceil(Double(text.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).count) * 1.3))
     }
 
     private func buildPrompt(context: VibrationalContext) -> String {
@@ -168,6 +183,14 @@ public struct RuleBasedVibrationalInterpreter: Sendable {
 
     /// Interpret vibrational mode data using threshold logic.
     public func interpret(context: VibrationalContext) -> CrossPlatformVibrationalInsight {
+        guard !context.topModes.isEmpty else {
+            return CrossPlatformVibrationalInsight(
+                dominantMotionDescription: "No significant vibrational modes detected.",
+                bindingImpact: "Insufficient data to assess binding impact on protein dynamics.",
+                designImplication: "Enable ENCoM vibrational analysis for entropy-informed design.",
+                isEntropicallyDriven: false
+            )
+        }
         // Dominant motion description
         let dominantMotion: String
         if let top = context.topModes.first {

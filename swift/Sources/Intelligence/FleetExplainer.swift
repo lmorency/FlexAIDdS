@@ -102,8 +102,23 @@ public actor FleetExplainerActor {
 
     /// Explain the current fleet scheduling state.
     public func explain(context: FleetStatusContext) async throws -> FleetExplanation {
-        let prompt = buildPrompt(context: context)
+        var prompt = buildPrompt(context: context)
+        if estimateTokenCount(prompt) > 3800 {
+            // Truncate to top 3 devices by compute weight
+            let topDevices = Array(context.devices.sorted { $0.computeWeight > $1.computeWeight }.prefix(3))
+            let truncated = FleetStatusContext(
+                devices: topDevices, totalChunks: context.totalChunks,
+                completedChunks: context.completedChunks, failedChunks: context.failedChunks,
+                orphanedChunks: context.orphanedChunks, etaSeconds: context.etaSeconds,
+                totalTFLOPS: context.totalTFLOPS, refereeRecommendation: context.refereeRecommendation
+            )
+            prompt = buildPrompt(context: truncated)
+        }
         return try await session.respond(to: prompt, generating: FleetExplanation.self)
+    }
+
+    private func estimateTokenCount(_ text: String) -> Int {
+        Int(ceil(Double(text.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).count) * 1.3))
     }
 
     private func buildPrompt(context: FleetStatusContext) -> String {
@@ -172,6 +187,14 @@ public struct RuleBasedFleetExplainer: Sendable {
 
     /// Explain fleet scheduling using template logic.
     public func explain(context: FleetStatusContext) -> CrossPlatformFleetExplanation {
+        guard !context.devices.isEmpty else {
+            return CrossPlatformFleetExplanation(
+                allocationRationale: "No devices connected to the fleet.",
+                bottleneckAnalysis: "No devices available for compute.",
+                actionItems: ["Connect at least one device to begin distributed docking."],
+                estimatedCompletion: "Cannot estimate — no devices available."
+            )
+        }
         // Allocation rationale
         let sorted = context.devices.sorted { $0.computeWeight > $1.computeWeight }
         var rationale = "Work distributed by compute weight: "

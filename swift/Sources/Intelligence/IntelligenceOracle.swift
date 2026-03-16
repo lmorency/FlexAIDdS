@@ -82,10 +82,20 @@ public struct OracleAnalysis: Sendable, Codable {
 
 /// Stores past analyses for trend detection across docking campaigns.
 /// Uses per-campaign-key FIFO (max 10 per key, 50 total) to prevent unbounded growth.
+/// Internally keyed by campaign key for O(1) per-key lookups and eviction.
 public actor AnalysisHistory {
     public static let shared = AnalysisHistory()
 
-    private var entries: [(key: String, source: String, analysis: OracleAnalysis)] = []
+    private struct Entry {
+        let key: String
+        let source: String
+        let analysis: OracleAnalysis
+    }
+
+    /// Per-key FIFO queues for O(1) key-scoped operations
+    private var keyedEntries: [String: [(source: String, analysis: OracleAnalysis)]] = [:]
+    /// Global insertion-order FIFO for total-count eviction
+    private var insertionOrder: [String] = []
     private let maxEntriesPerKey = 10
     private let maxTotalEntries = 50
 
@@ -97,37 +107,43 @@ public actor AnalysisHistory {
     ///   - analysis: The analysis result
     ///   - source: Origin of the analysis ("text" for IntelligenceOracle, "referee" for ThermoReferee)
     public func record(key: String, analysis: OracleAnalysis, source: String = "text") {
-        entries.append((key: key, source: source, analysis: analysis))
+        keyedEntries[key, default: []].append((source: source, analysis: analysis))
+        insertionOrder.append(key)
 
         // Per-key FIFO: keep at most maxEntriesPerKey per campaign key
-        let keyEntries = entries.enumerated().filter { $0.element.key == key }
-        if keyEntries.count > maxEntriesPerKey {
-            let toRemove = keyEntries.count - maxEntriesPerKey
-            let indicesToRemove = keyEntries.prefix(toRemove).map(\.offset)
-            for index in indicesToRemove.reversed() {
-                entries.remove(at: index)
-            }
+        if let count = keyedEntries[key]?.count, count > maxEntriesPerKey {
+            keyedEntries[key]?.removeFirst(count - maxEntriesPerKey)
         }
 
         // Global FIFO: cap total entries
-        if entries.count > maxTotalEntries {
-            entries.removeFirst(entries.count - maxTotalEntries)
+        while totalCount > maxTotalEntries, let oldestKey = insertionOrder.first {
+            insertionOrder.removeFirst()
+            if keyedEntries[oldestKey]?.isEmpty == false {
+                keyedEntries[oldestKey]?.removeFirst()
+                if keyedEntries[oldestKey]?.isEmpty == true {
+                    keyedEntries.removeValue(forKey: oldestKey)
+                }
+            }
         }
     }
 
     /// Retrieve past analyses for a receptor-ligand pair.
     public func history(for key: String) -> [OracleAnalysis] {
-        entries.filter { $0.key == key }.map(\.analysis)
+        keyedEntries[key]?.map(\.analysis) ?? []
     }
 
     /// Get the most recent analysis for comparison.
     public func lastAnalysis(for key: String) -> OracleAnalysis? {
-        entries.last(where: { $0.key == key })?.analysis
+        keyedEntries[key]?.last?.analysis
     }
 
     /// Get the most recent analysis from a specific source.
     public func lastAnalysis(for key: String, source: String) -> OracleAnalysis? {
-        entries.last(where: { $0.key == key && $0.source == source })?.analysis
+        keyedEntries[key]?.last(where: { $0.source == source })?.analysis
+    }
+
+    private var totalCount: Int {
+        keyedEntries.values.reduce(0) { $0 + $1.count }
     }
 }
 
