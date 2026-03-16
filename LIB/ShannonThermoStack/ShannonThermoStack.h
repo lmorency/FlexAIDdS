@@ -32,29 +32,6 @@ struct FullThermoResult {
     std::string report;
 };
 
-// ─── 256×256 precomputed Shannon energy lookup ───────────────────────────────
-// E[i][j] = -kT * p_i * log2(p_j)
-// Generated at startup with seed 42 + Gaussian perturbation of uniform priors.
-class ShannonEnergyMatrix {
-public:
-    static ShannonEnergyMatrix& instance();
-
-    // Initialise matrix from uniform priors (seed = 42)
-    void initialise();
-
-    // O(1) pairwise entropy contribution lookup
-    double lookup(int bin_i, int bin_j) const noexcept {
-        return matrix_[bin_i * SHANNON_BINS + bin_j];
-    }
-
-    bool is_initialised() const noexcept { return initialised_; }
-
-private:
-    ShannonEnergyMatrix() = default;
-    std::vector<double> matrix_; // SHANNON_BINS × SHANNON_BINS
-    bool initialised_ = false;
-};
-
 // ─── Shannon entropy computation ──────────────────────────────────────────────
 // Bins a vector of continuous values into numBins and computes Shannon entropy H.
 // Uses OpenMP parallelism when available; Metal GPU on Apple Silicon.

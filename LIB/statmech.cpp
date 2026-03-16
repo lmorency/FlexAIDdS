@@ -182,21 +182,15 @@ std::vector<double> StatMechEngine::boltzmann_weights() const {
 
     auto result = flexaids::compute_boltzmann_batch(energies, beta_);
 
-    // The dispatch layer returns unnormalised weights; normalise them.
-    double lnZ = result.log_Z;
-    double Z   = std::exp(lnZ + beta_ * result.E_min);  // recover sum of weights
-
+    // Normalise weights accounting for multiplicities.
     std::vector<double> w(N);
-    if (Z > 0.0) {
-        // Account for multiplicities: weight_i = n_i * raw_w_i / Z_total
-        double Z_with_mult = 0.0;
-        for (std::size_t i = 0; i < N; ++i)
-            Z_with_mult += ensemble_[i].count * result.weights[i];
+    double Z_with_mult = 0.0;
+    for (std::size_t i = 0; i < N; ++i)
+        Z_with_mult += ensemble_[i].count * result.weights[i];
 
-        if (Z_with_mult > 0.0) {
-            for (std::size_t i = 0; i < N; ++i)
-                w[i] = ensemble_[i].count * result.weights[i] / Z_with_mult;
-        }
+    if (Z_with_mult > 0.0) {
+        for (std::size_t i = 0; i < N; ++i)
+            w[i] = ensemble_[i].count * result.weights[i] / Z_with_mult;
     }
     return w;
 }

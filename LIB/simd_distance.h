@@ -53,7 +53,9 @@ inline float dot3(const float* a, const float* b) noexcept {
 }
 
 inline void normalize3(float* v) noexcept {
-    float inv_len = 1.0f / std::sqrt(dot3(v, v));
+    float len2 = dot3(v, v);
+    if (len2 < 1e-20f) return;
+    float inv_len = 1.0f / std::sqrt(len2);
     v[0] *= inv_len;  v[1] *= inv_len;  v[2] *= inv_len;
 }
 

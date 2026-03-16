@@ -1139,7 +1139,7 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 		    std::vector<resid>(residue, residue + nres));
 		// Per-thread FA copies with redirected mutable scratch buffers.
 		std::vector<FA_Global>           tl_fa(n_thr, *FA);
-		std::vector<std::vector<int>>    tl_contacts(n_thr, std::vector<int>(100000, 0));
+		std::vector<std::vector<int>>    tl_contacts(n_thr, std::vector<int>(MAX_ATOM_NUMBER, 0));
 		std::vector<std::vector<float>>  tl_contrib(n_thr, std::vector<float>(nctb, 0.0f));
 		std::vector<std::vector<OptRes>> tl_optres(n_thr,
 		    std::vector<OptRes>(FA->optres, FA->optres + nopt));
@@ -2341,5 +2341,8 @@ double RandomDouble(int32_t gene){
 }
 
 double RandomDouble(){
-	return rand()/((double)RAND_MAX+1.0);
+	// Thread-safe RNG (replaces non-reentrant rand())
+	thread_local std::mt19937 tl_rng(std::random_device{}());
+	std::uniform_real_distribution<double> dist(0.0, 1.0);
+	return dist(tl_rng);
 }

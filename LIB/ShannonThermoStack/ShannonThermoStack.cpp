@@ -35,44 +35,9 @@ static bool           s_cuda_ready = false;
 #include <algorithm>
 #include <cmath>
 #include <numeric>
-#include <random>
 #include <vector>
 
 namespace shannon_thermo {
-
-// ─── ShannonEnergyMatrix ─────────────────────────────────────────────────────
-
-ShannonEnergyMatrix& ShannonEnergyMatrix::instance() {
-    static ShannonEnergyMatrix inst;
-    return inst;
-}
-
-void ShannonEnergyMatrix::initialise() {
-    if (initialised_) return;
-    matrix_.resize(SHANNON_BINS * SHANNON_BINS);
-
-    std::mt19937 rng(42);
-    std::normal_distribution<double> perturb(0.0, 0.05);
-    const double base = 1.0 / SHANNON_BINS;
-    std::vector<double> p_i(SHANNON_BINS), p_j(SHANNON_BINS);
-    for (int k = 0; k < SHANNON_BINS; ++k) {
-        p_i[k] = std::max(1e-9, base + perturb(rng));
-        p_j[k] = std::max(1e-9, base + perturb(rng));
-    }
-    double si = 0, sj = 0;
-    for (int k = 0; k < SHANNON_BINS; ++k) { si += p_i[k]; sj += p_j[k]; }
-    for (int k = 0; k < SHANNON_BINS; ++k) { p_i[k] /= si; p_j[k] /= sj; }
-
-    const double kT    = kB_kcal * TEMPERATURE_K;
-    const double l2inv = 1.0 / std::log(2.0);
-
-    // Fill the entropy matrix: _mm512_log_pd requires SVML which may not be linked
-    // Using portable scalar implementation with std::log for maximum compatibility
-    for (int i = 0; i < SHANNON_BINS; ++i)
-        for (int j = 0; j < SHANNON_BINS; ++j)
-            matrix_[i * SHANNON_BINS + j] = -kT * p_i[i] * std::log(p_j[j]) * l2inv;
-    initialised_ = true;
-}
 
 // ─── entropy from bin counts (Eigen-vectorised) ───────────────────────────────
 static double entropy_from_counts(const int* counts, int num_bins, int total) {
@@ -261,8 +226,6 @@ FullThermoResult run_shannon_thermo_stack(
     double                          base_deltaG,
     double                          temperature_K)
 {
-    ShannonEnergyMatrix::instance().initialise();
-
     auto weights = stat_engine.boltzmann_weights();
     std::vector<double> log_weights;
     log_weights.reserve(weights.size());
@@ -274,7 +237,9 @@ FullThermoResult run_shannon_thermo_stack(
                           ? compute_torsional_vibrational_entropy(tencm_model.modes(), temperature_K)
                           : 0.0;
     double S_conf_phys  = S_conf_bits * kB_kcal;
-    double total_S      = S_conf_phys * (1.0 + 0.5 * S_conf_bits) + S_vib;
+    // Standard additive entropy: S_total = S_conf + S_vib
+    // (quasi-harmonic approximation; no nonlinear coupling)
+    double total_S      = S_conf_phys + S_vib;
     double S_contrib    = -temperature_K * total_S;
     double final_dG     = base_deltaG + S_contrib;
 

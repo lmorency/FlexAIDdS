@@ -161,9 +161,22 @@ static ribosome::RibosomeElongation build_elongation_model(
             seq  += nt;
             codons.emplace_back(1, nt);  // single-character codon
         } else {
-            // Polypeptide mode: use 1-letter AA code from residue name
-            // (fallback to 'A' for unknown residues)
-            seq  += residues[i].name[0];
+            // Polypeptide mode: convert 3-letter residue name to 1-letter AA code
+            static const std::pair<const char*, char> aa_table[] = {
+                {"ALA",'A'}, {"ARG",'R'}, {"ASN",'N'}, {"ASP",'D'},
+                {"CYS",'C'}, {"GLN",'Q'}, {"GLU",'E'}, {"GLY",'G'},
+                {"HIS",'H'}, {"ILE",'I'}, {"LEU",'L'}, {"LYS",'K'},
+                {"MET",'M'}, {"PHE",'F'}, {"PRO",'P'}, {"SER",'S'},
+                {"THR",'T'}, {"TRP",'W'}, {"TYR",'Y'}, {"VAL",'V'},
+                {"SEC",'U'}, {"PYL",'O'}, {"HSD",'H'}, {"HSE",'H'},
+                {"HSP",'H'}, {"HIE",'H'}, {"HID",'H'}, {"HIP",'H'},
+                {"CYX",'C'}, {"ASH",'D'}, {"GLH",'E'},
+            };
+            char aa_code = 'X';
+            for (const auto& [code3, code1] : aa_table) {
+                if (strncmp(rname, code3, 3) == 0) { aa_code = code1; break; }
+            }
+            seq  += aa_code;
             codons.emplace_back(); // mean rate used when codon is empty
         }
     }
@@ -235,10 +248,24 @@ std::vector<DualAssemblyEngine::GrowthStep> DualAssemblyEngine::run() {
             config_.temperature_K, 0.5,
             static_cast<int>(ribosome::TUNNEL_LENGTH_AA));
         // Build 1-letter sequence for TransloconInsertion window scanning
+        // Uses same 3-letter→1-letter conversion as elongation model
+        static const std::pair<const char*, char> aa_table[] = {
+            {"ALA",'A'}, {"ARG",'R'}, {"ASN",'N'}, {"ASP",'D'},
+            {"CYS",'C'}, {"GLN",'Q'}, {"GLU",'E'}, {"GLY",'G'},
+            {"HIS",'H'}, {"ILE",'I'}, {"LEU",'L'}, {"LYS",'K'},
+            {"MET",'M'}, {"PHE",'F'}, {"PRO",'P'}, {"SER",'S'},
+            {"THR",'T'}, {"TRP",'W'}, {"TYR",'Y'}, {"VAL",'V'},
+        };
         aa_seq_for_tm.reserve(n_residues_);
         for (int r = 0; r < n_residues_; ++r) {
             const char* rname = residues_[r].name;
-            aa_seq_for_tm += (rname && rname[0]) ? rname[0] : 'X';
+            char aa_code = 'X';
+            if (rname) {
+                for (const auto& [code3, code1] : aa_table) {
+                    if (strncmp(rname, code3, 3) == 0) { aa_code = code1; break; }
+                }
+            }
+            aa_seq_for_tm += aa_code;
         }
     }
 
