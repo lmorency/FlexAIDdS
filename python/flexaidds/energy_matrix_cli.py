@@ -80,6 +80,8 @@ def build_parser() -> argparse.ArgumentParser:
 def _cmd_train(args: argparse.Namespace) -> int:
     from .energy_matrix import ContactTable, KnowledgeBasedTrainer
 
+    if not Path(args.contacts).is_file():
+        raise FileNotFoundError(f"Contact table not found: {args.contacts}")
     table = ContactTable.load(args.contacts)
     trainer = KnowledgeBasedTrainer(
         ntypes=table.ntypes,
@@ -97,6 +99,10 @@ def _cmd_train(args: argparse.Namespace) -> int:
 def _cmd_optimize(args: argparse.Namespace) -> int:
     from .energy_matrix import EnergyMatrix, EnergyMatrixOptimizer
 
+    if not Path(args.matrix).is_file():
+        raise FileNotFoundError(f"Matrix file not found: {args.matrix}")
+    if not Path(args.benchmark).is_dir():
+        raise FileNotFoundError(f"Benchmark directory not found: {args.benchmark}")
     matrix = EnergyMatrix.from_dat_file(args.matrix)
     benchmark = EnergyMatrixOptimizer.load_benchmark(args.benchmark)
     print(f"Loaded {len(benchmark)} benchmark cases "
@@ -132,6 +138,10 @@ def _cmd_optimize(args: argparse.Namespace) -> int:
 def _cmd_evaluate(args: argparse.Namespace) -> int:
     from .energy_matrix import EnergyMatrix, EnergyMatrixOptimizer
 
+    if not Path(args.matrix).is_file():
+        raise FileNotFoundError(f"Matrix file not found: {args.matrix}")
+    if not Path(args.benchmark).is_dir():
+        raise FileNotFoundError(f"Benchmark directory not found: {args.benchmark}")
     matrix = EnergyMatrix.from_dat_file(args.matrix)
     benchmark = EnergyMatrixOptimizer.load_benchmark(args.benchmark)
 
@@ -153,16 +163,23 @@ def _cmd_evaluate(args: argparse.Namespace) -> int:
 
 
 def _cmd_convert(args: argparse.Namespace) -> int:
-    from .energy_matrix import EnergyMatrix
+    from .energy_matrix import EnergyMatrix, SHNN_MAGIC
 
+    if not Path(args.input).is_file():
+        raise FileNotFoundError(f"Input file not found: {args.input}")
     input_path = args.input
     output_path = args.output
     fmt = args.format
 
-    # Detect input format
-    if input_path.endswith(".bin") or input_path.endswith(".shnn"):
-        matrix = EnergyMatrix.from_binary(input_path)
-    else:
+    # Detect input format via magic bytes, fall back to .dat text format
+    try:
+        with open(input_path, "rb") as fh:
+            magic = fh.read(4)
+        if magic == SHNN_MAGIC:
+            matrix = EnergyMatrix.from_binary(input_path)
+        else:
+            matrix = EnergyMatrix.from_dat_file(input_path)
+    except Exception:
         matrix = EnergyMatrix.from_dat_file(input_path)
 
     if fmt == "dat":
@@ -172,7 +189,13 @@ def _cmd_convert(args: argparse.Namespace) -> int:
             "ntypes": matrix.ntypes,
             "matrix": matrix.matrix.tolist(),
         }
-        Path(output_path).write_text(json.dumps(data, indent=2))
+        try:
+            Path(output_path).write_text(json.dumps(data, indent=2, allow_nan=False))
+        except ValueError:
+            raise ValueError(
+                "Matrix contains NaN or Inf values that cannot be serialized to JSON. "
+                "Clean the matrix first or use binary format."
+            )
     elif fmt == "binary":
         matrix.to_binary(output_path)
 
@@ -190,7 +213,20 @@ def main() -> int:
         "evaluate": _cmd_evaluate,
         "convert": _cmd_convert,
     }
-    return handlers[args.command](args)
+    try:
+        return handlers[args.command](args)
+    except FileNotFoundError as exc:
+        print(f"Error: file not found: {exc}", file=sys.stderr)
+        return 1
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    except ImportError as exc:
+        print(f"Error: missing dependency: {exc}", file=sys.stderr)
+        return 1
+    except Exception as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

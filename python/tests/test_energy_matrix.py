@@ -8,6 +8,8 @@ import tempfile
 import numpy as np
 import pytest
 
+import warnings
+
 from flexaidds.energy_matrix import (
     MATRIX_256_SIZE,
     SHNN_MAGIC,
@@ -659,3 +661,229 @@ class TestCLI:
         mat = EnergyMatrix.from_dat_file(out_path)
         assert mat.ntypes == 3
         assert mat.is_symmetric
+
+
+# ── Robustness: FileNotFoundError tests ──────────────────────────────────────
+
+class TestFileNotFound:
+    def test_from_dat_file_missing(self):
+        with pytest.raises(FileNotFoundError):
+            EnergyMatrix.from_dat_file("/nonexistent/path/matrix.dat")
+
+    def test_from_binary_missing(self):
+        with pytest.raises(FileNotFoundError):
+            EnergyMatrix.from_binary("/nonexistent/path/matrix.shnn")
+
+    def test_contact_table_load_missing(self):
+        with pytest.raises(FileNotFoundError):
+            ContactTable.load("/nonexistent/path/contacts.json")
+
+    def test_parse_pdb_contacts_missing(self):
+        with pytest.raises(FileNotFoundError):
+            KnowledgeBasedTrainer.parse_pdb_contacts(
+                "/nonexistent/path/test.pdb", {"ALA:CA": 0})
+
+
+# ── Robustness: Edge case tests ──────────────────────────────────────────────
+
+class TestEdgeCases:
+    def test_ntypes_zero_rejected(self):
+        with pytest.raises(ValueError, match="ntypes must be positive"):
+            EnergyMatrix(0, np.zeros((0, 0)))
+
+    def test_ntypes_negative_rejected(self):
+        with pytest.raises(ValueError, match="ntypes must be positive"):
+            EnergyMatrix(-1, np.zeros((0, 0)))
+
+    def test_ntypes_one_accepted(self):
+        mat = EnergyMatrix(1, np.array([[2.5]]))
+        assert mat.ntypes == 1
+        assert mat.matrix[0, 0] == 2.5
+
+    def test_matrix_shape_mismatch_rejected(self):
+        with pytest.raises(ValueError, match="does not match"):
+            EnergyMatrix(3, np.zeros((2, 2)))
+
+    def test_nan_matrix_rejected(self):
+        mat = np.array([[1.0, float("nan")], [float("nan"), 1.0]])
+        with pytest.raises(ValueError, match="non-finite"):
+            EnergyMatrix(2, mat)
+
+    def test_inf_matrix_rejected(self):
+        mat = np.array([[1.0, float("inf")], [float("inf"), 1.0]])
+        with pytest.raises(ValueError, match="non-finite"):
+            EnergyMatrix(2, mat)
+
+    def test_trainer_ntypes_zero_rejected(self):
+        with pytest.raises(ValueError, match="ntypes must be positive"):
+            KnowledgeBasedTrainer(ntypes=0)
+
+    def test_trainer_temperature_zero_rejected(self):
+        with pytest.raises(ValueError, match="temperature must be positive"):
+            KnowledgeBasedTrainer(ntypes=3, temperature=0.0)
+
+    def test_trainer_negative_pseudocount_rejected(self):
+        with pytest.raises(ValueError, match="pseudocount must be non-negative"):
+            KnowledgeBasedTrainer(ntypes=3, pseudocount=-1)
+
+    def test_trainer_negative_cutoff_rejected(self):
+        with pytest.raises(ValueError, match="distance_cutoff must be positive"):
+            KnowledgeBasedTrainer(ntypes=3, distance_cutoff=-1.0)
+
+
+# ── Robustness: Error path tests ─────────────────────────────────────────────
+
+class TestErrorPaths:
+    def test_dat_invalid_token_count(self, tmp_dir):
+        """Odd number of tokens (not 1, not even) raises ValueError."""
+        path = os.path.join(tmp_dir, "bad_tokens.dat")
+        with open(path, "w") as fh:
+            fh.write("       1-1 = 0.1 0.2 0.3\n")  # 3 tokens: not 1, not even
+        with pytest.raises(ValueError, match="Invalid token count"):
+            EnergyMatrix.from_dat_file(path)
+
+    def test_binary_truncated(self, tmp_dir):
+        path = os.path.join(tmp_dir, "truncated.shnn")
+        with open(path, "wb") as fh:
+            fh.write(SHNN_MAGIC)
+            fh.write(struct.pack("<II", 1, 256))
+            fh.write(np.zeros(100, dtype=np.float32).tobytes())  # too short
+        with pytest.raises(ValueError, match="Truncated"):
+            EnergyMatrix.from_binary(path)
+
+    def test_contact_table_corrupted_json(self, tmp_dir):
+        path = os.path.join(tmp_dir, "bad.json")
+        with open(path, "w") as fh:
+            fh.write('{"ntypes": 2}')  # missing required keys
+        with pytest.raises(ValueError, match="missing required keys"):
+            ContactTable.load(path)
+
+    def test_malformed_pdb_coordinates(self, tmp_dir):
+        pdb_path = os.path.join(tmp_dir, "bad.pdb")
+        with open(pdb_path, "w") as fh:
+            fh.write("ATOM      1  CA  ALA A   1       XXXX   2.000   3.000  1.00  0.00           C\n")
+        with pytest.raises(ValueError, match="Malformed PDB coordinates"):
+            KnowledgeBasedTrainer.parse_pdb_contacts(pdb_path, {"ALA:CA": 0})
+
+
+# ── Robustness: Integration tests ────────────────────────────────────────────
+
+class TestIntegration:
+    def test_full_workflow_contacts_to_roundtrip(self, tmp_dir):
+        """contacts -> train -> derive -> write .dat -> read back -> verify."""
+        trainer = KnowledgeBasedTrainer(ntypes=3, distance_cutoff=5.0, pseudocount=1)
+        rng = np.random.RandomState(42)
+        for _ in range(20):
+            coords = rng.randn(6, 3) * 2.0
+            types = rng.randint(0, 3, size=6)
+            trainer.add_structure(coords, types)
+
+        matrix = trainer.derive_potential()
+        assert matrix.ntypes == 3
+        assert matrix.is_symmetric
+        assert np.all(np.isfinite(matrix.matrix))
+
+        # Write and read back
+        dat_path = os.path.join(tmp_dir, "derived.dat")
+        matrix.to_dat_file(dat_path)
+        loaded = EnergyMatrix.from_dat_file(dat_path)
+        np.testing.assert_allclose(loaded.matrix, matrix.matrix, atol=1e-3)
+
+    def test_256_binary_roundtrip_with_projection(self, tmp_dir):
+        """256 binary -> read -> project_to_40 -> verify shape and symmetry."""
+        rng = np.random.RandomState(99)
+        mat256 = rng.randn(256, 256)
+        mat256 = (mat256 + mat256.T) / 2.0
+        em = EnergyMatrix(256, mat256)
+
+        path = os.path.join(tmp_dir, "test256.shnn")
+        em.to_binary(path)
+        loaded = EnergyMatrix.from_binary(path)
+        proj = loaded.project_to_40()
+        assert proj.ntypes == 40
+        assert proj.is_symmetric
+        assert np.all(np.isfinite(proj.matrix))
+
+
+# ── Robustness: OptimizationResult tests ─────────────────────────────────────
+
+class TestOptimizationResult:
+    def test_to_dict(self):
+        mat = EnergyMatrix(2, np.zeros((2, 2)))
+        result = OptimizationResult(
+            best_matrix=mat,
+            best_score=0.85,
+            history=[(0, 0.5), (1, 0.7), (2, 0.85)],
+            n_evaluations=100,
+            convergence_reason="converged",
+        )
+        d = result.to_dict()
+        assert d["best_score"] == 0.85
+        assert d["n_evaluations"] == 100
+        assert d["convergence_reason"] == "converged"
+        assert len(d["history"]) == 3
+
+
+# ── Robustness: Negative case tests ──────────────────────────────────────────
+
+class TestNegativeCases:
+    def test_lookup_out_of_bounds(self, sample_256_matrix):
+        with pytest.raises((IndexError, ValueError)):
+            sample_256_matrix.lookup(300, 0)
+
+    def test_mismatched_chain_mask_length(self):
+        trainer = KnowledgeBasedTrainer(ntypes=2, distance_cutoff=5.0)
+        coords = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+        types = np.array([0, 1])
+        chain_mask = np.array([0])  # wrong length
+        with pytest.raises((ValueError, IndexError)):
+            trainer.add_structure(coords, types, chain_mask=chain_mask)
+
+    def test_incompatible_ntypes_merge(self):
+        trainer = KnowledgeBasedTrainer(ntypes=3)
+        table = ContactTable(
+            ntypes=5,
+            counts=np.ones((5, 5), dtype=np.int64),
+            type_totals=np.ones(5, dtype=np.int64),
+            n_structures=1,
+        )
+        with pytest.raises(ValueError, match="does not match"):
+            trainer.add_contact_table(table)
+
+    def test_empty_benchmark_rejected(self):
+        mat = EnergyMatrix(2, np.zeros((2, 2)))
+        with pytest.raises(ValueError, match="non-empty"):
+            EnergyMatrixOptimizer(reference_matrix=mat, benchmark=[])
+
+
+# ── Robustness: Reproducibility test ─────────────────────────────────────────
+
+class TestReproducibility:
+    def test_derive_potential_deterministic(self):
+        """Same inputs -> identical output matrices."""
+        def build():
+            trainer = KnowledgeBasedTrainer(ntypes=3, pseudocount=1)
+            rng = np.random.RandomState(7)
+            for _ in range(10):
+                coords = rng.randn(5, 3)
+                types = rng.randint(0, 3, size=5)
+                trainer.add_structure(coords, types)
+            return trainer.derive_potential()
+
+        m1 = build()
+        m2 = build()
+        np.testing.assert_array_equal(m1.matrix, m2.matrix)
+
+
+# ── Robustness: Binary version warning test ──────────────────────────────────
+
+class TestBinaryVersionWarning:
+    def test_version_mismatch_warns(self, tmp_dir):
+        """Loading a binary with wrong version emits a warning."""
+        path = os.path.join(tmp_dir, "future_version.shnn")
+        with open(path, "wb") as fh:
+            fh.write(SHNN_MAGIC)
+            fh.write(struct.pack("<II", 99, 256))  # version 99
+            fh.write(np.zeros(256 * 256, dtype=np.float32).tobytes())
+        with pytest.warns(UserWarning, match="version 99"):
+            EnergyMatrix.from_binary(path)

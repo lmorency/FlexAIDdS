@@ -29,6 +29,16 @@ except ImportError:  # pragma: no cover
     np = None  # type: ignore[assignment]
 
 
+def _validate_matrix(matrix: "np.ndarray", label: str = "matrix") -> None:
+    """Raise ValueError if matrix contains NaN or Inf."""
+    if np is not None and not np.all(np.isfinite(matrix)):
+        n_nan = int(np.sum(np.isnan(matrix)))
+        n_inf = int(np.sum(np.isinf(matrix)))
+        raise ValueError(
+            f"{label} contains non-finite values: {n_nan} NaN, {n_inf} Inf"
+        )
+
+
 # ── constants ────────────────────────────────────────────────────────────────
 
 SHNN_MAGIC = b"SHNN"  # binary blob magic header
@@ -235,10 +245,18 @@ class EnergyMatrix:
         if np is None:
             raise RuntimeError("NumPy is required for EnergyMatrix")
         self.ntypes = int(ntypes)
+        if self.ntypes <= 0:
+            raise ValueError(f"ntypes must be positive, got {self.ntypes}")
         if matrix is None:
             self.matrix = np.zeros((self.ntypes, self.ntypes), dtype=np.float64)
         else:
             self.matrix = np.asarray(matrix, dtype=np.float64)
+        if self.matrix.shape != (self.ntypes, self.ntypes):
+            raise ValueError(
+                f"Matrix shape {self.matrix.shape} does not match "
+                f"ntypes={self.ntypes}; expected ({self.ntypes}, {self.ntypes})"
+            )
+        _validate_matrix(self.matrix, "EnergyMatrix")
         self.entries = entries or {}
 
     # ── legacy .dat I/O ──────────────────────────────────────────────────
@@ -311,7 +329,10 @@ class EnergyMatrix:
                             DensityPoint(x=float(tokens[k]),
                                          y=float(tokens[k + 1])))
                     # Store the mean y-value as the matrix scalar approximation
-                    mean_y = sum(p.y for p in entry.density_points) / len(entry.density_points)
+                    if entry.density_points:
+                        mean_y = sum(p.y for p in entry.density_points) / len(entry.density_points)
+                    else:
+                        mean_y = 0.0
                     matrix[i, j] = mean_y
                     matrix[j, i] = mean_y
                 else:
@@ -383,6 +404,14 @@ class EnergyMatrix:
                 raise ValueError(
                     f"Invalid magic header: expected {SHNN_MAGIC!r}, got {magic!r}")
             version, dim = struct.unpack("<II", fh.read(8))
+            if version != SHNN_VERSION:
+                import warnings
+                warnings.warn(
+                    f"Binary matrix version {version} does not match expected "
+                    f"version {SHNN_VERSION}; data may be incompatible",
+                    UserWarning,
+                    stacklevel=2,
+                )
             if dim != MATRIX_256_SIZE:
                 raise ValueError(
                     f"Expected {MATRIX_256_SIZE}×{MATRIX_256_SIZE} matrix, "
@@ -401,6 +430,7 @@ class EnergyMatrix:
             raise ValueError(
                 f"Binary format requires {MATRIX_256_SIZE}×{MATRIX_256_SIZE} "
                 f"matrix, got {self.ntypes}×{self.ntypes}")
+        _validate_matrix(self.matrix, "EnergyMatrix.to_binary")
         with open(path, "wb") as fh:
             fh.write(SHNN_MAGIC)
             fh.write(struct.pack("<II", SHNN_VERSION, self.ntypes))
@@ -535,13 +565,22 @@ class ContactTable:
     def load(cls, path: Union[str, Path]) -> "ContactTable":
         """Load a previously saved contact table."""
         data = json.loads(Path(path).read_text())
-        return cls(
-            ntypes=data["ntypes"],
-            counts=np.array(data["counts"], dtype=np.int64),
-            type_totals=np.array(data["type_totals"], dtype=np.int64),
-            n_structures=data["n_structures"],
-            distance_cutoff=data["distance_cutoff"],
-        )
+        required_keys = {"ntypes", "counts", "type_totals", "n_structures", "distance_cutoff"}
+        missing = required_keys - data.keys()
+        if missing:
+            raise ValueError(
+                f"ContactTable JSON missing required keys: {sorted(missing)}"
+            )
+        try:
+            return cls(
+                ntypes=data["ntypes"],
+                counts=np.array(data["counts"], dtype=np.int64),
+                type_totals=np.array(data["type_totals"], dtype=np.int64),
+                n_structures=data["n_structures"],
+                distance_cutoff=data["distance_cutoff"],
+            )
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Invalid ContactTable JSON data: {exc}") from exc
 
 
 class KnowledgeBasedTrainer:
@@ -570,6 +609,14 @@ class KnowledgeBasedTrainer:
     ) -> None:
         if np is None:
             raise RuntimeError("NumPy is required for KnowledgeBasedTrainer")
+        if ntypes <= 0:
+            raise ValueError(f"ntypes must be positive, got {ntypes}")
+        if temperature <= 0:
+            raise ValueError(f"temperature must be positive, got {temperature}")
+        if pseudocount < 0:
+            raise ValueError(f"pseudocount must be non-negative, got {pseudocount}")
+        if distance_cutoff <= 0:
+            raise ValueError(f"distance_cutoff must be positive, got {distance_cutoff}")
         self._ntypes = ntypes
         self._temperature = temperature
         self._kT = 0.001987206 * temperature  # kcal/mol
@@ -594,7 +641,13 @@ class KnowledgeBasedTrainer:
             chain_mask: (N,) chain IDs (int or str).  If provided, only
                         inter-chain contacts are counted.
         """
-        from scipy.spatial.distance import cdist
+        try:
+            from scipy.spatial.distance import cdist
+        except ImportError:
+            raise ImportError(
+                "scipy is required for add_structure(). "
+                "Install it with: pip install scipy"
+            ) from None
 
         coords = np.asarray(coords, dtype=np.float64)
         atom_types = np.asarray(atom_types, dtype=np.int64)
@@ -623,6 +676,11 @@ class KnowledgeBasedTrainer:
 
     def add_contact_table(self, table: ContactTable) -> None:
         """Merge a pre-computed ContactTable into the running counts."""
+        if table.ntypes != self._ntypes:
+            raise ValueError(
+                f"ContactTable ntypes ({table.ntypes}) does not match "
+                f"trainer ntypes ({self._ntypes})"
+            )
         self._counts += table.counts
         self._type_totals += table.type_totals
         self._n_structures += table.n_structures
@@ -675,6 +733,7 @@ class KnowledgeBasedTrainer:
                 matrix[i, j] = energy
                 matrix[j, i] = energy
 
+        _validate_matrix(matrix, "derive_potential output")
         return EnergyMatrix(self._ntypes, matrix)
 
     @staticmethod
@@ -708,9 +767,14 @@ class KnowledgeBasedTrainer:
                 atom_name = line[12:16].strip()
                 res_name = line[17:20].strip()
                 chain_id = line[21:22].strip() or "A"
-                x = float(line[30:38])
-                y = float(line[38:46])
-                z = float(line[46:54])
+                try:
+                    x = float(line[30:38])
+                    y = float(line[38:46])
+                    z = float(line[46:54])
+                except (ValueError, IndexError) as exc:
+                    raise ValueError(
+                        f"Malformed PDB coordinates at line: {line.rstrip()!r}"
+                    ) from exc
 
                 key = f"{res_name}:{atom_name}"
                 if key not in type_mapping:
@@ -826,6 +890,9 @@ class EnergyMatrixOptimizer:
                         "Density-function entries cannot be optimized."
                     )
 
+        if not benchmark:
+            raise ValueError("benchmark must be a non-empty list of DockingBenchmarkCase")
+
         self._reference = reference_matrix
         self._benchmark = benchmark
         self._objective = objective
@@ -848,7 +915,10 @@ class EnergyMatrixOptimizer:
         project_bin = Path(__file__).resolve().parents[2] / "BIN" / "FlexAID"
         if project_bin.is_file():
             return str(project_bin)
-        return "FlexAID"  # hope it's on PATH
+        raise FileNotFoundError(
+            "FlexAID binary not found. Provide the path explicitly via "
+            "flexaid_binary parameter, or ensure FlexAID is on PATH."
+        )
 
     def _matrix_to_vector(self, matrix: EnergyMatrix) -> "np.ndarray":
         """Flatten upper-triangle scalar values to a 1D parameter vector.
@@ -882,47 +952,52 @@ class EnergyMatrixOptimizer:
         Writes the matrix to a temp .dat file, runs FlexAID, and parses
         the best CF score from output.
         """
-        case_dir = self._work_dir / f"eval_{self._eval_count}"
+        import uuid
+        import shutil as _shutil
+        case_dir = self._work_dir / f"eval_{uuid.uuid4().hex[:12]}"
         case_dir.mkdir(parents=True, exist_ok=True)
 
-        mat_path = case_dir / "emat.dat"
-        matrix.to_dat_file(str(mat_path))
-
-        # Build minimal config
-        config_lines = [
-            f"PDBNAM {case.receptor}",
-            f"INPLIG {case.ligand}",
-            f"IMATRX {mat_path}",
-            f"TEMPER {int(self._temperature)}",
-            "METOPT GA",
-            "COMPLF VCT",
-            "NRGOUT 1",
-        ]
-        config_path = case_dir / "dock.inp"
-        config_path.write_text("\n".join(config_lines) + "\n")
-
         try:
-            result = subprocess.run(
-                [self._flexaid_binary, str(config_path)],
-                capture_output=True, text=True, timeout=300,
-                cwd=str(case_dir),
-            )
-            # Parse best CF score from output
-            best_score = float("inf")
-            for line in result.stdout.splitlines():
-                if "CF=" in line or "cf=" in line.lower():
-                    try:
-                        parts = line.split()
-                        for part in parts:
-                            if part.replace("-", "").replace(".", "").isdigit():
-                                val = float(part)
-                                if val < best_score:
-                                    best_score = val
-                    except ValueError:
-                        continue
-            return best_score
-        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-            return float("inf")
+            mat_path = case_dir / "emat.dat"
+            matrix.to_dat_file(str(mat_path))
+
+            # Build minimal config
+            config_lines = [
+                f"PDBNAM {case.receptor}",
+                f"INPLIG {case.ligand}",
+                f"IMATRX {mat_path}",
+                f"TEMPER {int(self._temperature)}",
+                "METOPT GA",
+                "COMPLF VCT",
+                "NRGOUT 1",
+            ]
+            config_path = case_dir / "dock.inp"
+            config_path.write_text("\n".join(config_lines) + "\n")
+
+            try:
+                result = subprocess.run(
+                    [self._flexaid_binary, str(config_path)],
+                    capture_output=True, text=True, timeout=300,
+                    cwd=str(case_dir),
+                )
+                # Parse best CF score from output
+                best_score = float("inf")
+                for line in result.stdout.splitlines():
+                    if "CF=" in line or "cf=" in line.lower():
+                        try:
+                            parts = line.split()
+                            for part in parts:
+                                if part.replace("-", "").replace(".", "").isdigit():
+                                    val = float(part)
+                                    if val < best_score:
+                                        best_score = val
+                        except ValueError:
+                            continue
+                return best_score
+            except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+                return float("inf")
+        finally:
+            _shutil.rmtree(case_dir, ignore_errors=True)
 
     def _evaluate_objective(self, vector: "np.ndarray") -> float:
         """Full objective function evaluation.
