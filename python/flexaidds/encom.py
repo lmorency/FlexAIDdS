@@ -17,6 +17,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional
 
+import numpy as np
+
 try:
     from . import _core
     _HAS_CORE = _core is not None

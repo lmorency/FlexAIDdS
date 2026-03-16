@@ -4,10 +4,11 @@
 #include "config_parser.h"
 #include "config_defaults.h"
 #include "Mol2Reader.h"
+#include "SdfReader.h"
 #include "CleftDetector.h"
 
 #include <string>
-#include <ctime>
+#include <cstring>
 
 static void print_usage(const char* progname) {
 	printf("FlexAIDdS — Entropy-driven molecular docking\n\n");
@@ -293,7 +294,16 @@ int main(int argc, char **argv){
 			FA->intramolecular ? "ON" : "OFF",
 			FA->complf);
 
-		// ── Direct PDB/MOL2 loading (no .inp files required) ──
+		// For now, the new mode sets the config values but still requires
+		// the legacy input files to be generated or provided.
+		// TODO: Direct PDB/MOL2 loading without .inp files.
+		//   Requires: auto-generate grid from cleft detection, load default
+		//   energy matrix + atom type definitions, build rotamer library,
+		//   and call read_pdb/read_mol2_ligand directly. See read_input()
+		//   for the full list of initialisation steps that must be replicated.
+		fprintf(stderr, "NOTE: Direct receptor/ligand mode is prepared (config applied).\n");
+		fprintf(stderr, "Input pipeline integration in progress. Use --legacy for full runs.\n");
+		fprintf(stderr, "Config loaded: %s\n", config_path.empty() ? "(defaults)" : config_path.c_str());
 
 		const char* receptor_path = argv[1];
 		const char* ligand_path   = argv[2];
@@ -303,20 +313,25 @@ int main(int argc, char **argv){
 		end_strfile[MAX_PATH__ - 1] = '\0';
 		strcpy(FA->rrgfile, end_strfile);
 
+		// GA input file not used in direct mode — config already applied
 		dockinp[0] = '\0';
 		gainp[0] = '\0';
 
-		// Default paths
-		if (!strcmp(FA->state_path, "")) strcpy(FA->state_path, FA->base_path);
-		if (!strcmp(FA->temp_path, ""))  strcpy(FA->temp_path, FA->base_path);
+		// ── Direct PDB/MOL2 loading pipeline ──────────────────────────
+		char* receptor_file = argv[1];
+		char* ligand_file   = argv[2];
 
-		// ── Load interaction matrix (from dependencies_path or base_path) ──
+		printf("Direct loading mode: receptor=%s, ligand=%s\n",
+		       receptor_file, ligand_file);
+
+		// ── 1. Interaction matrix ──
 		{
 			char emat[MAX_PATH__];
-			if (!strcmp(FA->dependencies_path, ""))
+			if (!strcmp(FA->dependencies_path, "")) {
 				strcpy(emat, FA->base_path);
-			else
+			} else {
 				strcpy(emat, FA->dependencies_path);
+			}
 #ifdef _WIN32
 			strcat(emat, "\\MC_st0r5.2_6.dat");
 #else
@@ -326,101 +341,121 @@ int main(int argc, char **argv){
 			read_emat(FA, emat);
 		}
 
-		// ── Detect RNA ──
-		printf("receptor is <%s>\n", receptor_path);
-		if (rna_structure(const_cast<char*>(receptor_path))) {
+		// ── 2. Check if target is RNA ──
+		if (rna_structure(receptor_file)) {
 			printf("target molecule is a RNA structure\n");
 			FA->is_protein = 0;
 		}
 
-		// ── Load definition of types ──
+		// ── 3. Definition of types ──
 		char deftyp[MAX_PATH__];
-		if (!strcmp(FA->dependencies_path, ""))
-			strcpy(deftyp, FA->base_path);
-		else
-			strcpy(deftyp, FA->dependencies_path);
-		if (FA->is_protein) {
+		{
+			if (!strcmp(FA->dependencies_path, "")) {
+				strcpy(deftyp, FA->base_path);
+			} else {
+				strcpy(deftyp, FA->dependencies_path);
+			}
+			if (FA->is_protein) {
 #ifdef _WIN32
-			strcat(deftyp, "\\AMINO.def");
+				strcat(deftyp, "\\AMINO.def");
 #else
-			strcat(deftyp, "/AMINO.def");
+				strcat(deftyp, "/AMINO.def");
 #endif
-		} else {
+			} else {
 #ifdef _WIN32
-			strcat(deftyp, "\\NUCLEOTIDES.def");
+				strcat(deftyp, "\\NUCLEOTIDES.def");
 #else
-			strcat(deftyp, "/NUCLEOTIDES.def");
+				strcat(deftyp, "/NUCLEOTIDES.def");
 #endif
+			}
+			printf("definition of types is <%s>\n", deftyp);
 		}
 
-		// ── Load receptor PDB ──
+		// ── 4. Read receptor PDB ──
 		{
-			// Create temporary modified PDB (reorders atoms, strips water/HET as configured)
+			// Create temporary cleaned PDB
 			char tmpprotname[MAX_PATH__];
-			strcpy(tmpprotname, receptor_path);
+			strncpy(tmpprotname, receptor_file, MAX_PATH__ - 20);
+			tmpprotname[MAX_PATH__ - 20] = '\0';
 
-			char* filename = tmpprotname;
-			char* last_sep = strrchr(tmpprotname, '/');
-#ifdef _WIN32
-			char* bslash = strrchr(tmpprotname, '\\');
-			if (bslash && (!last_sep || bslash > last_sep)) last_sep = bslash;
-#endif
-			if (last_sep) filename = last_sep + 1;
+			// Find filename portion and create temp name
+			char* dot = strrchr(tmpprotname, '.');
+			srand((unsigned int)time(NULL));
+			int random_num = rand() % 900000 + 100000;
+			char random_str[32];
+			sprintf(random_str, "_tmp_%d.pdb", random_num);
+			if (dot) {
+				strcpy(dot, random_str);
+			} else {
+				strcat(tmpprotname, random_str);
+			}
 
-			char* dot = strchr(filename, '.');
-			srand(static_cast<unsigned int>(time(NULL)));
-			int rnd = rand() % 900000 + 100000;
-			char rnd_str[20];
-			sprintf(rnd_str, "_tmp_%d.pdb", rnd);
-
-			if (dot)
-				strcpy(dot, rnd_str);
-			else
-				strcat(tmpprotname, rnd_str);
-
-			modify_pdb(const_cast<char*>(receptor_path), tmpprotname,
-			           FA->exclude_het, FA->remove_water, FA->is_protein);
+			modify_pdb(receptor_file, tmpprotname, FA->exclude_het, FA->remove_water, FA->is_protein);
 			read_pdb(FA, &atoms, &residue, tmpprotname);
 			remove(tmpprotname);
 		}
 
 		residue[FA->res_cnt].latm[0] = FA->atm_cnt;
-		for (int k = 1; k <= FA->res_cnt; k++)
+		for (int k = 1; k <= FA->res_cnt; k++) {
 			FA->atm_cnt_real += residue[k].latm[0] - residue[k].fatm[0] + 1;
+		}
 
 		calc_center(FA, atoms, residue);
-		if (FA->is_protein) residue_conect(FA, atoms, residue, deftyp);
+
+		if (FA->is_protein) {
+			residue_conect(FA, atoms, residue, deftyp);
+		}
 		assign_types(FA, atoms, residue, deftyp);
 
-		// ── Load ligand from MOL2 ──
-		printf("ligand is <%s>\n", ligand_path);
-		if (!read_mol2_ligand(FA, &atoms, &residue, ligand_path)) {
-			fprintf(stderr, "ERROR: Failed to load ligand from %s\n", ligand_path);
-			Terminate(8);
+		// ── 5. Read ligand (MOL2 or SDF) ──
+		{
+			const char* ext = strrchr(ligand_file, '.');
+			int lig_ok = 0;
+			bool is_sdf = false;
+			if (ext) {
+				is_sdf = (strcmp(ext, ".sdf") == 0 || strcmp(ext, ".SDF") == 0 ||
+				          strcmp(ext, ".mol") == 0 || strcmp(ext, ".MOL") == 0);
+			}
+			if (is_sdf) {
+				printf("read ligand SDF <%s>\n", ligand_file);
+				lig_ok = read_sdf_ligand(FA, &atoms, &residue, ligand_file);
+			} else {
+				printf("read ligand MOL2 <%s>\n", ligand_file);
+				lig_ok = read_mol2_ligand(FA, &atoms, &residue, ligand_file);
+			}
+			if (!lig_ok) {
+				fprintf(stderr, "ERROR: Failed to read ligand file: %s\n", ligand_file);
+				Terminate(2);
+			}
 		}
 
+		// ── 6. Assign radii and types ──
 		assign_radii_types(FA, atoms, residue);
+		printf("radii are now assigned\n");
 
-		// ── Auto-detect binding site ──
-		strcpy(FA->rngopt, "locclf");
-		printf("AUTO binding-site detection (CleftDetector) ...\n");
-		sphere* spheres = detect_cleft(atoms, residue, FA->atm_cnt_real, FA->res_cnt);
-		if (!spheres) {
-			fprintf(stderr, "ERROR: AUTO cleft detection found no cavities.\n");
-			Terminate(2);
+		// ── 7. Automatic binding site detection ──
+		{
+			printf("AUTO binding-site detection (CleftDetector) ...\n");
+			strcpy(FA->rngopt, "locclf");
+
+			sphere* spheres = detect_cleft(atoms, residue, FA->atm_cnt_real, FA->res_cnt);
+			if (spheres == NULL) {
+				fprintf(stderr, "ERROR: AUTO cleft detection found no cavities.\n");
+				Terminate(2);
+			}
+
+			cleftgrid = generate_grid(FA, spheres, atoms, residue);
+			calc_cleftic(FA, cleftgrid);
+
+			// Free spheres linked list
+			while (spheres != NULL) {
+				sphere* prev = spheres->prev;
+				free(spheres);
+				spheres = prev;
+			}
 		}
 
-		cleftgrid = generate_grid(FA, spheres, atoms, residue);
-		calc_cleftic(FA, cleftgrid);
-
-		// Free sphere linked list
-		free_sphere_list(spheres);
-
-		ic_bounds(FA, FA->rngopt);
-		update_optres(atoms, residue, FA->atm_cnt, FA->optres, FA->num_optres);
-
-		printf("Direct loading complete: %d atoms, %d residues, %d grid points\n",
-		       FA->atm_cnt, FA->res_cnt, FA->num_grd);
+		printf("Direct loading: receptor/ligand structures loaded, cleft detected\n");
 	}
 
 	//printf("END FILE:<%s>\n",end_strfile);
@@ -474,8 +509,30 @@ int main(int argc, char **argv){
 	if (legacy_mode) {
 		printf("Reading input (%s)...\n",dockinp);
 		read_input(FA,&atoms,&residue,&rotamer,&cleftgrid,dockinp);
+	} else {
+		// Direct mode: set up IC bounds and optimization parameters
+		// (receptor, ligand, and cleft grid were already loaded above)
+		ic_bounds(FA, FA->rngopt);
+
+		FA->translational = 1;
+
+		int opt[2] = {0, 0};
+		char chain = ' ';
+		add2_optimiz_vec(FA, atoms, residue, opt, chain, "");
+		add2_optimiz_vec(FA, atoms, residue, opt, chain, "SC");
+		add2_optimiz_vec(FA, atoms, residue, opt, chain, "NM");
+
+		if (FA->translational && FA->num_grd == 1) {
+			fprintf(stderr, "ERROR: the binding-site has no anchor points\n");
+			Terminate(2);
+		}
+
+		update_optres(atoms, residue, FA->atm_cnt, FA->optres, FA->num_optres);
+
+		printf("Direct loading complete: %d atoms, %d residues, %d grid points, %d params\n",
+		       FA->atm_cnt, FA->res_cnt, FA->num_grd, FA->npar);
 	}
-	
+
 	// memory allocation and initialization of VC struct
 	if (strcmp(FA->complf,"VCT")==0)
 	{

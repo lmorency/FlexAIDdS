@@ -47,7 +47,18 @@ public:
         return matrix_[bin_i * SHANNON_BINS + bin_j];
     }
 
+    // Load trained 256×256 matrix from binary blob (SHNN header).
+    // Returns false on I/O error or magic mismatch.
+    bool initialise_from_file(const std::string& path);
+
+    // Load matrix directly from float data (256*256 float32 values).
+    void initialise_from_data(const float* data, int count);
+
     bool is_initialised() const noexcept { return initialised_; }
+
+    // Raw access to underlying data (for pybind11 zero-copy views)
+    const double* data() const noexcept { return matrix_.data(); }
+    int size() const noexcept { return static_cast<int>(matrix_.size()); }
 
 private:
     ShannonEnergyMatrix() = default;

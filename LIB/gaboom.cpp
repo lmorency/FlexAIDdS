@@ -562,7 +562,7 @@ void fitness_stats(GB_Global* GB, const chromosome* chrom,int pop_size){
 	GB->fit_avg=0.0;
 
 	flag=1;
-	for(i=0;i<pop_size-i;i++){
+	for(i=0;i<pop_size;i++){
 		if (flag){
 			GB->fit_max=chrom[i].fitnes;
 			flag=0;
@@ -1767,6 +1767,12 @@ void read_gainputs(FA_Global* FA,GB_Global* GB,int* gen_int,int* sz_part,char fi
 	char buffer[MAX_PATH__];         /* a line from the INPUT file */
 	char field[9];           /* field names on INPUT file */
 
+	// Direct mode: GA params already set by apply_config — skip file reading
+	if(file[0] == '\0'){
+		printf("read_gainputs: using pre-configured GA parameters (direct mode)\n");
+		return;
+	}
+
 	//printf("file here is <%s>\n",file);
 	infile_ptr=NULL;
 	if(!OpenFile_B(file,"r",&infile_ptr)){
@@ -2092,7 +2098,7 @@ void QuickSort(chromosome* list, int beg, int end, bool energy)
             while ( (l<=r) && ( ( energy && QS_ASC(list[l].evalue,piv) <= 0 ) ||
 								( !energy && QS_DSC(list[l].fitnes,piv) <= 0 ) ) ) l++;
             while ( (l<=r) && ( ( energy && QS_ASC(list[r].evalue,piv) > 0 ) ||
-								( !energy && QS_DSC(list[r].fitnes,piv) ) ) ) r--;
+								( !energy && QS_DSC(list[r].fitnes,piv) > 0 ) ) ) r--;
 
             if (l>r) break;
 

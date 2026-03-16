@@ -444,10 +444,10 @@ extern "C" int fx_population_size(FXBindingPopulationRef pop) {
 
 extern "C" FXBindingModeRef fx_population_get_mode(FXBindingPopulationRef pop, int index) {
     if (!pop || !pop->pop) return nullptr;
-    BindingMode* mode = pop->pop->get_binding_mode(index);
-    if (!mode) return nullptr;
+    if (index < 0 || index >= pop->pop->get_Population_size()) return nullptr;
+
     auto* impl = new FXBindingModeImpl();
-    impl->mode = mode;
+    impl->mode = const_cast<BindingMode*>(&pop->pop->get_binding_mode(index));
     return impl;
 }
 
@@ -474,10 +474,12 @@ extern "C" FXStatMechEngineRef fx_population_global_ensemble(FXBindingPopulation
 
 extern "C" double fx_population_delta_G(FXBindingPopulationRef pop, int mode1_index, int mode2_index) {
     if (!pop || !pop->pop) return 0.0;
-    const BindingMode* m1 = pop->pop->get_binding_mode(mode1_index);
-    const BindingMode* m2 = pop->pop->get_binding_mode(mode2_index);
-    if (!m1 || !m2) return 0.0;
-    return pop->pop->compute_delta_G(*m1, *m2);
+    int n = pop->pop->get_Population_size();
+    if (mode1_index < 0 || mode1_index >= n || mode2_index < 0 || mode2_index >= n) return 0.0;
+
+    const auto& m1 = pop->pop->get_binding_mode(mode1_index);
+    const auto& m2 = pop->pop->get_binding_mode(mode2_index);
+    return pop->pop->compute_delta_G(m1, m2);
 }
 
 // ─── BindingMode access ─────────────────────────────────────────────────────
@@ -532,13 +534,14 @@ extern "C" double* fx_mode_boltzmann_weights(FXBindingModeRef mode, int* out_cou
 extern "C" FXPoseInfo fx_mode_get_pose(FXBindingModeRef mode, int index) {
     FXPoseInfo info = {};
     if (!mode || !mode->mode) return info;
-    const Pose* pose = mode->mode->get_pose(index);
-    if (!pose) return info;
-    info.chrom_index      = pose->chrom_index;
-    info.order            = pose->order;
-    info.reach_dist       = pose->reachDist;
-    info.cf               = pose->CF;
-    info.boltzmann_weight = pose->boltzmann_weight;
+    if (index < 0 || index >= mode->mode->get_BindingMode_size()) return info;
+
+    const Pose& p = mode->mode->get_pose(index);
+    info.chrom_index = p.chrom_index;
+    info.order = p.order;
+    info.reach_dist = p.reachDist;
+    info.cf = p.CF;
+    info.boltzmann_weight = p.boltzmann_weight;
     return info;
 }
 
