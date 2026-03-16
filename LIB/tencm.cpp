@@ -376,6 +376,13 @@ void TorsionalENM::build_contacts()
 #endif
     }
 #endif // _OPENMP
+
+    // Pad contact list to next multiple of 16 for SIMD tail elimination.
+    // Sentinel contacts have k=0, contributing nothing to the Hessian.
+#ifdef __AVX512F__
+    while (contacts_.size() % 16 != 0)
+        contacts_.push_back({0, 0, 0.0f, 0.0f});
+#endif
 }
 
 // ─── build_bonds ─────────────────────────────────────────────────────────────
@@ -433,12 +440,8 @@ void TorsionalENM::assemble_hessian()
     const int M = static_cast<int>(bonds_.size());
     const int N = static_cast<int>(ca_.size());
 
-#ifdef FLEXAIDS_HAS_EIGEN
-    // ── Eigen path: accumulate into Eigen matrix, leverage BLAS ──
-
-    Eigen::MatrixXd H = Eigen::MatrixXd::Zero(M, M);
-
-    // Pre-compute Jacobians: J_flat[k*N + i] = 3-vector
+    // Pre-compute Jacobians: J[k*N + i] = 3-vector.
+    // Hoisted here so it can be cached for bfactors()/sample() reuse.
     std::vector<std::array<float,3>> J(static_cast<std::size_t>(M * N));
 
     #if defined(_OPENMP) && !defined(TENCM_NO_OMP)
@@ -447,6 +450,11 @@ void TorsionalENM::assemble_hessian()
     for (int k = 0; k < M; ++k)
         for (int i = 0; i < N; ++i)
             J[static_cast<std::size_t>(k * N + i)] = jac(k, i);
+
+#ifdef FLEXAIDS_HAS_EIGEN
+    // ── Eigen path: accumulate into Eigen matrix, leverage BLAS ──
+
+    Eigen::MatrixXd H = Eigen::MatrixXd::Zero(M, M);
 
     // Per-contact: compute ΔJ vectors and accumulate outer product
     #if defined(_OPENMP) && !defined(TENCM_NO_OMP)
@@ -517,19 +525,9 @@ void TorsionalENM::assemble_hessian()
     Eigen::Map<Eigen::MatrixXd>(H_.data(), M, M) = H;
 
 #else
-    // ── Non-Eigen path ──
+    // ── Non-Eigen path (J already pre-computed above) ──
 
     H_.assign(static_cast<std::size_t>(M * M), 0.0);
-
-    // Pre-compute Jacobians
-    std::vector<std::array<float,3>> J(static_cast<std::size_t>(M * N));
-
-    #if defined(_OPENMP) && !defined(TENCM_NO_OMP)
-    #pragma omp parallel for schedule(static) collapse(2)
-    #endif
-    for (int k = 0; k < M; ++k)
-        for (int i = 0; i < N; ++i)
-            J[static_cast<std::size_t>(k * N + i)] = jac(k, i);
 
     #if defined(_OPENMP) && !defined(TENCM_NO_OMP)
     // Thread-local Hessians
@@ -597,6 +595,10 @@ void TorsionalENM::assemble_hessian()
     }
     #endif
 #endif // FLEXAIDS_HAS_EIGEN
+
+    // Cache the Jacobian for reuse by bfactors() and sample()
+    J_cached_ = std::move(J);
+    jac_cached_ = true;
 }
 
 // ─── Jacobi eigenvalue decomposition ─────────────────────────────────────────
@@ -878,6 +880,7 @@ std::vector<float> TorsionalENM::bfactors(float temperature) const
             if (s2 == 0.0) continue;
 
             // J_m(i) = Σ_k v_mk * J_k(i)
+            // Use cached Jacobian when available to avoid recomputing cross products.
             float jmi[3] = {0.0f, 0.0f, 0.0f};
 
 #if defined(__AVX512F__)
@@ -887,14 +890,14 @@ std::vector<float> TorsionalENM::bfactors(float temperature) const
             __m512d acc_y = _mm512_setzero_pd();
             __m512d acc_z = _mm512_setzero_pd();
             int k = 0;
-            // Only bonds k < i contribute (j(k,i) = 0 for k >= i)
             int k_end = std::min(M, i);
             for (; k + 7 < k_end; k += 8) {
                 __m512d vmk = _mm512_loadu_pd(evec + k);
-                // Gather 8 Jacobians
                 double jx[8], jy[8], jz[8];
                 for (int q = 0; q < 8; ++q) {
-                    auto jkq = jac(k + q, i);
+                    const auto& jkq = jac_cached_
+                        ? J_cached_[static_cast<std::size_t>((k + q) * N + i)]
+                        : jac(k + q, i);
                     jx[q] = jkq[0]; jy[q] = jkq[1]; jz[q] = jkq[2];
                 }
                 acc_x = _mm512_fmadd_pd(vmk, _mm512_loadu_pd(jx), acc_x);
@@ -904,20 +907,23 @@ std::vector<float> TorsionalENM::bfactors(float temperature) const
             jmi[0] = static_cast<float>(_mm512_reduce_add_pd(acc_x));
             jmi[1] = static_cast<float>(_mm512_reduce_add_pd(acc_y));
             jmi[2] = static_cast<float>(_mm512_reduce_add_pd(acc_z));
-            // Scalar tail
             for (; k < k_end; ++k) {
-                auto jki = jac(k, i);
-                float vmk = static_cast<float>(evec[k]);
-                jmi[0] += vmk * jki[0];
-                jmi[1] += vmk * jki[1];
-                jmi[2] += vmk * jki[2];
+                const auto& jki = jac_cached_
+                    ? J_cached_[static_cast<std::size_t>(k * N + i)]
+                    : jac(k, i);
+                float vmk_f = static_cast<float>(evec[k]);
+                jmi[0] += vmk_f * jki[0];
+                jmi[1] += vmk_f * jki[1];
+                jmi[2] += vmk_f * jki[2];
             }
 
 #else
-            // Scalar / AVX2 path (Jacobian is a cross product, hard to batch in AVX2)
+            // Scalar / AVX2 path — use cached Jacobian when available
             for (int k = 0; k < M; ++k) {
                 if (i <= k) continue;
-                auto jki = jac(k, i);
+                const auto& jki = jac_cached_
+                    ? J_cached_[static_cast<std::size_t>(k * N + i)]
+                    : jac(k, i);
                 float vmk = static_cast<float>(
                     modes_[static_cast<std::size_t>(m)].eigenvector[static_cast<std::size_t>(k)]);
                 jmi[0] += vmk * jki[0];

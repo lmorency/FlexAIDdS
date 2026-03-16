@@ -70,6 +70,7 @@ class FastOPTICS
 	
 	public:
 		explicit 	FastOPTICS(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, genlim* gen_lim, atom* atoms, resid* residue, gridpoint* cleftgrid, int nChrom, BindingPopulation&, int nPoints); // Constructor (publicly called from FlexAID's *_cluster.cxx)
+		explicit 	FastOPTICS(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, genlim* gen_lim, atom* atoms, resid* residue, gridpoint* cleftgrid, int nChrom, BindingPopulation&, int nPoints, bool useGPU); // GPU-accelerated overload
 		void 		Execute_FastOPTICS(char* end_strfile, char* tmp_end_strfile);
         void 		output_OPTICS(char* end_strfile, char* tmp_end_strfile);
         void 		output_3d_OPTICS_ordering(char* end_strfile, char* tmp_end_strfile);
@@ -82,6 +83,7 @@ class FastOPTICS
 		int N;			// N : number of chromosomes to cluster
 		int minPoints;	// minPts : minimal number of neighbors (only parameter in FOPTICS)
 		int nDimensions;
+		bool useGPU;	// true when CUDA-accelerated neighbour search is active
 		
 		// FOPTICS algorithm attributes
 		int iOrder;

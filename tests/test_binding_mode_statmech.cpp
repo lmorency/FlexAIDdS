@@ -353,6 +353,107 @@ TEST_F(BindingModeStatMechTest, HighTemperatureBehavior) {
 }
 
 // ===========================================================================
+// POPULATION SHANNON ENTROPY TESTS
+// ===========================================================================
+
+TEST_F(BindingModeStatMechTest, ShannonEntropyPopulation) {
+    // Create two binding modes with different energy distributions
+    BindingMode mode1(test_population);
+    for (int i = 0; i < 3; ++i) {
+        Pose p = create_mock_pose(-15.0 - i, i);
+        mode1.add_Pose(p);
+    }
+
+    BindingMode mode2(test_population);
+    for (int i = 0; i < 2; ++i) {
+        Pose p = create_mock_pose(-10.0 - i, i);
+        mode2.add_Pose(p);
+    }
+
+    test_population->add_BindingMode(mode1);
+    test_population->add_BindingMode(mode2);
+
+    double shannon_S = test_population->get_shannon_entropy();
+
+    // Shannon entropy should be positive for a multi-pose population
+    EXPECT_GT(shannon_S, 0.0);
+}
+
+TEST_F(BindingModeStatMechTest, ShannonEntropyEmptyPopulation) {
+    // Empty population should have zero Shannon entropy
+    double shannon_S = test_population->get_shannon_entropy();
+    EXPECT_NEAR(shannon_S, 0.0, EPSILON);
+}
+
+TEST_F(BindingModeStatMechTest, ShannonCacheInvalidation) {
+    BindingMode mode1(test_population);
+    for (int i = 0; i < 3; ++i) {
+        Pose p = create_mock_pose(-15.0 - i, i);
+        mode1.add_Pose(p);
+    }
+    test_population->add_BindingMode(mode1);
+
+    double S1 = test_population->get_shannon_entropy();
+
+    // Adding another mode should invalidate the cache and change S
+    BindingMode mode2(test_population);
+    for (int i = 0; i < 3; ++i) {
+        Pose p = create_mock_pose(-5.0 - i * 3.0, i);
+        mode2.add_Pose(p);
+    }
+    test_population->add_BindingMode(mode2);
+
+    double S2 = test_population->get_shannon_entropy();
+
+    // Shannon entropy should change after adding a mode with different energies
+    EXPECT_NE(S1, S2);
+}
+
+TEST_F(BindingModeStatMechTest, DeltaGMatrix) {
+    BindingMode mode1(test_population);
+    for (int i = 0; i < 3; ++i) {
+        Pose p = create_mock_pose(-15.0 - i, i);
+        mode1.add_Pose(p);
+    }
+
+    BindingMode mode2(test_population);
+    for (int i = 0; i < 2; ++i) {
+        Pose p = create_mock_pose(-10.0 - i, i);
+        mode2.add_Pose(p);
+    }
+
+    BindingMode mode3(test_population);
+    for (int i = 0; i < 2; ++i) {
+        Pose p = create_mock_pose(-8.0 - i, i);
+        mode3.add_Pose(p);
+    }
+
+    test_population->add_BindingMode(mode1);
+    test_population->add_BindingMode(mode2);
+    test_population->add_BindingMode(mode3);
+
+    auto matrix = test_population->get_deltaG_matrix();
+
+    // Matrix should be 3x3
+    EXPECT_EQ(matrix.size(), 3u);
+    for (const auto& row : matrix) {
+        EXPECT_EQ(row.size(), 3u);
+    }
+
+    // Diagonal should be zero
+    for (size_t i = 0; i < matrix.size(); ++i) {
+        EXPECT_NEAR(matrix[i][i], 0.0, EPSILON);
+    }
+
+    // Anti-symmetry: matrix[i][j] = -matrix[j][i]
+    for (size_t i = 0; i < matrix.size(); ++i) {
+        for (size_t j = i + 1; j < matrix.size(); ++j) {
+            EXPECT_NEAR(matrix[i][j], -matrix[j][i], EPSILON);
+        }
+    }
+}
+
+// ===========================================================================
 // PERFORMANCE TESTS (Optional, disabled in CI)
 // ===========================================================================
 

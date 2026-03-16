@@ -105,6 +105,12 @@ struct GB_Global_struct{
 	int          num_print;
 	int	     	print_int;
 
+	// Entropy convergence (opt-in early termination)
+	int          entropy_convergence;    // 0=off (default), 1=on
+	int          entropy_check_interval; // check every N generations (default: 10)
+	int          entropy_window;         // plateau window size (default: 5)
+	double       entropy_rel_threshold;  // relative change threshold (default: 0.01)
+
 	char         pop_init_method[9];
 	char         pop_init_file[MAX_PATH__];
 	char         fitness_model[9];

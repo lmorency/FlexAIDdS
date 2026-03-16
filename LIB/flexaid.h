@@ -42,6 +42,7 @@
 #define MAX_NUM_ATM 10000           // max number of atoms allowed 
 #define MAX_ATM_HET 200             // max number of atoms in het groups allowed 
 //#define MAX_FLEX_BONDS 20           // max number of flexible bonds for het groups
+#define MAX_ATOM_NUMBER 100000      // Max PDB atom number for contacts/num_atm arrays
 #define MAX_GRID_POINTS 1000        // Total number of points to anchor ligand
 #define MAX_NORMAL_GRID 5000        // max number of grid points in normal grid
 #define MAX_SPHERE_POINTS 610       // Total number of points in atom surface sphere 

@@ -1,7 +1,7 @@
 // FleetScheduler.swift — Distributed work scheduling across Apple devices
 //
-// Actor managing work distribution, iCloud coordination, and thermal awareness.
-// Enforces Advanced Data Protection before fleet operations.
+// Actor managing work distribution, iCloud coordination, thermal awareness,
+// battery-aware scheduling, orphan recovery, and local fallback.
 //
 // Copyright 2024-2026 Louis-Philippe Morency / NRGlab, Universite de Montreal
 // SPDX-License-Identifier: Apache-2.0
@@ -10,6 +10,37 @@ import Foundation
 #if canImport(CryptoKit)
 import CryptoKit
 #endif
+#if canImport(os)
+import os
+#endif
+
+/// Fleet operation mode.
+public enum FleetMode: String, Sendable, Codable {
+    case distributed   // iCloud fleet coordination across devices
+    case localOnly     // Single device (fallback when iCloud unavailable)
+}
+
+/// Fleet-wide metrics for dashboard reporting.
+public struct FleetMetrics: Sendable, Codable {
+    public let jobID: UUID
+    public let totalChunks: Int
+    public let completedChunks: Int
+    public let failedChunks: Int
+    public let orphanedChunks: Int
+    public let activeDevices: Int
+    public let totalTFLOPS: Double
+    public let meanChunkTimeSeconds: Double?
+    public let estimatedRemainingSeconds: Double?
+    public let timestamp: Date
+
+    public var progressFraction: Double {
+        totalChunks > 0 ? Double(completedChunks) / Double(totalChunks) : 0
+    }
+
+    public var isComplete: Bool {
+        completedChunks + failedChunks >= totalChunks
+    }
+}
 
 /// Actor for scheduling and distributing docking work across the Bonhomme fleet.
 ///
@@ -20,10 +51,14 @@ import CryptoKit
 /// for chunk in chunks {
 ///     try await scheduler.submitToiCloud(chunk)
 /// }
+///
+/// // Periodically sweep for orphaned chunks
+/// let recovered = scheduler.sweepOrphanedChunks()
 /// ```
 public actor FleetScheduler {
     private var activeJobs: [UUID: [WorkChunk]] = [:]
     private var completedResults: [UUID: [ChunkResult]] = [:]
+    private var deviceThroughput: [String: Double] = [:]  // deviceID → chromosomes/second
 
     #if canImport(CryptoKit)
     private var encryptionKey: SymmetricKey?
@@ -32,8 +67,22 @@ public actor FleetScheduler {
     /// iCloud Drive container identifier for fleet data
     private let containerID: String
 
+    /// Current fleet mode (distributed or local-only fallback)
+    public private(set) var mode: FleetMode
+
+    #if canImport(os)
+    private let logger = Logger(subsystem: "com.bonhomme.flexaidds", category: "fleet")
+    #endif
+
     public init(containerID: String = "iCloud.com.bonhomme.flexaidds") {
         self.containerID = containerID
+        // Detect iCloud availability and set mode
+        let fileManager = FileManager.default
+        if fileManager.url(forUbiquityContainerIdentifier: nil) != nil {
+            self.mode = .distributed
+        } else {
+            self.mode = .localOnly
+        }
     }
 
     // MARK: - ADP Enforcement
@@ -45,10 +94,20 @@ public actor FleetScheduler {
         guard let containerURL = fileManager.url(forUbiquityContainerIdentifier: nil) else {
             return false
         }
-        // If iCloud is available, ADP is managed at the account level.
-        // We verify iCloud availability as a proxy — full ADP detection
-        // requires entitlements.
         return fileManager.fileExists(atPath: containerURL.path)
+    }
+
+    /// Check iCloud health and switch mode if needed.
+    public func refreshMode() {
+        let fileManager = FileManager.default
+        if fileManager.url(forUbiquityContainerIdentifier: nil) != nil {
+            mode = .distributed
+        } else {
+            mode = .localOnly
+            #if canImport(os)
+            logger.warning("iCloud unavailable — falling back to local-only mode")
+            #endif
+        }
     }
 
     // MARK: - Work Splitting
@@ -60,30 +119,47 @@ public actor FleetScheduler {
     ///   - temperature: Simulation temperature in Kelvin
     ///   - devices: Available devices and their capabilities
     ///   - configData: Serialized configuration data
+    ///   - chunkTimeout: Timeout per chunk in seconds (default 1 hour)
     /// - Returns: Array of work chunks ready for distribution
     public func splitWork(
         totalChromosomes: Int,
         maxGenerations: Int,
         temperature: Double = 300.0,
         devices: [DeviceCapability],
-        configData: Data
+        configData: Data,
+        chunkTimeout: TimeInterval = 3600
     ) -> [WorkChunk] {
         let jobID = UUID()
 
-        // Filter devices that can compute (not in critical thermal state)
-        let activeDevices = devices.filter { $0.thermalState != .critical && $0.computeWeight > 0 }
-        guard !activeDevices.isEmpty else { return [] }
+        // Filter devices that are available (thermal + battery safe)
+        let activeDevices = devices.filter { $0.isAvailable }
+        guard !activeDevices.isEmpty else {
+            #if canImport(os)
+            logger.error("No available devices for job — all excluded by thermal/battery state")
+            #endif
+            return []
+        }
 
-        // Calculate total weight
-        let totalWeight = activeDevices.reduce(0.0) { $0 + $1.computeWeight }
+        // Use dynamic throughput if available, otherwise use static compute weight
+        let weights: [Double] = activeDevices.map { device in
+            if let throughput = deviceThroughput[device.deviceID], throughput > 0 {
+                return throughput * (device.computeWeight > 0 ? 1.0 : 0.0)
+            }
+            return device.computeWeight
+        }
+        let totalWeight = weights.reduce(0.0, +)
+        guard totalWeight > 0 else { return [] }
 
-        // Allocate chromosomes proportional to device weight
         var chunks: [WorkChunk] = []
         var allocatedChromosomes = 0
 
+        #if canImport(os)
+        logger.info("Splitting \(totalChromosomes) chromosomes across \(activeDevices.count) devices (total weight: \(String(format: "%.2f", totalWeight)))")
+        #endif
+
         for (i, device) in activeDevices.enumerated() {
             let isLast = (i == activeDevices.count - 1)
-            let share = device.computeWeight / totalWeight
+            let share = weights[i] / totalWeight
             let chromCount = isLast
                 ? totalChromosomes - allocatedChromosomes
                 : Int(Double(totalChromosomes) * share)
@@ -102,26 +178,92 @@ public actor FleetScheduler {
                 index: chunks.count,
                 totalChunks: activeDevices.count,
                 configData: configData,
-                gaParameters: params
+                gaParameters: params,
+                timeoutSeconds: chunkTimeout
             )
-            chunk.claimedBy = device.deviceID
-            chunk.status = .claimed
+            chunk.claim(by: device.deviceID)
             chunks.append(chunk)
 
             allocatedChromosomes += chromCount
+
+            #if canImport(os)
+            logger.info("  Chunk \(chunk.index): \(chromCount) chromosomes → \(device.model) (\(device.statusSummary))")
+            #endif
         }
 
         activeJobs[jobID] = chunks
         return chunks
     }
 
+    // MARK: - Orphan Recovery
+
+    /// Sweep all active jobs for timed-out chunks and prepare them for retry.
+    /// Returns the number of chunks reclaimed.
+    @discardableResult
+    public func sweepOrphanedChunks() -> Int {
+        var recovered = 0
+
+        for (jobID, chunks) in activeJobs {
+            var updated = chunks
+            for i in updated.indices {
+                guard updated[i].status == .claimed || updated[i].status == .running else { continue }
+
+                if updated[i].isTimedOut {
+                    let deviceID = updated[i].claimedBy ?? "unknown"
+                    let success = updated[i].markOrphanedForRetry()
+
+                    #if canImport(os)
+                    if success {
+                        logger.warning("Chunk \(updated[i].index) orphaned from \(deviceID) — retry \(updated[i].retryCount)/\(updated[i].maxRetries)")
+                    } else {
+                        logger.error("Chunk \(updated[i].index) permanently failed after \(updated[i].maxRetries) retries")
+                    }
+                    #endif
+
+                    recovered += 1
+                }
+            }
+            activeJobs[jobID] = updated
+        }
+
+        return recovered
+    }
+
+    /// Get unclaimed or orphaned chunks available for work-stealing.
+    public func availableChunks(for jobID: UUID) -> [WorkChunk] {
+        guard let chunks = activeJobs[jobID] else { return [] }
+        return chunks
+            .filter { $0.status == .pending || $0.status == .orphaned }
+            .sorted { $0.priority > $1.priority }
+    }
+
+    /// Claim an available chunk for a device (work-stealing).
+    public func claimChunk(chunkID: UUID, deviceID: String) -> Bool {
+        for (jobID, chunks) in activeJobs {
+            if let idx = chunks.firstIndex(where: { $0.id == chunkID }) {
+                guard activeJobs[jobID]![idx].status == .pending || activeJobs[jobID]![idx].status == .orphaned else {
+                    return false
+                }
+                activeJobs[jobID]![idx].claim(by: deviceID)
+                return true
+            }
+        }
+        return false
+    }
+
     // MARK: - iCloud Submission
 
-    /// Submit an encrypted work chunk to iCloud Drive for fleet pickup.
-    /// - Parameter chunk: The work chunk to submit
+    /// Submit a work chunk to iCloud Drive for fleet pickup.
+    /// Falls back to local mode if iCloud is unavailable.
     public func submitToiCloud(_ chunk: WorkChunk) async throws {
         let fileManager = FileManager.default
         guard let containerURL = fileManager.url(forUbiquityContainerIdentifier: nil) else {
+            if mode == .distributed {
+                mode = .localOnly
+                #if canImport(os)
+                logger.warning("iCloud became unavailable during submission — switched to local mode")
+                #endif
+            }
             throw FleetError.iCloudUnavailable
         }
 
@@ -134,7 +276,6 @@ public actor FleetScheduler {
     }
 
     /// Submit a completed result back to iCloud Drive.
-    /// - Parameter result: The chunk result to submit
     public func submitResult(_ result: ChunkResult) async throws {
         let fileManager = FileManager.default
         guard let containerURL = fileManager.url(forUbiquityContainerIdentifier: nil) else {
@@ -150,13 +291,69 @@ public actor FleetScheduler {
 
         // Track completion
         completedResults[result.jobID, default: []].append(result)
+
+        // Update device throughput for dynamic rebalancing
+        if let chunks = activeJobs[result.jobID],
+           let chunk = chunks.first(where: { $0.id == result.chunkID }) {
+            let chromosomes = Double(chunk.gaParameters.numChromosomes)
+            let throughput = chromosomes / max(result.computeTimeSeconds, 0.001)
+            deviceThroughput[result.computedBy] = throughput
+        }
+
+        #if canImport(os)
+        logger.info("Result received for chunk \(result.chunkID) from \(result.computedBy) in \(String(format: "%.1f", result.computeTimeSeconds))s")
+        #endif
     }
 
     /// Check if all chunks for a job have completed.
     public func isJobComplete(_ jobID: UUID) -> Bool {
         guard let chunks = activeJobs[jobID] else { return false }
         let results = completedResults[jobID] ?? []
-        return results.count >= chunks.count
+        let failed = chunks.filter { $0.status == .permanentlyFailed }.count
+        return results.count + failed >= chunks.count
+    }
+
+    // MARK: - Fleet Metrics
+
+    /// Get current metrics for a job (for dashboard reporting).
+    public func metrics(for jobID: UUID) -> FleetMetrics? {
+        guard let chunks = activeJobs[jobID] else { return nil }
+        let results = completedResults[jobID] ?? []
+
+        let completedCount = results.count
+        let failedCount = chunks.filter { $0.status == .permanentlyFailed }.count
+        let orphanedCount = chunks.filter { $0.status == .orphaned }.count
+        let activeDeviceIDs = Set(chunks.compactMap(\.claimedBy))
+
+        let meanTime: Double? = results.isEmpty ? nil :
+            results.reduce(0.0) { $0 + $1.computeTimeSeconds } / Double(results.count)
+
+        let remaining: Double? = {
+            guard let mean = meanTime, completedCount > 0 else { return nil }
+            let remaining = chunks.count - completedCount - failedCount
+            return mean * Double(remaining) / max(1, Double(activeDeviceIDs.count))
+        }()
+
+        let totalTFLOPS = deviceThroughput.values.reduce(0.0, +) * 0.001  // Rough conversion
+
+        return FleetMetrics(
+            jobID: jobID,
+            totalChunks: chunks.count,
+            completedChunks: completedCount,
+            failedChunks: failedCount,
+            orphanedChunks: orphanedCount,
+            activeDevices: activeDeviceIDs.count,
+            totalTFLOPS: totalTFLOPS,
+            meanChunkTimeSeconds: meanTime,
+            estimatedRemainingSeconds: remaining,
+            timestamp: Date()
+        )
+    }
+
+    /// Export fleet metrics as JSON for the PWA dashboard.
+    public func metricsJSON(for jobID: UUID) throws -> Data? {
+        guard let m = metrics(for: jobID) else { return nil }
+        return try JSONEncoder().encode(m)
     }
 }
 
@@ -169,6 +366,7 @@ public final class iCloudWatcher: @unchecked Sendable {
     private let containerID: String
     private let continuation: AsyncStream<ChunkResult>.Continuation?
     private let stream: AsyncStream<ChunkResult>
+    private var seenResultIDs: Set<String> = []  // Deduplication
 
     /// Stream of incoming chunk results.
     public var results: AsyncStream<ChunkResult> {
@@ -216,6 +414,10 @@ public final class iCloudWatcher: @unchecked Sendable {
                 continue
             }
 
+            // Deduplicate (NSMetadataQuery may report same file multiple times)
+            guard !seenResultIDs.contains(path) else { continue }
+            seenResultIDs.insert(path)
+
             let url = URL(fileURLWithPath: path)
             if let data = try? Data(contentsOf: url),
                let result = try? JSONDecoder().decode(ChunkResult.self, from: data) {
@@ -233,6 +435,8 @@ public enum FleetError: Error, LocalizedError {
     case advancedDataProtectionRequired
     case encryptionFailed
     case noAvailableDevices
+    case chunkTimeout(chunkID: UUID, deviceID: String)
+    case allRetriesExhausted(chunkID: UUID)
 
     public var errorDescription: String? {
         switch self {
@@ -243,7 +447,11 @@ public enum FleetError: Error, LocalizedError {
         case .encryptionFailed:
             return "Failed to encrypt work chunk for transit"
         case .noAvailableDevices:
-            return "No devices available for fleet compute (all may be in critical thermal state)"
+            return "No devices available for fleet compute (all may be in critical thermal state or low battery)"
+        case .chunkTimeout(let chunkID, let deviceID):
+            return "Chunk \(chunkID) timed out on device \(deviceID)"
+        case .allRetriesExhausted(let chunkID):
+            return "Chunk \(chunkID) failed permanently after all retries exhausted"
         }
     }
 }

@@ -19,7 +19,7 @@ void read_pdb(FA_Global* FA,atom** atoms,resid** residue, char* pdb_name){
   // dynamic memory allocation for atoms and residue
   (*atoms) = (atom*)malloc(FA->MIN_NUM_ATOM*sizeof(atom));
   (*residue) = (resid*)malloc(FA->MIN_NUM_RESIDUE*sizeof(resid));
-  FA->num_atm = (int*)malloc(100000*sizeof(int));
+  FA->num_atm = (int*)malloc(MAX_ATOM_NUMBER*sizeof(int));
 
   if(!(*atoms) || !(*residue) || !FA->num_atm){
     fprintf(stderr, "ERROR: memory allocation error for atoms || residue.\n");

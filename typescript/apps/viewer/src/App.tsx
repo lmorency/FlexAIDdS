@@ -6,11 +6,12 @@
 // Copyright 2024-2026 Louis-Philippe Morency / NRGlab, Universite de Montreal
 // SPDX-License-Identifier: Apache-2.0
 
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import type { BindingPopulation, HealthCorrelation } from '@bonhomme/shared';
 import { deserializePopulation } from '@bonhomme/shared';
 import { IntelligenceEngine } from './IntelligenceEngine';
 import { FleetDashboard } from './FleetDashboard';
+import { MolstarViewer as MolstarViewerComponent, populationColorHex } from './MolstarViewer';
 
 type View = 'population' | 'fleet' | 'health';
 
@@ -125,7 +126,9 @@ function PopulationView({ population, oracleAnalysis }: {
                 <td>{mode.freeEnergy.toFixed(3)}</td>
                 <td>{mode.entropy.toFixed(6)}</td>
                 <td>{mode.heatCapacity.toFixed(6)}</td>
-                <td>{(mode.probability * 100).toFixed(1)}%</td>
+                <td style={{ color: populationColorHex(mode.probability) }}>
+                  {(mode.probability * 100).toFixed(1)}%
+                </td>
               </tr>
             ))}
           </tbody>
@@ -149,39 +152,8 @@ function PopulationView({ population, oracleAnalysis }: {
 
       <section>
         <h2>3D Viewer</h2>
-        <MolstarViewer population={population} />
+        <MolstarViewerComponent population={population} />
       </section>
-    </div>
-  );
-}
-
-/** Color scale for BindingPopulation Boltzmann weights in Mol* */
-function populationColor(weight: number): string {
-  if (weight > 0.7) return '#ff0000';  // hot: high-probability pose
-  if (weight > 0.4) return '#ff8800';  // warm: moderate probability
-  return '#00ff88';                     // cool: low probability
-}
-
-function MolstarViewer({ population }: { population: BindingPopulation }) {
-  const containerRef = React.useRef<HTMLDivElement>(null);
-
-  return (
-    <div>
-      <div
-        ref={containerRef}
-        id="molstar-viewer"
-        style={{ width: '100%', height: '500px', background: '#1a1a2e', borderRadius: '8px' }}
-      >
-        {/* Mol* PluginContext will be mounted here when molstar is available */}
-      </div>
-      {population.modes.length > 0 && (
-        <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem', fontSize: '0.85em' }}>
-          <span>Boltzmann weight scale:</span>
-          <span style={{ color: populationColor(0.8) }}>High (&gt;0.7)</span>
-          <span style={{ color: populationColor(0.5) }}>Medium (0.4-0.7)</span>
-          <span style={{ color: populationColor(0.2) }}>Low (&lt;0.4)</span>
-        </div>
-      )}
     </div>
   );
 }

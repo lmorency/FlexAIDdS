@@ -100,11 +100,23 @@ class FlexAIDSPanel(QtWidgets.QDialog):
         self.print_details_btn = QtWidgets.QPushButton("Print Mode Details")
         self.print_details_btn.setEnabled(False)
 
+        self.entropy_heatmap_btn = QtWidgets.QPushButton("Show Entropy Heatmap")
+        self.entropy_heatmap_btn.setEnabled(False)
+
+        self.animate_btn = QtWidgets.QPushButton("Animate Mode Transition")
+        self.animate_btn.setEnabled(False)
+
+        self.itc_plot_btn = QtWidgets.QPushButton("ITC Compensation Plot")
+        self.itc_plot_btn.setEnabled(False)
+
         viz_layout.addWidget(self.show_ensemble_btn)
         viz_layout.addWidget(self.color_cf_btn)
         viz_layout.addWidget(self.color_free_energy_btn)
         viz_layout.addWidget(self.show_representative_btn)
         viz_layout.addWidget(self.print_details_btn)
+        viz_layout.addWidget(self.entropy_heatmap_btn)
+        viz_layout.addWidget(self.animate_btn)
+        viz_layout.addWidget(self.itc_plot_btn)
 
         viz_group.setLayout(viz_layout)
         layout.addWidget(viz_group)
@@ -139,6 +151,9 @@ class FlexAIDSPanel(QtWidgets.QDialog):
         self.color_free_energy_btn.clicked.connect(self._color_by_free_energy)
         self.show_representative_btn.clicked.connect(self._show_representative)
         self.print_details_btn.clicked.connect(self._print_mode_details)
+        self.entropy_heatmap_btn.clicked.connect(self._show_entropy_heatmap)
+        self.animate_btn.clicked.connect(self._animate_modes)
+        self.itc_plot_btn.clicked.connect(self._itc_compensation_plot)
         self.launch_nrgsuite_btn.clicked.connect(self._launch_nrgsuite)
         self.export_to_nrg_btn.clicked.connect(self._export_mode_table)
 
@@ -206,6 +221,9 @@ class FlexAIDSPanel(QtWidgets.QDialog):
             self.color_free_energy_btn,
             self.show_representative_btn,
             self.print_details_btn,
+            self.entropy_heatmap_btn,
+            self.animate_btn,
+            self.itc_plot_btn,
             self.export_to_nrg_btn,
         ):
             btn.setEnabled(True)
@@ -290,6 +308,41 @@ class FlexAIDSPanel(QtWidgets.QDialog):
         mode_id = self._selected_mode_id()
         if mode_id is not None:
             ro_adapter.show_mode_details(mode_id)
+
+    def _show_entropy_heatmap(self):
+        """Render entropy heatmap for the selected binding mode."""
+        mode_id = self._selected_mode_id()
+        if mode_id is not None:
+            from .entropy_heatmap import render_entropy_heatmap
+            render_entropy_heatmap(mode_id)
+
+    def _animate_modes(self):
+        """Animate transition between two binding modes."""
+        result = ro_adapter._loaded_result
+        if result is None or len(result.binding_modes) < 2:
+            QtWidgets.QMessageBox.warning(
+                self, "Not Enough Modes",
+                "At least two binding modes are needed for animation."
+            )
+            return
+
+        mode_id = self._selected_mode_id()
+        if mode_id is None:
+            return
+
+        # Find the next mode in the sorted list
+        ids = self._mode_ids
+        current_idx = ids.index(mode_id) if mode_id in ids else 0
+        next_idx = (current_idx + 1) % len(ids)
+        next_mode_id = ids[next_idx]
+
+        from .mode_animation import animate_binding_modes
+        animate_binding_modes(mode_id, next_mode_id)
+
+    def _itc_compensation_plot(self):
+        """Generate enthalpy-entropy compensation plot."""
+        from .itc_comparison import plot_enthalpy_entropy_compensation
+        plot_enthalpy_entropy_compensation()
 
     def _launch_nrgsuite(self):
         """Launch NRGSuite plugin (if installed)."""
