@@ -133,7 +133,10 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB) {
         GB->duplicates  = jbool(config, "ga", "duplicates", false) ? 1 : 0;
         GB->ini_mut_prob = jdbl(config, "ga", "initial_mutation_prob", 0.0);
         GB->end_mut_prob = jdbl(config, "ga", "end_mutation_prob", 0.0);
-        GB->ssnum       = jint(config, "ga", "steady_state_num", 0);
+        GB->ssnum            = jint(config, "ga", "steady_state_num", 0);
+        GB->entropy_weight   = jdbl(config, "ga", "entropy_weight", 0.5);
+        GB->entropy_interval = jint(config, "ga", "entropy_interval", 0);
+        GB->use_shannon      = jbool(config, "ga", "use_shannon", false) ? 1 : 0;
     }
 
     // ── Output ──

@@ -198,6 +198,8 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		(*chrom)[i].app_evalue = 0.0;
 		(*chrom)[i].evalue = 0.0;
 		(*chrom)[i].fitnes = 0.0;
+		(*chrom)[i].boltzmann_weight = 0.0;
+		(*chrom)[i].free_energy = 0.0;
 		(*chrom)[i].status = ' ';
 	}
 
@@ -221,6 +223,8 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		(*chrom_snapshot)[i].app_evalue = 0.0;
 		(*chrom_snapshot)[i].evalue = 0.0;
 		(*chrom_snapshot)[i].fitnes = 0.0;
+		(*chrom_snapshot)[i].boltzmann_weight = 0.0;
+		(*chrom_snapshot)[i].free_energy = 0.0;
 		(*chrom_snapshot)[i].status = ' ';
 		//printf("chrom_snapshot[%d] allocated at address %p!\n", i, &(*chrom_snapshot)[i]);
 	}
@@ -480,6 +484,8 @@ void copy_chrom(chromosome* dest, const chromosome* src, int num_genes){
 	dest->evalue = src->evalue;
 	dest->app_evalue = src->app_evalue;
 	dest->fitnes = src->fitnes;
+	dest->boltzmann_weight = src->boltzmann_weight;
+	dest->free_energy = src->free_energy;
 	dest->status = src->status;
 
 	for(int j=0; j<num_genes; j++){
@@ -1267,6 +1273,89 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 			}
 			// Assign fitness AFTER accumulating the full niche count.
 			chrom[pi].fitnes = (double)(GB->num_chrom - pi) / pshare;
+		}
+	}
+
+	if(strcmp(method,"SMFREE")==0){
+		/* SMFREE — StatMech Free-energy-weighted fitness with niche sharing.
+		   Uses the StatMechEngine to compute Boltzmann weights from the
+		   current population's energies. Fitness blends rank-based fitness
+		   with thermodynamic Boltzmann probability:
+		     fitness_i = [(1-w) * rank_component + w * boltzmann_component] / share_i
+		   where w = entropy_weight ∈ [0,1].
+		   This biases selection toward thermodynamically favorable poses
+		   (low free energy) while maintaining diversity via niche sharing.
+		*/
+		if (FA->temperature > 0) {
+			const double T = static_cast<double>(FA->temperature);
+			statmech::StatMechEngine engine(T);
+
+			// Feed all chromosome energies into the engine.
+			for (int si = 0; si < GB->num_chrom; si++) {
+				engine.add_sample(chrom[si].evalue);
+			}
+
+			// Compute ensemble thermodynamics and Boltzmann weights.
+			auto thermo = engine.compute();
+			auto bweights = engine.boltzmann_weights();
+
+			// Store Boltzmann weights and free energy on each chromosome.
+			for (int si = 0; si < GB->num_chrom; si++) {
+				chrom[si].boltzmann_weight = bweights[static_cast<size_t>(si)];
+				chrom[si].free_energy = thermo.free_energy;
+			}
+
+			// Find max Boltzmann weight for normalisation of the Boltzmann component.
+			double max_bw = 0.0;
+			for (int si = 0; si < GB->num_chrom; si++) {
+				if (chrom[si].boltzmann_weight > max_bw)
+					max_bw = chrom[si].boltzmann_weight;
+			}
+			if (max_bw <= 0.0) max_bw = 1.0;
+
+			const double w = GB->entropy_weight;
+
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static) default(none) \
+	shared(chrom, GB, FA, cleftgrid, max_bw, w)
+#endif
+			for (int pi = 0; pi < GB->num_chrom; pi++) {
+				// Niche sharing (same as PSHARE).
+				double pshare = 0.0;
+				for (int pj = 0; pj < GB->num_chrom; pj++) {
+					double prmsp = calc_rmsp(GB->num_genes,
+					                         chrom[pi].genes, chrom[pj].genes,
+					                         FA->map_par, cleftgrid);
+					if (prmsp <= GB->sig_share) {
+						pshare += (1.0 - pow((prmsp / GB->sig_share), GB->alpha));
+					}
+				}
+
+				// Rank component: normalised to [0, 1].
+				double rank_component = static_cast<double>(GB->num_chrom - pi) /
+				                        static_cast<double>(GB->num_chrom);
+
+				// Boltzmann component: normalised to [0, 1] by max weight.
+				double boltz_component = chrom[pi].boltzmann_weight / max_bw;
+
+				// Blended fitness divided by niche count.
+				double blended = (1.0 - w) * rank_component + w * boltz_component;
+				chrom[pi].fitnes = blended * static_cast<double>(GB->num_chrom) / pshare;
+			}
+
+			// Log ensemble thermodynamics periodically.
+			if (gen_id % 50 == 0) {
+				fprintf(stderr, "[SMFREE] gen=%d  F=%.3f  <E>=%.3f  S=%.6f  Cv=%.4f  σ_E=%.3f\n",
+				        gen_id, thermo.free_energy, thermo.mean_energy,
+				        thermo.entropy, thermo.heat_capacity, thermo.std_energy);
+			}
+		} else {
+			// Temperature = 0: fall back to rank-only (same as LINEAR).
+			for (i = 0; i < GB->num_chrom; i++) {
+				chrom[i].fitnes = static_cast<double>(GB->num_chrom - i);
+				chrom[i].boltzmann_weight = 0.0;
+				chrom[i].free_energy = 0.0;
+			}
 		}
 	}
 
