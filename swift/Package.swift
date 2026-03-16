@@ -67,7 +67,7 @@ let package = Package(
         ),
         .target(
             name: "Intelligence",
-            dependencies: ["FlexAIDdS"],
+            dependencies: ["FlexAIDdS", "HealthIntegration"],
             path: "Sources/Intelligence"
         ),
 

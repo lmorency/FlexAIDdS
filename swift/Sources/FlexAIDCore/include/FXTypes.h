@@ -81,6 +81,31 @@ typedef struct {
     double heat_capacity;     // C_v
 } FXBindingModeInfo;
 
+// ─── Shannon ThermoStack result (mirrors shannon_thermo::FullThermoResult) ──
+
+#define FX_SHANNON_MAX_BINS 256
+
+typedef struct {
+    double shannon_entropy;         // Configurational entropy (nats)
+    double torsional_vib_entropy;   // Vibrational entropy (kcal/mol/K)
+    double entropy_contribution;    // -T*S term (kcal/mol)
+    double delta_G;                 // Total free energy (kcal/mol)
+
+    // Convergence diagnostics
+    int    is_converged;            // 1 if entropy plateau reached, 0 otherwise
+    double convergence_rate;        // Relative change in last window
+
+    // Histogram summary
+    int    occupied_bins;           // Number of non-zero histogram bins
+    int    total_bins;              // Total bins used
+    int    num_histogram_bins;      // Actual number of bins in arrays below
+    double histogram_centers[FX_SHANNON_MAX_BINS];  // Bin centers (energy, kcal/mol)
+    double histogram_probs[FX_SHANNON_MAX_BINS];    // Normalized probabilities
+
+    // Hardware backend string (null-terminated, max 32 chars)
+    char   hardware_backend[32];
+} FXShannonThermoResult;
+
 // ─── Physical constants ────────────────────────────────────────────────────
 
 static const double FX_KB_KCAL = 0.001987206;   // kcal mol^-1 K^-1

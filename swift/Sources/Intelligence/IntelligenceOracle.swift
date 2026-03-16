@@ -217,6 +217,43 @@ public actor IntelligenceOracle {
         return analysis
     }
 
+    /// Produce a typed `RefereeVerdict` using the ThermoReferee pipeline.
+    ///
+    /// This is the preferred entry point for robust thermodynamic analysis.
+    /// Uses @Generable structured output (no text parsing), Tool callbacks
+    /// (temperature sensitivity, per-mode query), and pre-computed diagnostics.
+    ///
+    /// Falls back to `analyze()` text-based analysis if ThermoReferee
+    /// initialization fails.
+    ///
+    /// - Parameters:
+    ///   - thermodynamics: Global ensemble thermodynamics
+    ///   - entropyScore: Binding entropy score with Shannon decomposition
+    ///   - gaContext: Optional GA context ref for tool callbacks
+    ///   - eigenvalues: Optional ENCoM eigenvalues for vibrational tools
+    ///   - config: Referee configuration
+    ///   - campaignKey: Optional key for trend tracking
+    /// - Returns: Typed RefereeVerdict via guided generation
+    public func refereeVerdict(
+        thermodynamics: ThermodynamicResult,
+        entropyScore: BindingEntropyScore,
+        gaContext: FXGAContextRef? = nil,
+        eigenvalues: [Double] = [],
+        config: RefereeConfiguration = RefereeConfiguration(),
+        campaignKey: String? = nil
+    ) async throws -> RefereeVerdict {
+        let referee = try await ThermoReferee(
+            config: config,
+            gaContext: gaContext,
+            eigenvalues: eigenvalues
+        )
+        return try await referee.referee(
+            thermodynamics: thermodynamics,
+            entropyScore: entropyScore,
+            campaignKey: campaignKey
+        )
+    }
+
     /// Ask a follow-up question using the existing session context.
     /// The FoundationModels session retains prior conversation turns.
     public func askFollowUp(_ question: String) async throws -> String {

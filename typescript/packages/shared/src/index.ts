@@ -13,4 +13,13 @@ export type {
   ShannonEntropyDecomposition,
 } from './BindingPopulation.js';
 
+export type {
+  RefereeSeverity,
+  RefereeCategory,
+  RefereeFinding,
+  RefereeVerdict,
+  TemperatureSensitivity,
+  ComparativeVerdict,
+} from './RefereeVerdict.js';
+
 export { serializePopulation, deserializePopulation } from './BindingPopulation.js';

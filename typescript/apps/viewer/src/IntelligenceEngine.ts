@@ -9,6 +9,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { BindingPopulation, HealthCorrelation, ShannonEntropyDecomposition } from '@bonhomme/shared';
+import type { RefereeFinding, RefereeVerdict, RefereeSeverity, RefereeCategory } from '@bonhomme/shared';
 
 /** Confidence level for each analysis bullet. */
 export type AnalysisConfidence = 'high' | 'moderate' | 'low';
@@ -327,5 +328,164 @@ export class IntelligenceEngine {
       }
     }
     return null;
+  }
+}
+
+// ─── Rule-Based Referee (Cross-Platform) ──────────────────────────────────────
+
+/**
+ * Deterministic thermodynamic referee for web/non-Apple platforms.
+ * Mirrors the Swift RuleBasedReferee with identical threshold logic.
+ * Produces typed RefereeVerdict with findings, severity, and confidence.
+ */
+export class RuleBasedReferee {
+  /**
+   * Run deterministic referee analysis on a binding population.
+   */
+  static referee(
+    population: BindingPopulation,
+    health?: HealthCorrelation,
+  ): RefereeVerdict {
+    const findings: RefereeFinding[] = [];
+    let trustworthy = true;
+    const thermo = population.globalThermodynamics;
+    const decomp: ShannonEntropyDecomposition | undefined = health?.shannonDecomposition;
+    const kB = 0.001987206;
+
+    // 1. Convergence check (highest priority)
+    if (decomp) {
+      if (!decomp.isConverged) {
+        trustworthy = false;
+        findings.push({
+          title: 'Entropy not converged',
+          detail: `Shannon entropy has not reached a plateau (rate = ${decomp.convergenceRate.toFixed(4)}). Increase GA generations before trusting F or S values.`,
+          severity: 'critical',
+          category: 'convergence',
+        });
+      } else {
+        findings.push({
+          title: 'Entropy converged',
+          detail: `Shannon entropy plateau reached on ${decomp.hardwareBackend} backend. Thermodynamic values are reliable.`,
+          severity: 'pass',
+          category: 'convergence',
+        });
+      }
+    } else {
+      findings.push({
+        title: 'No Shannon decomposition',
+        detail: 'ShannonThermoStack data unavailable. Cannot assess convergence — enable ShannonThermoStack for reliable referee analysis.',
+        severity: 'warning',
+        category: 'convergence',
+      });
+    }
+
+    // 2. Histogram quality
+    if (decomp && decomp.totalBins > 0) {
+      const occupancy = decomp.occupiedBins / decomp.totalBins;
+      if (occupancy < 0.3) {
+        trustworthy = false;
+        findings.push({
+          title: 'Critically sparse histogram',
+          detail: `Only ${decomp.occupiedBins}/${decomp.totalBins} bins occupied (${(occupancy * 100).toFixed(0)}%). Energy landscape severely under-sampled. Double the population size.`,
+          severity: 'critical',
+          category: 'histogram',
+        });
+      } else if (occupancy < 0.5) {
+        findings.push({
+          title: 'Sparse histogram',
+          detail: `${decomp.occupiedBins}/${decomp.totalBins} bins occupied (${(occupancy * 100).toFixed(0)}%). Consider increasing ensemble size for better coverage.`,
+          severity: 'warning',
+          category: 'histogram',
+        });
+      }
+    }
+
+    // 3. Entropy balance (S_vib vs S_conf)
+    if (decomp) {
+      const sConfPhysical = decomp.configurational * kB;
+      if (decomp.vibrational > sConfPhysical * 3.0 && decomp.vibrational > 0.001) {
+        findings.push({
+          title: 'Vibrational entropy dominates',
+          detail: `S_vib (${decomp.vibrational.toFixed(6)}) >> S_conf (${sConfPhysical.toFixed(6)}) kcal/mol/K. Protein backbone flexibility drives entropy; ligand conformational space may be under-explored.`,
+          severity: 'warning',
+          category: 'entropyBalance',
+        });
+      }
+    }
+
+    // 4. Mode entropy imbalance
+    if (decomp && decomp.perModeEntropy.length >= 2) {
+      const maxS = Math.max(...decomp.perModeEntropy);
+      const positiveEntropies = decomp.perModeEntropy.filter((s) => s > 0);
+      const minS = positiveEntropies.length > 0 ? Math.min(...positiveEntropies) : 0;
+      if (minS > 0 && maxS > minS * 10) {
+        const ratio = maxS / minS;
+        findings.push({
+          title: 'Mode entropy imbalance',
+          detail: `Entropy ratio across modes is ${ratio.toFixed(1)}x. One binding mode absorbs most conformational diversity — check for kinetic trapping.`,
+          severity: 'warning',
+          category: 'modeBalance',
+        });
+      }
+    }
+
+    // 5. Enthalpy-entropy compensation
+    if (thermo.freeEnergy < -5 && thermo.entropy > 0.01) {
+      findings.push({
+        title: 'Enthalpy-entropy compensation',
+        detail: `Strong binding (F = ${thermo.freeEnergy.toFixed(1)} kcal/mol) offset by conformational flexibility (S = ${thermo.entropy.toFixed(4)}). Net \u0394G may be less favorable than F alone suggests.`,
+        severity: 'advisory',
+        category: 'compensation',
+      });
+    }
+
+    // 6. Binding affinity
+    const converged = decomp?.isConverged ?? false;
+    if (thermo.freeEnergy < -10) {
+      findings.push({
+        title: 'Strong binding affinity',
+        detail: `F = ${thermo.freeEnergy.toFixed(1)} kcal/mol${converged ? ' (converged)' : ' — convergence not confirmed'}.`,
+        severity: converged ? 'pass' : 'advisory',
+        category: 'affinity',
+      });
+    } else if (thermo.freeEnergy < -5) {
+      findings.push({
+        title: 'Moderate binding affinity',
+        detail: `F = ${thermo.freeEnergy.toFixed(1)} kcal/mol — reasonable drug candidate${converged ? '' : ', pending convergence'}.`,
+        severity: 'advisory',
+        category: 'affinity',
+      });
+    } else {
+      findings.push({
+        title: 'Weak binding affinity',
+        detail: `F = ${thermo.freeEnergy.toFixed(1)} kcal/mol — consider structural optimization.`,
+        severity: 'warning',
+        category: 'affinity',
+      });
+    }
+
+    // Recommendation
+    let recommendedAction: string;
+    if (!trustworthy) {
+      recommendedAction = 'Do not trust current thermodynamic values. Increase GA generations and population size, then re-run.';
+    } else if (!decomp) {
+      recommendedAction = 'Enable ShannonThermoStack for decomposed entropy analysis.';
+    } else if (thermo.freeEnergy > -5) {
+      recommendedAction = 'Consider structural optimization of the ligand or alternative binding sites.';
+    } else {
+      recommendedAction = 'Results are reliable. Proceed with lead optimization.';
+    }
+
+    let confidence: number;
+    if (!trustworthy) confidence = 0.3;
+    else if (decomp?.isConverged) confidence = 0.9;
+    else confidence = 0.6;
+
+    return {
+      findings,
+      overallTrustworthy: trustworthy,
+      recommendedAction,
+      confidence,
+    };
   }
 }
