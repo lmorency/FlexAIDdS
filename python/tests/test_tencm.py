@@ -90,12 +90,12 @@ class TestTorsionalENM:
 
 class TestShannonEntropy:
     def test_uniform_distribution(self):
-        # Uniform distribution over N bins → log2(N) bits
+        # Uniform distribution over N bins → ln(N) nats
         values = list(range(100))
         H = compute_shannon_entropy(values, num_bins=10)
-        # Should be close to log2(10) ≈ 3.32 for uniform
-        assert H > 3.0
-        assert H <= math.log2(10) + 0.1
+        # Should be close to ln(10) ≈ 2.30 for uniform
+        assert H > 2.0
+        assert H <= math.log(10) + 0.1
 
     def test_constant_distribution(self):
         # All same value → 0 entropy
@@ -108,10 +108,10 @@ class TestShannonEntropy:
         assert compute_shannon_entropy([]) == 0.0
 
     def test_two_bins(self):
-        # 50/50 split → 1 bit
+        # 50/50 split → ln(2) ≈ 0.693 nats
         values = [0.0] * 50 + [1.0] * 50
         H = compute_shannon_entropy(values, num_bins=2)
-        assert abs(H - 1.0) < 0.01
+        assert abs(H - math.log(2)) < 0.01
 
 
 # ── Torsional Vibrational Entropy Tests ──────────────────────────────────────
@@ -164,8 +164,13 @@ class TestShannonThermoStack:
         energies = [-10.0, -12.0]
         result = run_shannon_thermo_stack(energies, base_deltaG=-5.0)
         assert result.torsionalVibEntropy == 0.0
-        assert result.entropyContribution == 0.0
-        assert result.deltaG == -5.0
+        # Shannon conf entropy contributes via S_conf = k_B * H_nats
+        H = result.shannonEntropy
+        kB = 0.001987206
+        expected_S = H * kB
+        expected_contrib = -298.15 * expected_S
+        assert abs(result.entropyContribution - expected_contrib) < 1e-8
+        assert abs(result.deltaG - (-5.0 + expected_contrib)) < 1e-8
 
     def test_report_string(self):
         energies = [-10.0, -12.0, -8.0]

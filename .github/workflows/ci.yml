@@ -24,6 +24,7 @@ jobs:
           python -m pip install pytest numpy
       - name: Run pure-Python tests (no C++ extension needed)
         run: |
+          python -m pip install scipy
           PYTHONPATH=python pytest -q \
             python/tests/test_results_io.py \
             python/tests/test_results_loader_models.py \
@@ -36,7 +37,9 @@ jobs:
             python/tests/test_io.py \
             python/tests/test_cli.py \
             python/tests/test_docking.py \
-            python/tests/test_results.py
+            python/tests/test_results.py \
+            python/tests/test_energy_matrix.py \
+            python/tests/test_train_256x256.py
 
   cxx_core_build:
     name: C++ core (${{ matrix.name }})
@@ -57,6 +60,10 @@ jobs:
             os: macos-latest
             cc: clang
             cxx: clang++
+          - name: windows-msvc
+            os: windows-latest
+            cc: cl
+            cxx: cl
     steps:
       - uses: actions/checkout@v4
       - name: Install Linux dependencies
@@ -68,7 +75,13 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           brew install cmake ninja libomp eigen
-      - name: Configure
+      - name: Install Windows dependencies
+        if: runner.os == 'Windows'
+        run: |
+          choco install ninja eigen -y
+        shell: cmd
+      - name: Configure (Unix)
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           export CC=${{ matrix.cc }}
@@ -86,8 +99,30 @@ jobs:
             CMAKE_ARGS+=(-DCMAKE_PREFIX_PATH="$(brew --prefix)")
           fi
           cmake "${CMAKE_ARGS[@]}"
-      - name: Build
+      - name: Configure (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          cmake -S . -B build -G Ninja ^
+            -DCMAKE_BUILD_TYPE=Release ^
+            -DCMAKE_C_COMPILER=cl ^
+            -DCMAKE_CXX_COMPILER=cl ^
+            -DFLEXAIDS_USE_CUDA=OFF ^
+            -DFLEXAIDS_USE_METAL=OFF ^
+            -DFLEXAIDS_USE_OPENMP=OFF ^
+            -DFLEXAIDS_USE_EIGEN=OFF ^
+            -DBUILD_PYTHON_BINDINGS=OFF ^
+            -DBUILD_TESTING=ON
+      - name: Build (Unix)
+        if: runner.os != 'Windows'
         run: cmake --build build --parallel
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          cmake --build build --parallel
       - name: Test
         run: ctest --test-dir build --output-on-failure
 
@@ -120,8 +155,11 @@ jobs:
         run: cmake --build build-python --parallel --target _core
       - name: Run Python binding tests
         run: |
+          python -m pip install scipy
           PYTHONPATH=python pytest -q \
             python/tests/test_statmech_smoke.py \
             python/tests/test_statmech.py \
             python/tests/test_thermodynamics.py \
-            python/tests/test_encom.py
+            python/tests/test_encom.py \
+            python/tests/test_energy_matrix.py \
+            python/tests/test_train_256x256.py

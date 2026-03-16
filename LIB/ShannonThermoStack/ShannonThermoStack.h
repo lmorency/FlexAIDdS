@@ -22,14 +22,49 @@ inline constexpr int   SHANNON_BINS      = 256;    // mega-cluster discretisatio
 inline constexpr double kB_kcal          = 0.001987206; // kcal mol⁻¹ K⁻¹
 inline constexpr double TEMPERATURE_K    = 298.15;
 inline constexpr int   DEFAULT_HIST_BINS = 20;
+inline constexpr int   GPU_DISPATCH_THRESHOLD = 100000; // only use GPU for N > 100K
 
 // ─── result struct ───────────────────────────────────────────────────────────
 struct FullThermoResult {
     double deltaG;              // total free energy (kcal/mol)
-    double shannonEntropy;      // dimensionless bits (conformational)
+    double shannonEntropy;      // dimensionless nats (conformational, natural log)
     double torsionalVibEntropy; // kcal/mol·K (from ENCoM modes)
     double entropyContribution; // -T*S term (kcal/mol)
     std::string report;
+};
+
+// ─── 256×256 precomputed Shannon energy lookup ───────────────────────────────
+// E[i][j] = -kT * p_i * ln(p_j)
+// Generated at startup with seed 42 + Gaussian perturbation of uniform priors.
+class ShannonEnergyMatrix {
+public:
+    static ShannonEnergyMatrix& instance();
+
+    // Initialise matrix from uniform priors (seed = 42)
+    void initialise();
+
+    // O(1) pairwise entropy contribution lookup
+    double lookup(int bin_i, int bin_j) const noexcept {
+        return matrix_[bin_i * SHANNON_BINS + bin_j];
+    }
+
+    // Load trained 256×256 matrix from binary blob (SHNN header).
+    // Returns false on I/O error or magic mismatch.
+    bool initialise_from_file(const std::string& path);
+
+    // Load matrix directly from float data (256*256 float32 values).
+    void initialise_from_data(const float* data, int count);
+
+    bool is_initialised() const noexcept { return initialised_; }
+
+    // Raw access to underlying data (for pybind11 zero-copy views)
+    const double* data() const noexcept { return matrix_.data(); }
+    int size() const noexcept { return static_cast<int>(matrix_.size()); }
+
+private:
+    ShannonEnergyMatrix() = default;
+    std::vector<double> matrix_; // SHANNON_BINS × SHANNON_BINS
+    bool initialised_ = false;
 };
 
 // ─── Shannon entropy computation ──────────────────────────────────────────────
@@ -63,5 +98,12 @@ FullThermoResult run_shannon_thermo_stack(
     const tencm::TorsionalENM&      tencm_model,
     double                          base_deltaG,
     double                          temperature_K = TEMPERATURE_K);
+
+// ─── entropy plateau detection ──────────────────────────────────────────────
+// Returns true if the last `window` entries in `history` all have relative
+// change < `rel_threshold` from the first entry in the window.
+// Used for GA early-termination when Shannon entropy stabilises.
+bool detect_entropy_plateau(const std::vector<double>& history,
+                            int window, double rel_threshold);
 
 } // namespace shannon_thermo

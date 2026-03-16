@@ -118,6 +118,11 @@ private:
     // Hessian stored as dense symmetric matrix (n_bonds × n_bonds)
     std::vector<double> H_;
 
+    // Cached Jacobian matrix: J_cached_[k*N + i] = {Jx, Jy, Jz}
+    // Pre-computed once during assemble_hessian(), reused by bfactors()/sample().
+    std::vector<std::array<float,3>> J_cached_;
+    bool jac_cached_ = false;
+
     bool  built_  = false;
     float cutoff_ = DEFAULT_RC;
     float k0_     = DEFAULT_K0;

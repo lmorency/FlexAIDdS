@@ -8,6 +8,10 @@
 #include <sstream>
 #include <iostream>
 
+#ifdef FLEXAIDS_HAS_EIGEN
+#  include <Eigen/Dense>
+#endif
+
 namespace encom {
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -81,12 +85,25 @@ VibrationalEntropy ENCoMEngine::compute_vibrational_entropy(
     result.temperature = temperature_K;
     
     // Filter non-zero modes (exclude 6 rigid-body modes: 3 translation + 3 rotation)
+#ifdef FLEXAIDS_HAS_EIGEN
+    // Eigen path: vectorised filtering and geometric mean
+    Eigen::ArrayXd all_evals(modes.size());
+    for (std::size_t i = 0; i < modes.size(); ++i)
+        all_evals[static_cast<Eigen::Index>(i)] = modes[i].eigenvalue;
+
+    auto mask = (all_evals > eigenvalue_cutoff);
+    std::vector<double> nonzero_eigenvalues;
+    nonzero_eigenvalues.reserve(modes.size());
+    for (Eigen::Index i = 0; i < all_evals.size(); ++i)
+        if (mask[i]) nonzero_eigenvalues.push_back(all_evals[i]);
+#else
     std::vector<double> nonzero_eigenvalues;
     for (const auto& mode : modes) {
         if (mode.eigenvalue > eigenvalue_cutoff) {
             nonzero_eigenvalues.push_back(mode.eigenvalue);
         }
     }
+#endif
     
     result.n_modes = nonzero_eigenvalues.size();
     
@@ -132,15 +149,28 @@ VibrationalEntropy ENCoMEngine::compute_vibrational_entropy(
 // ──────────────────────────────────────────────────────────────────────────────
 double ENCoMEngine::geometric_mean(const std::vector<double>& values) {
     if (values.empty()) return 0.0;
-    
+
+#ifdef FLEXAIDS_HAS_EIGEN
+    // Eigen vectorised path: log-sum via ArrayXd
+    Eigen::Map<const Eigen::ArrayXd> vals(values.data(),
+        static_cast<Eigen::Index>(values.size()));
+    auto positive = (vals > 0.0);
+    int count = static_cast<int>(positive.cast<double>().sum());
+    if (count == 0) return 0.0;
+    double log_sum = positive.select(vals.log(), 0.0).sum();
+    return std::exp(log_sum / count);
+#else
     // Compute product in log space for numerical stability
     double log_sum = 0.0;
+    int count = 0;
     for (double val : values) {
-        if (val <= 0.0) continue;  // skip non-positive
+        if (val <= 0.0) continue;
         log_sum += std::log(val);
+        ++count;
     }
-    
-    return std::exp(log_sum / values.size());
+    if (count == 0) return 0.0;
+    return std::exp(log_sum / count);
+#endif
 }
 
 }  // namespace encom

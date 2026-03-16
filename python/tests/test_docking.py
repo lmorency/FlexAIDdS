@@ -253,6 +253,52 @@ class TestBindingPopulation:
         pop = BindingPopulation(temperature=310.0)
         assert "310.0K" in repr(pop)
 
+    def test_shannon_entropy_empty(self):
+        pop = BindingPopulation()
+        assert pop.get_shannon_entropy() == 0.0
+
+    def test_shannon_entropy_positive(self):
+        modes = [self._make_mode(-10.0 - i * 2.0) for i in range(3)]
+        pop = BindingPopulation(modes=modes)
+        S = pop.get_shannon_entropy()
+        assert S > 0.0
+
+    def test_shannon_entropy_uniform_higher(self):
+        """A uniform distribution should have higher Shannon S than a skewed one."""
+        # Uniform-ish: similar energies
+        uniform_modes = [self._make_mode(-10.0 - i * 0.01) for i in range(5)]
+        pop_uniform = BindingPopulation(modes=uniform_modes)
+
+        # Skewed: one dominant low energy
+        skewed_modes = [self._make_mode(-50.0)]
+        for i in range(4):
+            skewed_modes.append(self._make_mode(-5.0 - i))
+        pop_skewed = BindingPopulation(modes=skewed_modes)
+
+        assert pop_uniform.get_shannon_entropy() > pop_skewed.get_shannon_entropy()
+
+    def test_deltaG_matrix_empty(self):
+        pop = BindingPopulation()
+        matrix = pop.get_deltaG_matrix()
+        assert matrix == []
+
+    def test_deltaG_matrix_dimensions(self):
+        modes = [self._make_mode(-10.0 - i) for i in range(3)]
+        pop = BindingPopulation(modes=modes)
+        matrix = pop.get_deltaG_matrix()
+        assert len(matrix) == 3
+        for row in matrix:
+            assert len(row) == 3
+
+    def test_deltaG_matrix_antisymmetric(self):
+        modes = [self._make_mode(-10.0 - i * 3.0) for i in range(3)]
+        pop = BindingPopulation(modes=modes)
+        matrix = pop.get_deltaG_matrix()
+        for i in range(3):
+            assert abs(matrix[i][i]) < 1e-10
+            for j in range(i + 1, 3):
+                assert abs(matrix[i][j] + matrix[j][i]) < 1e-10
+
 
 # ── Docking._parse_config – keyword type dispatch ────────────────────────────
 
