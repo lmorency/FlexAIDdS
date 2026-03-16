@@ -1,5 +1,5 @@
 /* ==========================================================================
-   FlexAID∆S — App Logic
+   FlexAID∆S — App Logic (Enhanced)
    ========================================================================== */
 
 (function() {
@@ -38,11 +38,31 @@
     });
   }
 
-  /* --- Header Scroll --- */
+  /* --- Header Scroll + Scroll Progress --- */
   const header = document.getElementById('site-header');
+  const scrollProgress = document.querySelector('.scroll-progress');
+
   window.addEventListener('scroll', () => {
     header.classList.toggle('scrolled', window.scrollY > 60);
+
+    // Update scroll progress bar
+    if (scrollProgress) {
+      const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+      const progress = docHeight > 0 ? Math.min(window.scrollY / docHeight, 1) : 0;
+      scrollProgress.style.transform = 'scaleX(' + progress + ')';
+    }
   }, { passive: true });
+
+  /* --- Back to Top --- */
+  const backToTop = document.querySelector('.back-to-top');
+  if (backToTop) {
+    window.addEventListener('scroll', () => {
+      backToTop.classList.toggle('visible', window.scrollY > 400);
+    }, { passive: true });
+    backToTop.addEventListener('click', () => {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+  }
 
   /* --- Tabs --- */
   const tabs = document.querySelectorAll('.tab-btn');
@@ -100,45 +120,49 @@
     requestAnimationFrame(step);
   }
 
-  /* --- Scroll-Triggered Reveal Animations --- */
-  const revealElements = document.querySelectorAll('.reveal');
-  const prefersReducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  /* --- Hero Stat Counter Animation --- */
+  function animateHeroStats() {
+    const heroStats = document.querySelectorAll('.hero-stat-value');
+    heroStats.forEach(el => {
+      const text = el.textContent.trim();
+      const hasPercent = text.endsWith('%');
+      const num = parseFloat(text);
+      if (isNaN(num)) return;
 
-  if (!prefersReducedMotion && revealElements.length > 0) {
-    const revealObserver = new IntersectionObserver((entries) => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          entry.target.classList.add('revealed');
-          revealObserver.unobserve(entry.target);
-        }
-      });
-    }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
-    revealElements.forEach(el => revealObserver.observe(el));
-  } else {
-    revealElements.forEach(el => el.classList.add('revealed'));
+      const decimals = text.includes('.') ? (text.replace('%', '').split('.')[1] || '').length : 0;
+      const startTime = performance.now();
+      const duration = 1200;
+
+      function step(currentTime) {
+        const elapsed = currentTime - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        const eased = 1 - Math.pow(1 - progress, 3);
+        const current = eased * num;
+        el.textContent = current.toFixed(decimals) + (hasPercent ? '%' : '');
+        if (progress < 1) requestAnimationFrame(step);
+      }
+      el.textContent = (0).toFixed(decimals) + (hasPercent ? '%' : '');
+      requestAnimationFrame(step);
+    });
   }
 
-  /* --- Dynamic GitHub Stats --- */
-  function fetchGitHubStats() {
-    fetch('https://api.github.com/repos/lmorency/FlexAIDdS')
-      .then(r => r.ok ? r.json() : Promise.reject())
-      .then(data => {
-        var starsEl = document.getElementById('stat-stars');
-        if (starsEl && typeof data.stargazers_count === 'number') {
-          starsEl.textContent = data.stargazers_count;
-          starsEl.setAttribute('data-count', data.stargazers_count);
-        }
-      })
-      .catch(function() {
-        var starsEl = document.getElementById('stat-stars');
-        if (starsEl) starsEl.textContent = '\u2014';
-      });
+  // Trigger hero stat animation when hero is visible
+  const heroSection = document.querySelector('.hero');
+  if (heroSection) {
+    const heroObserver = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) {
+        animateHeroStats();
+        heroObserver.disconnect();
+      }
+    }, { threshold: 0.3 });
+    heroObserver.observe(heroSection);
   }
-  fetchGitHubStats();
 
   /* --- Hero Background: Mol* "Drug of the Day" --- */
 
-  var drugOfTheDay = [
+  // Curated set of iconic drug–target complexes
+  // Each rotates daily as the hero background, showcasing a famous drug
+  const drugOfTheDay = [
     { pdb: '1hsg', drug: 'Indinavir',      indication: 'HIV protease inhibitor' },
     { pdb: '3ert', drug: 'Tamoxifen',       indication: 'Estrogen receptor antagonist' },
     { pdb: '1iep', drug: 'Imatinib',        indication: 'BCR-Abl kinase inhibitor (CML)' },
@@ -160,11 +184,11 @@
     { pdb: '1g9v', drug: 'Glutathione',     indication: 'GST conjugation substrate' },
     { pdb: '2pgh', drug: 'Flurbiprofen',    indication: 'COX-1/2 NSAID (inflammation)' },
     { pdb: '1cbs', drug: 'Retinoic acid',   indication: 'Cellular retinoic acid binding' },
-    { pdb: '1tup', drug: 'DNA fragment',    indication: 'p53 tumor suppressor\u2013DNA complex' },
-    { pdb: '4hhb', drug: 'Oxygen (O\u2082)',indication: 'Hemoglobin oxygen transport' },
-    { pdb: '1mbn', drug: 'Oxygen (O\u2082)',indication: 'Myoglobin oxygen storage' },
+    { pdb: '1tup', drug: 'DNA fragment',    indication: 'p53 tumor suppressor–DNA complex' },
+    { pdb: '4hhb', drug: 'Oxygen (O₂)',     indication: 'Hemoglobin oxygen transport' },
+    { pdb: '1mbn', drug: 'Oxygen (O₂)',     indication: 'Myoglobin oxygen storage' },
     { pdb: '1lyz', drug: 'NAG trimer',      indication: 'Lysozyme substrate binding' },
-    { pdb: '1brs', drug: 'Barstar',         indication: 'Barnase\u2013Barstar protein interaction' },
+    { pdb: '1brs', drug: 'Barstar',         indication: 'Barnase–Barstar protein interaction' },
     { pdb: '3pth', drug: 'Phosphoramidon',  indication: 'Thermolysin metalloprotease inhibitor' },
     { pdb: '1crn', drug: 'Crambin',         indication: 'Plant seed protein (docking benchmark)' },
     { pdb: '1bna', drug: 'B-DNA',           indication: 'Canonical DNA dodecamer' },
@@ -173,59 +197,68 @@
   ];
 
   function getTodaysDrug() {
-    var now = new Date();
-    var dayOfYear = Math.floor((now - new Date(now.getFullYear(),0,0)) / 86400000);
+    const now = new Date();
+    const dayOfYear = Math.floor((now - new Date(now.getFullYear(),0,0)) / 86400000);
     return drugOfTheDay[dayOfYear % drugOfTheDay.length];
   }
 
+  /* --- Mol* BindingMode Representations --- */
   function applyBindingModeRepresentations(viewer) {
     try {
-      var plugin = viewer.plugin;
-      var structures = plugin.managers.structure.hierarchy.current.structures;
-      if (!structures || structures.length === 0) return;
+      const plugin = viewer.plugin;
+      const structures = plugin.managers.structure.hierarchy.current.structures;
+      if (!structures.length) return;
 
-      var struct = structures[0];
+      const struct = structures[0];
+      const components = struct.components;
 
-      // Clear existing representations
-      plugin.managers.structure.component.clear(struct).then(function() {
-        // Add polymer as cartoon
-        plugin.managers.structure.component.add(
-          { structure: struct },
-          { type: { name: 'static', params: 'polymer' } }
-        ).then(function(polymerComp) {
-          if (polymerComp) {
-            plugin.managers.structure.representation.addRepresentation(
-              polymerComp,
-              { type: 'cartoon', color: 'chain-id' }
-            );
-          }
-        });
-
-        // Add ligand as ball-and-stick
-        plugin.managers.structure.component.add(
-          { structure: struct },
-          { type: { name: 'static', params: 'ligand' } }
-        ).then(function(ligandComp) {
-          if (ligandComp) {
-            plugin.managers.structure.representation.addRepresentation(
-              ligandComp,
-              { type: 'ball-and-stick', color: 'element-symbol' }
-            );
-          }
+      // Remove all default representations
+      components.forEach(function(comp) {
+        comp.representations.forEach(function(repr) {
+          plugin.managers.structure.representation.remove(repr);
         });
       });
+
+      // Add cartoon for polymer (protein/nucleic)
+      var polymerSel = { name: 'static', params: 'polymer' };
+      plugin.managers.structure.component.add(
+        { key: 'polymer-cartoon', ref: struct.cell.transform.ref },
+        polymerSel
+      ).then(function(polyComp) {
+        if (polyComp) {
+          plugin.managers.structure.representation.addRepresentation(polyComp, {
+            type: 'cartoon',
+            color: 'chain-id'
+          });
+        }
+      });
+
+      // Add ball-and-stick for ligand
+      var ligandSel = { name: 'static', params: 'ligand' };
+      plugin.managers.structure.component.add(
+        { key: 'ligand-sticks', ref: struct.cell.transform.ref },
+        ligandSel
+      ).then(function(ligComp) {
+        if (ligComp) {
+          plugin.managers.structure.representation.addRepresentation(ligComp, {
+            type: 'ball-and-stick',
+            color: 'element-symbol',
+            size: 'physical'
+          });
+        }
+      });
     } catch(e) {
-      // Representation customization failed silently
+      // Mol* API may differ across versions — fall back to defaults silently
     }
   }
 
   function initMolstar() {
     if (typeof molstar === 'undefined') return;
 
-    var viewerEl = document.getElementById('molstar-viewer');
+    const viewerEl = document.getElementById('molstar-viewer');
     if (!viewerEl) return;
 
-    var drug = getTodaysDrug();
+    const drug = getTodaysDrug();
 
     molstar.Viewer.create('molstar-viewer', {
       layoutIsExpanded: false,
@@ -243,28 +276,26 @@
         transparentBackground: true,
         renderer: { backgroundColor: 0x000000, backgroundAlpha: 0 },
       },
-    }).then(function(viewer) {
-      viewer.loadPdb(drug.pdb).then(function() {
-        // Wait for structure to load, then apply binding mode representations
-        setTimeout(function() {
-          applyBindingModeRepresentations(viewer);
-        }, 1500);
-
-        // Enable auto-rotate
-        setTimeout(function() {
-          try {
-            if (viewer.plugin.canvas3d) {
-              viewer.plugin.canvas3d.setProps({
-                trackball: { animate: { name: 'spin', params: { speed: 0.5 } } }
-              });
-            }
-          } catch(e) {}
-        }, 3000);
+    }).then(viewer => {
+      viewer.loadPdb(drug.pdb).then(() => {
+        // Apply BindingMode representations (cartoon + sticks)
+        setTimeout(() => applyBindingModeRepresentations(viewer), 1500);
       });
-    }).catch(function() { /* Mol* init failed silently */ });
+
+      // Enable auto-rotate once structure settles
+      setTimeout(() => {
+        try {
+          if (viewer.plugin.canvas3d) {
+            viewer.plugin.canvas3d.setProps({
+              trackball: { animate: { name: 'spin', params: { speed: 0.5 } } }
+            });
+          }
+        } catch(e) { /* WebGL may not be available in headless environments */ }
+      }, 3500);
+    }).catch(() => { /* Mol* init failed silently — hero stays clean */ });
 
     // Show drug of the day label
-    var drugLabel = document.getElementById('drug-of-day-label');
+    const drugLabel = document.getElementById('drug-of-day-label');
     if (drugLabel) {
       drugLabel.innerHTML = '<strong>' + drug.drug + '</strong> <span class="drug-indication">' + drug.indication + '</span>';
     }
@@ -273,20 +304,85 @@
   if (document.readyState === 'complete') {
     setTimeout(initMolstar, 300);
   } else {
-    window.addEventListener('load', function() { setTimeout(initMolstar, 300); });
+    window.addEventListener('load', () => setTimeout(initMolstar, 300));
   }
 
   /* --- Smooth Scroll for Nav Links --- */
-  document.querySelectorAll('a[href^="#"]').forEach(function(link) {
-    link.addEventListener('click', function(e) {
-      var href = link.getAttribute('href');
+  document.querySelectorAll('a[href^="#"]').forEach(link => {
+    link.addEventListener('click', (e) => {
+      const href = link.getAttribute('href');
       if (href === '#') return;
-      var target = document.querySelector(href);
+      const target = document.querySelector(href);
       if (target) {
         e.preventDefault();
         target.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
     });
   });
+
+  /* --- GitHub Stats (enhanced) --- */
+  function fetchGitHubStats() {
+    const starEl = document.getElementById('stat-stars');
+    const commitEl = document.querySelector('[data-count]');
+
+    fetch('https://api.github.com/repos/lmorency/FlexAIDdS')
+      .then(r => r.json())
+      .then(data => {
+        if (starEl && data.stargazers_count !== undefined) {
+          starEl.textContent = data.stargazers_count;
+        }
+        // Update commit count if available via size heuristic
+        if (commitEl && data.size) {
+          // Keep the hardcoded count — GitHub API doesn't expose commit count directly
+        }
+      })
+      .catch(() => {
+        if (starEl) starEl.textContent = '—';
+      });
+  }
+  fetchGitHubStats();
+
+  /* --- Reveal on Scroll (sections) --- */
+  const revealSections = document.querySelectorAll('main > section');
+  if (revealSections.length && 'IntersectionObserver' in window) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('revealed');
+          io.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.08 });
+    revealSections.forEach(s => {
+      s.classList.add('reveal');
+      io.observe(s);
+    });
+  }
+
+  /* --- Staggered Card Animations --- */
+  const cardSelectors = '.feature-card, .stat-card, .pub-card, .module-card, .cns-stat-card, .install-card, .pymol-install-card, .pymol-commands-card, .license-card, .arch-step, .arch-sub-card';
+  const cardContainers = document.querySelectorAll('.features-grid, .stats-grid, .publications-grid, .modules-grid, .cns-stats-grid, .install-grid, .pymol-grid, .contributing-grid, .arch-pipeline, .arch-sub-row');
+
+  if (cardContainers.length && 'IntersectionObserver' in window) {
+    const cardIO = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          const cards = entry.target.querySelectorAll(cardSelectors);
+          cards.forEach((card, i) => {
+            card.style.setProperty('--card-delay', (i * 80) + 'ms');
+            card.classList.add('reveal-card');
+            // Trigger reflow then add revealed state
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => {
+                card.classList.add('revealed-card');
+              });
+            });
+          });
+          cardIO.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.1 });
+    cardContainers.forEach(c => cardIO.observe(c));
+  }
 
 })();

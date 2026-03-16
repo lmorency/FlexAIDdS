@@ -121,6 +121,7 @@ a, button, [role="button"], [role="link"], input, textarea, select {
   --lang-swift:  #5C4BA0;
   --lang-objcpp: #4A5AB5;
   --lang-cmake:  #3B6DC9;
+  --lang-ts:     #3178C6;
   --lang-cuda:   #7B2D6E;
   --lang-other:  #9a8caa;
 
@@ -1367,12 +1368,6 @@ code {
   text-align: center;
 }
 
-.pplx-link {
-  font-size: var(--text-xs);
-  color: var(--color-text-faint);
-  text-decoration: none;
-}
-.pplx-link:hover { color: var(--color-text-muted); }
 
 /* --- Scroll Animations --- */
 .fade-in {
@@ -1763,11 +1758,6 @@ code {
     display: none;
   }
 }
-
-/* ==========================================================================
-   Scroll-Triggered Reveal Animations
-   ========================================================================== */
-
 .reveal {
   opacity: 0;
   transform: translateY(24px);
@@ -1875,49 +1865,6 @@ code {
   }
 }
 
-/* ==========================================================================
-   FreeNRG Integration Section
-   ========================================================================== */
-
-.freenrg-section {
-  padding: var(--section-pad-y) 0;
-  background: var(--color-surface-alt, var(--color-bg));
-}
-
-.freenrg-grid {
-  display: grid;
-  grid-template-columns: 2fr 1fr;
-  gap: 2rem;
-  margin-top: 2rem;
-  align-items: start;
-}
-
-.freenrg-info {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.freenrg-info p {
-  font-size: 0.95rem;
-  line-height: 1.6;
-}
-
-.freenrg-info a {
-  color: var(--color-accent);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-.code-block-sm pre {
-  font-size: 0.8rem;
-}
-
-@media (max-width: 768px) {
-  .freenrg-grid {
-    grid-template-columns: 1fr;
-  }
-}
 
 /* ==========================================================================
    Bonhomme Fleet / Infrastructure Section
@@ -2152,7 +2099,7 @@ code {
 }
 
 /* ==========================================================================
-   Footer Copyright (replacing Perplexity link)
+   Footer Copyright
    ========================================================================== */
 
 .footer-copyright {
@@ -2207,5 +2154,136 @@ code {
   }
   .main-nav a {
     font-size: 0.82rem !important;
+  }
+}
+
+/* ==========================================================================
+   Scroll Progress Bar
+   ========================================================================== */
+
+.scroll-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 3px;
+  background: linear-gradient(90deg, var(--color-primary), var(--color-accent));
+  transform-origin: left;
+  transform: scaleX(0);
+  z-index: 10000;
+  pointer-events: none;
+  will-change: transform;
+}
+
+/* ==========================================================================
+   Back to Top Button
+   ========================================================================== */
+
+.back-to-top {
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(12px);
+  transition: opacity 0.3s ease, visibility 0.3s ease, transform 0.3s ease, background 0.2s ease;
+  z-index: 900;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+  cursor: pointer;
+  border: none;
+}
+
+.back-to-top.visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.back-to-top:hover {
+  background: var(--color-accent);
+  transform: translateY(-2px);
+}
+
+.back-to-top svg {
+  width: 20px;
+  height: 20px;
+}
+
+@media (max-width: 768px) {
+  .back-to-top {
+    bottom: 1rem;
+    right: 1rem;
+    width: 40px;
+    height: 40px;
+  }
+}
+
+/* ==========================================================================
+   Staggered Card Animations
+   ========================================================================== */
+
+.reveal-card {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+  transition-delay: var(--card-delay, 0ms);
+}
+
+.revealed-card {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal-card {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
+
+/* ==========================================================================
+   Code Block Enhancements
+   ========================================================================== */
+
+.code-block {
+  position: relative;
+  transition: box-shadow 0.3s ease;
+}
+
+.code-block:hover {
+  box-shadow: 0 0 0 1px var(--color-accent), 0 4px 20px rgba(139, 92, 246, 0.1);
+}
+
+.copy-btn.copied {
+  color: #22c55e;
+}
+
+/* ==========================================================================
+   Usage Tabs Mobile Scroll Indicator
+   ========================================================================== */
+
+@media (max-width: 768px) {
+  .usage-tabs {
+    position: relative;
+  }
+  .usage-tabs::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 32px;
+    background: linear-gradient(to right, transparent, var(--color-bg));
+    pointer-events: none;
+    border-radius: 0 var(--radius-md) var(--radius-md) 0;
   }
 }
