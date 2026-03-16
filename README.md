@@ -149,15 +149,6 @@ for mode in results.rank_by_free_energy():
 | `FlexAIDdS` | Optimized docking (LTO + `-march=native`) |
 | `tENCoM` | Vibrational entropy differential tool |
 
-### HPC Deployment
-
-```bash
-cmake .. -DCMAKE_BUILD_TYPE=Release \
-         -DFLEXAIDS_USE_AVX512=ON \
-         -DFLEXAIDS_USE_OPENMP=ON
-cmake --build . -j $(nproc)
-```
-
 ### Build Variants
 
 ```bash
@@ -264,8 +255,6 @@ TEMPER 300
 <details>
 <summary><strong>Co-Translational Docking (NATURaL)</strong></summary>
 
-NATURaL mode activates automatically when the system involves nucleotide ligands or nucleic acid receptors:
-
 ```bash
 ./FlexAIDdS ribosome.pdb atp_analog.mol2          # co-translational
 ./FlexAIDdS rnap_complex.pdb rna_fragment.mol2     # co-transcriptional
@@ -306,7 +295,7 @@ results = fd.dock(
 )
 
 # Load existing results
-docking = flexaidds.load_results('output_prefix')
+docking = fd.load_results('output_prefix')
 for mode in docking.binding_modes:
     print(f"Mode {mode.rank}: dG={mode.free_energy:.2f}, S={mode.entropy:.3f}")
 ```
@@ -697,6 +686,7 @@ FlexAIDdS/
 │   ├── tencm.cpp/h          # Torsional ENCoM
 │   ├── config_defaults.h    # Default parameter schema
 │   ├── config_parser.cpp/h  # JSON config system
+│   ├── hardware_dispatch.cpp/h # Unified HW backend selection
 │   ├── ShannonThermoStack/  # Shannon entropy + HW acceleration
 │   ├── LigandRingFlex/      # Ring conformer sampling
 │   ├── ChiralCenter/        # R/S discrimination
