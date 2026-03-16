@@ -942,6 +942,26 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME RefLigSpectrophoreTests COMMAND test_reflig_spectrophore)
 
+    # test_binding_residues — Key binding-site residue identification tests
+    add_executable(test_binding_residues
+        tests/test_binding_residues.cpp
+    )
+    target_include_directories(test_binding_residues PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect
+    )
+    target_link_libraries(test_binding_residues PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_binding_residues PRIVATE /O2)
+    else()
+        target_compile_options(test_binding_residues PRIVATE -O2)
+    endif()
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(test_binding_residues PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    flexaids_configure_simd(test_binding_residues)
+    add_test(NAME BindingResiduesTests COMMAND test_binding_residues)
+
     # test_binding_mode_statmech — BindingMode ↔ StatMechEngine integration tests
     add_executable(test_binding_mode_statmech
         tests/test_binding_mode_statmech.cpp

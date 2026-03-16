@@ -16,6 +16,7 @@
 #endif
 #include "../../LIB/encom.h"
 #include "../../LIB/Spectrophore.h"
+#include "../../LIB/BindingResidues.h"
 
 namespace py = pybind11;
 using namespace statmech;
@@ -397,4 +398,27 @@ PYBIND11_MODULE(_core, m) {
         py::arg("coords"), py::arg("radii"), py::arg("charges"),
         py::arg("center"),
         "Compute spectrophore from atom coordinates, radii, and charges");
+
+    // ──────────────────────────────────────────────────────────────────────
+    // BindingResidues — key residue identification from MIF scores
+    // ──────────────────────────────────────────────────────────────────────
+
+    py::class_<binding_residues::ResidueContribution>(m, "ResidueContribution",
+        "A protein residue's contribution to binding (from MIF analysis)")
+        .def_readonly("res_index", &binding_residues::ResidueContribution::res_index)
+        .def_property_readonly("name", [](const binding_residues::ResidueContribution& r) {
+            return std::string(r.name);
+        })
+        .def_readonly("number", &binding_residues::ResidueContribution::number)
+        .def_property_readonly("chain", [](const binding_residues::ResidueContribution& r) {
+            return std::string(1, r.chain);
+        })
+        .def_readonly("mif_score", &binding_residues::ResidueContribution::mif_score)
+        .def_readonly("contact_count", &binding_residues::ResidueContribution::contact_count)
+        .def_readonly("min_distance", &binding_residues::ResidueContribution::min_distance)
+        .def("__repr__", [](const binding_residues::ResidueContribution& r) {
+            return std::string(r.name) + " " + std::to_string(r.number) +
+                   ":" + r.chain + " (MIF=" +
+                   std::to_string(r.mif_score) + ")";
+        });
 }
