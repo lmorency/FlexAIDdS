@@ -32,11 +32,15 @@ jobs:
             python/tests/test_py_statmech.py \
             python/tests/test_thermodynamics_dataclass.py \
             python/tests/test_models.py \
+            python/tests/test_models_deserialization.py \
             python/tests/test_version.py \
             python/tests/test_io.py \
             python/tests/test_cli.py \
             python/tests/test_docking.py \
-            python/tests/test_results.py
+            python/tests/test_results.py \
+            python/tests/test_tencm.py \
+            python/tests/test_tencom_results.py \
+            python/tests/test_visualization.py
 
   cxx_core_build:
     name: C++ core (${{ matrix.name }})
