@@ -27,14 +27,14 @@ inline constexpr int   GPU_DISPATCH_THRESHOLD = 100000; // only use GPU for N > 
 // ─── result struct ───────────────────────────────────────────────────────────
 struct FullThermoResult {
     double deltaG;              // total free energy (kcal/mol)
-    double shannonEntropy;      // dimensionless bits (conformational)
+    double shannonEntropy;      // dimensionless nats (conformational, natural log)
     double torsionalVibEntropy; // kcal/mol·K (from ENCoM modes)
     double entropyContribution; // -T*S term (kcal/mol)
     std::string report;
 };
 
 // ─── 256×256 precomputed Shannon energy lookup ───────────────────────────────
-// E[i][j] = -kT * p_i * log2(p_j)
+// E[i][j] = -kT * p_i * ln(p_j)
 // Generated at startup with seed 42 + Gaussian perturbation of uniform priors.
 class ShannonEnergyMatrix {
 public:

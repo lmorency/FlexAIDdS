@@ -384,7 +384,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 			        entropy_history, GB->entropy_window,
 			        GB->entropy_rel_threshold)) {
 				printf("Entropy convergence at generation %d "
-				       "(H=%.4f bits, stable for %d checks)\n",
+				       "(H=%.4f nats, stable for %d checks)\n",
 				       i + 1, H, GB->entropy_window);
 				entropy_converged = true;
 				break;
@@ -465,7 +465,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 						sme, tencm_model, td.free_energy, T_K);
 
 				printf("--- ShannonThermoStack (vibrational entropy integration) ---\n");
-				printf("  Shannon conf entropy    = %10.4f bits\n", ftr.shannonEntropy);
+				printf("  Shannon conf entropy    = %10.4f nats\n", ftr.shannonEntropy);
 				printf("  Torsional vib entropy   = %10.6f kcal/(mol·K)\n", ftr.torsionalVibEntropy);
 				printf("  Entropy contribution    = %10.4f kcal/mol (-TΔS)\n", ftr.entropyContribution);
 				printf("  Total ΔG (F + vib corr) = %10.4f kcal/mol\n", ftr.deltaG);

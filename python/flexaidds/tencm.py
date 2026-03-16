@@ -59,7 +59,7 @@ class FullThermoResult:
 
     Attributes:
         deltaG:                Total free energy (kcal/mol).
-        shannonEntropy:        Shannon configurational entropy (bits).
+        shannonEntropy:        Shannon configurational entropy (nats).
         torsionalVibEntropy:   Torsional vibrational entropy (kcal/mol·K).
         entropyContribution:   −T·S entropy term (kcal/mol).
         report:                Human-readable summary.
@@ -73,7 +73,7 @@ class FullThermoResult:
     def __repr__(self) -> str:
         return (
             f"<FullThermoResult ΔG={self.deltaG:.4f} "
-            f"H_shannon={self.shannonEntropy:.4f} bits "
+            f"H_shannon={self.shannonEntropy:.4f} nats "
             f"S_vib={self.torsionalVibEntropy:.6f} kcal/(mol·K)>"
         )
 
@@ -273,14 +273,14 @@ def compute_shannon_entropy(
 ) -> float:
     """Compute Shannon entropy of a continuous distribution.
 
-    Bins the values into a histogram and computes H = -Σ p_i log2(p_i).
+    Bins the values into a histogram and computes H = -Σ p_i ln(p_i).
 
     Args:
         values:    List of continuous values.
         num_bins:  Number of histogram bins (default 20).
 
     Returns:
-        Shannon entropy in bits.
+        Shannon entropy in nats (natural log).
     """
     if _HAS_CORE:
         try:
@@ -295,7 +295,7 @@ def compute_shannon_entropy(
     counts, _ = np.histogram(arr, bins=num_bins)
     probs = counts / counts.sum()
     probs = probs[probs > 0]
-    return -float(np.sum(probs * np.log2(probs)))
+    return -float(np.sum(probs * np.log(probs)))
 
 
 def compute_torsional_vibrational_entropy(
@@ -354,7 +354,7 @@ def run_shannon_thermo_stack(
     torsional vibrational entropy from the ENCoM backbone model.
 
     Formula:
-        S_conf = k_B * H_bits * ln(2)   (bits → physical units)
+        S_conf = k_B * H_nats           (nats → physical units)
         S_total = S_conf + S_vib         (additive for independent DOFs)
         ΔG = base_ΔG - T * S_total
 
@@ -368,10 +368,10 @@ def run_shannon_thermo_stack(
     Returns:
         FullThermoResult with combined thermodynamic quantities.
     """
-    # Shannon configurational entropy (bits → physical units)
-    # S_conf = k_B * H_bits * ln(2), converting from bits to nats
+    # Shannon configurational entropy (nats → physical units)
+    # S_conf = k_B * H_nats (direct, since H is already in natural log units)
     H_shannon = compute_shannon_entropy(energies) if energies else 0.0
-    S_conf_phys = H_shannon * kB_kcal * math.log(2.0)
+    S_conf_phys = H_shannon * kB_kcal
 
     # Torsional vibrational entropy
     S_vib = 0.0
@@ -387,7 +387,7 @@ def run_shannon_thermo_stack(
 
     report = (
         f"ShannonThermoStack (T={temperature_K:.1f} K)\n"
-        f"  Shannon conf entropy    = {H_shannon:.4f} bits\n"
+        f"  Shannon conf entropy    = {H_shannon:.4f} nats\n"
         f"  Torsional vib entropy   = {S_vib:.6f} kcal/(mol·K)\n"
         f"  Entropy contribution    = {entropy_contribution:.4f} kcal/mol (-TΔS)\n"
         f"  Total ΔG (F + vib corr) = {deltaG:.4f} kcal/mol\n"

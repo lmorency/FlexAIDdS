@@ -64,20 +64,16 @@ void ShannonEnergyMatrix::initialise() {
     for (int k = 0; k < SHANNON_BINS; ++k) { p_i[k] /= si; p_j[k] /= sj; }
 
     const double kT    = kB_kcal * TEMPERATURE_K;
-    const double l2inv = 1.0 / std::log(2.0);
-
-    // Fill the entropy matrix: _mm512_log_pd requires SVML which may not be linked
-    // Using portable scalar implementation with std::log for maximum compatibility
+    // Fill the entropy matrix using natural log (nats)
     for (int i = 0; i < SHANNON_BINS; ++i)
         for (int j = 0; j < SHANNON_BINS; ++j)
-            matrix_[i * SHANNON_BINS + j] = -kT * p_i[i] * std::log(p_j[j]) * l2inv;
+            matrix_[i * SHANNON_BINS + j] = -kT * p_i[i] * std::log(p_j[j]);
     initialised_ = true;
 }
 
 // ─── entropy from bin counts (Eigen-vectorised) ───────────────────────────────
 static double entropy_from_counts(const int* counts, int num_bins, int total) {
     if (total == 0) return 0.0;
-    const double l2inv = 1.0 / std::log(2.0);
 
 #ifdef FLEXAIDS_HAS_EIGEN
     Eigen::ArrayXd prob(num_bins);
@@ -87,13 +83,13 @@ static double entropy_from_counts(const int* counts, int num_bins, int total) {
     // Mask zeros before log to avoid -inf; Eigen evaluates log vectorised
     Eigen::ArrayXd safe_p = (prob > 1e-15).select(prob, Eigen::ArrayXd::Constant(num_bins, 1.0));
     Eigen::ArrayXd lp     = (prob > 1e-15).select(safe_p.log(), Eigen::ArrayXd::Zero(num_bins));
-    return -(prob * lp).sum() * l2inv;
+    return -(prob * lp).sum();
 #else
     double H = 0.0;
     for (int b = 0; b < num_bins; ++b) {
         if (counts[b] > 0) {
             double p = static_cast<double>(counts[b]) / total;
-            H -= p * std::log(p) * l2inv;
+            H -= p * std::log(p);
         }
     }
     return H;
@@ -274,13 +270,13 @@ FullThermoResult run_shannon_thermo_stack(
     for (double w : weights)
         if (w > 0.0) log_weights.push_back(-std::log(w));
 
-    double S_conf_bits  = compute_shannon_entropy(log_weights, DEFAULT_HIST_BINS);
+    double S_conf_nats  = compute_shannon_entropy(log_weights, DEFAULT_HIST_BINS);
     double S_vib        = tencm_model.is_built()
                           ? compute_torsional_vibrational_entropy(tencm_model.modes(), temperature_K)
                           : 0.0;
-    // Convert Shannon H (bits) to physical entropy: S = k_B * H * ln(2)
-    // The ln(2) converts from bits to nats (natural information units).
-    double S_conf_phys  = S_conf_bits * kB_kcal * std::log(2.0);
+    // Shannon H is already in nats (natural log). Convert to physical units:
+    // S_conf = k_B * H_nats
+    double S_conf_phys  = S_conf_nats * kB_kcal;
 
     // Additive decomposition: S_total = S_conf + S_vib
     // Valid for independent conformational and vibrational DOFs
@@ -307,11 +303,11 @@ FullThermoResult run_shannon_thermo_stack(
 #ifdef FLEXAIDS_HAS_EIGEN
         "+Eigen"
 #endif
-        "]: S_conf=" + std::to_string(S_conf_bits) +
-        " bits, S_vib=" + std::to_string(S_vib) +
+        "]: S_conf=" + std::to_string(S_conf_nats) +
+        " nats, S_vib=" + std::to_string(S_vib) +
         " kcal/mol/K, ΔG=" + std::to_string(final_dG) + " kcal/mol";
 
-    return { final_dG, S_conf_bits, S_vib, S_contrib, report };
+    return { final_dG, S_conf_nats, S_vib, S_contrib, report };
 }
 
 // ─── detect_entropy_plateau ──────────────────────────────────────────────────

@@ -20,11 +20,10 @@ static double cpu_shannon_from_bins(const std::vector<int>& bins) {
     if (total == 0) return 0.0;
 
     double H = 0.0;
-    const double log2_inv = 1.0 / std::log(2.0);
     for (int c : bins) {
         if (c > 0) {
             double p = static_cast<double>(c) / total;
-            H -= p * std::log(p) * log2_inv;
+            H -= p * std::log(p);
         }
     }
     return H;

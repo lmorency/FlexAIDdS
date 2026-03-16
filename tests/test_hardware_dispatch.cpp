@@ -56,7 +56,7 @@ TEST(ShannonEntropy, NonNegative) {
 
 TEST(ShannonEntropy, UniformDistributionMaxEntropy) {
     // For a uniform distribution across num_bins bins:
-    //   H = log2(num_bins)
+    //   H = ln(num_bins)
     int num_bins = 10;
     int per_bin = 100;
     std::vector<double> values;
@@ -70,12 +70,12 @@ TEST(ShannonEntropy, UniformDistributionMaxEntropy) {
     }
 
     double H = compute_shannon_entropy(values, num_bins);
-    double H_max = std::log2(static_cast<double>(num_bins));
+    double H_max = std::log(static_cast<double>(num_bins));
     EXPECT_NEAR(H, H_max, 0.1);  // tolerance for binning edge effects
 }
 
 TEST(ShannonEntropy, UpperBound) {
-    // H <= log2(num_bins) for any distribution
+    // H <= ln(num_bins) for any distribution
     int num_bins = 20;
     std::mt19937 rng(123);
     std::normal_distribution<double> dist(0.0, 10.0);
@@ -83,7 +83,7 @@ TEST(ShannonEntropy, UpperBound) {
     for (auto& v : values) v = dist(rng);
 
     double H = compute_shannon_entropy(values, num_bins);
-    double H_max = std::log2(static_cast<double>(num_bins));
+    double H_max = std::log(static_cast<double>(num_bins));
     EXPECT_LE(H, H_max + EPSILON);
 }
 
@@ -131,17 +131,17 @@ TEST(ShannonEntropyDiscrete, AllInOneBin) {
 }
 
 TEST(ShannonEntropyDiscrete, UniformCounts) {
-    // 4 bins, equal counts → H = log2(4) = 2 bits
+    // 4 bins, equal counts → H = ln(4) ≈ 1.386 nats
     std::vector<int> counts = {100, 100, 100, 100};
     double H = compute_shannon_entropy_discrete(counts);
-    EXPECT_NEAR(H, 2.0, 0.01);
+    EXPECT_NEAR(H, std::log(4.0), 0.01);
 }
 
 TEST(ShannonEntropyDiscrete, TwoBinsEqual) {
-    // 2 equal bins → H = 1 bit
+    // 2 equal bins → H = ln(2) ≈ 0.693 nats
     std::vector<int> counts = {50, 50};
     double H = compute_shannon_entropy_discrete(counts);
-    EXPECT_NEAR(H, 1.0, 0.01);
+    EXPECT_NEAR(H, std::log(2.0), 0.01);
 }
 
 TEST(ShannonEntropyDiscrete, NonNegative) {
@@ -533,7 +533,7 @@ TEST(BackendDetection, EigenTagInReport) {
 // --- Shannon entropy: single bin always returns zero ---
 
 TEST(ShannonEntropyEdge, SingleBinReturnsZero) {
-    // num_bins=1 → all values in one bin → p=1.0 → H = -1*log2(1) = 0
+    // num_bins=1 → all values in one bin → p=1.0 → H = -1*ln(1) = 0
     std::mt19937 rng(55);
     std::normal_distribution<double> dist(0.0, 10.0);
     std::vector<double> values(200);
@@ -551,8 +551,8 @@ TEST(ShannonEntropyEdge, MoreBinsThanSamples) {
     double H = compute_shannon_entropy(values, 1000);
     EXPECT_TRUE(std::isfinite(H));
     EXPECT_GE(H, 0.0);
-    // With 5 values in 1000 bins, at most 5 bins occupied → H <= log2(5)
-    EXPECT_LE(H, std::log2(5.0) + 0.01);
+    // With 5 values in 1000 bins, at most 5 bins occupied → H <= ln(5)
+    EXPECT_LE(H, std::log(5.0) + 0.01);
 }
 
 // --- Shannon entropy: very large number of bins ---
@@ -567,7 +567,7 @@ TEST(ShannonEntropyEdge, LargeBinCount) {
     double H = compute_shannon_entropy(values, 500);
     EXPECT_TRUE(std::isfinite(H));
     EXPECT_GE(H, 0.0);
-    EXPECT_LE(H, std::log2(500.0) + EPSILON);
+    EXPECT_LE(H, std::log(500.0) + EPSILON);
 }
 
 // --- Shannon entropy discrete: all-zero counts ---
@@ -590,7 +590,7 @@ TEST(ShannonEntropyDiscreteEdge, VeryLargeCounts) {
     // Ensure no integer overflow in total computation
     std::vector<int> counts = {1000000, 1000000, 1000000};
     double H = compute_shannon_entropy_discrete(counts);
-    EXPECT_NEAR(H, std::log2(3.0), 0.01);
+    EXPECT_NEAR(H, std::log(3.0), 0.01);
 }
 
 // --- ShannonEnergyMatrix: boundary indices ---
@@ -609,7 +609,7 @@ TEST(ShannonEnergyMatrixEdge, BoundaryIndices) {
 // --- ShannonEnergyMatrix: symmetry check ---
 
 TEST(ShannonEnergyMatrixEdge, AsymmetricByDesign) {
-    // E[i][j] = -kT * p_i * log2(p_j) ≠ E[j][i] in general
+    // E[i][j] = -kT * p_i * ln(p_j) ≠ E[j][i] in general
     // because p_i and p_j come from independent distributions
     auto& mat = ShannonEnergyMatrix::instance();
     mat.initialise();
@@ -796,16 +796,15 @@ TEST(ScalingFormula, AdditiveDecomposition) {
     // No build → S_vib = 0, so entropyContribution = -T * S_conf_phys
 
     auto result = run_shannon_thermo_stack(eng, tencm, 0.0);
-    // S_conf_phys = H_bits * kB * ln(2)
-    double expected_S_conf = result.shannonEntropy * kB_kcal * std::log(2.0);
+    // S_conf_phys = H_nats * kB (direct, since H is in nats)
+    double expected_S_conf = result.shannonEntropy * kB_kcal;
     // entropyContribution = -T * (S_conf + 0) since no tencm modes
     double expected_contrib = -298.15 * expected_S_conf;
     EXPECT_NEAR(result.entropyContribution, expected_contrib, 1e-8);
 }
 
-TEST(ScalingFormula, Ln2ConversionFactor) {
-    // For H = 1 bit exactly, S_conf should be k_B * ln(2)
-    // We can't easily force H=1, but verify the relationship holds
+TEST(ScalingFormula, NatsConversion) {
+    // Verify S_conf = k_B * H_nats directly (no log2/ln(2) conversion needed)
     statmech::StatMechEngine eng(298.15);
     eng.add_sample(-10.0);
     eng.add_sample(-5.0);
@@ -813,7 +812,7 @@ TEST(ScalingFormula, Ln2ConversionFactor) {
 
     auto result = run_shannon_thermo_stack(eng, tencm, 0.0);
     double H = result.shannonEntropy;
-    double expected_S = H * kB_kcal * std::log(2.0);
+    double expected_S = H * kB_kcal;
     double expected_contrib = -298.15 * expected_S;
     EXPECT_NEAR(result.entropyContribution, expected_contrib, 1e-8);
 }
