@@ -262,9 +262,10 @@ target_sources(FlexAID PRIVATE
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
         LIB/ChiralCenter/ChiralCenterGene.cpp
-        # ── CleftDetector + Mol2Reader ──
+        # ── CleftDetector + Mol2Reader + SdfReader ──
         LIB/CleftDetector.cpp
         LIB/Mol2Reader.cpp
+        LIB/SdfReader.cpp
         # ── CavityDetect: native SURFNET cavity detection ──
         LIB/CavityDetect/CavityDetect.cpp
         # ── PTMAttachment: PTM/glycan modification on target chain ──
@@ -900,6 +901,7 @@ if(BUILD_TESTING)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(test_cavity_detect PRIVATE OpenMP::OpenMP_CXX)
     endif()
+    flexaids_configure_simd(test_cavity_detect)
     add_test(NAME CavityDetectTests COMMAND test_cavity_detect)
 
     # test_binding_mode_statmech — BindingMode ↔ StatMechEngine integration tests

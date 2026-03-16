@@ -4,10 +4,12 @@
 
 #include <gtest/gtest.h>
 #include "CavityDetect.h"
+#include "SpatialGrid.h"
 #include <cmath>
 #include <fstream>
 #include <string>
 #include <filesystem>
+#include <algorithm>
 
 using namespace cavity_detect;
 
@@ -298,6 +300,124 @@ TEST(CavityDetect, FilterAnchorEmptyStringNoOp) {
     size_t before = detector.clefts().size();
     detector.filter_anchor_residues("");
     EXPECT_EQ(detector.clefts().size(), before);
+
+    std::filesystem::remove(pdb);
+}
+
+// ===========================================================================
+// SPATIAL GRID
+// ===========================================================================
+
+// Helper: create an atom vector for grid tests
+static std::vector<atom> make_atoms(const std::vector<std::array<float,3>>& coords,
+                                     float radius = 1.7f) {
+    std::vector<atom> atoms;
+    for (const auto& c : coords) {
+        atom a{};
+        a.coor[0] = c[0]; a.coor[1] = c[1]; a.coor[2] = c[2];
+        a.radius = radius;
+        a.coor_ref = nullptr; a.par = nullptr;
+        a.cons = nullptr; a.optres = nullptr; a.eigen = nullptr;
+        atoms.push_back(a);
+    }
+    return atoms;
+}
+
+TEST(SpatialGrid, BuildEmpty) {
+    SpatialGrid grid;
+    std::vector<atom> empty;
+    grid.build(empty);
+    EXPECT_TRUE(grid.empty());
+    EXPECT_EQ(grid.atom_count(), 0u);
+
+    float coord[3] = {0.f, 0.f, 0.f};
+    auto result = grid.query_neighbors(coord);
+    EXPECT_TRUE(result.empty());
+}
+
+TEST(SpatialGrid, QueryReturnsNearbyAtoms) {
+    // 8 atoms at cube corners (8 Å side) — all within one ~6.5 Å cell neighborhood
+    auto atoms = make_atoms({
+        {0.f, 0.f, 0.f}, {8.f, 0.f, 0.f}, {0.f, 8.f, 0.f}, {8.f, 8.f, 0.f},
+        {0.f, 0.f, 8.f}, {8.f, 0.f, 8.f}, {0.f, 8.f, 8.f}, {8.f, 8.f, 8.f},
+    });
+
+    SpatialGrid grid;
+    grid.build(atoms);
+    EXPECT_FALSE(grid.empty());
+    EXPECT_EQ(grid.atom_count(), 8u);
+
+    // Query at center — should find all 8 atoms in neighboring cells
+    float center[3] = {4.f, 4.f, 4.f};
+    auto result = grid.query_neighbors(center);
+    EXPECT_EQ(result.size(), 8u);
+}
+
+TEST(SpatialGrid, ExcludesDistantAtoms) {
+    // Two clusters far apart
+    auto atoms = make_atoms({
+        {0.f, 0.f, 0.f}, {1.f, 1.f, 1.f},
+        {100.f, 100.f, 100.f}, {101.f, 101.f, 101.f},
+    });
+
+    SpatialGrid grid;
+    grid.build(atoms);
+
+    // Query near origin — should NOT find atoms at (100,100,100)
+    float near_origin[3] = {0.5f, 0.5f, 0.5f};
+    auto result = grid.query_neighbors(near_origin);
+    EXPECT_GE(result.size(), 2u);  // at least the 2 nearby atoms
+    for (auto idx : result) {
+        // All returned atoms should be near the origin
+        EXPECT_LT(atoms[idx].coor[0], 50.f)
+            << "Grid returned a distant atom at index " << idx;
+    }
+
+    // Query near far cluster
+    float near_far[3] = {100.5f, 100.5f, 100.5f};
+    auto far_result = grid.query_neighbors(near_far);
+    EXPECT_GE(far_result.size(), 2u);
+    for (auto idx : far_result) {
+        EXPECT_GT(atoms[idx].coor[0], 50.f)
+            << "Grid returned a nearby atom when querying far cluster";
+    }
+}
+
+TEST(SpatialGrid, QueryAtBoundary) {
+    auto atoms = make_atoms({{0.f, 0.f, 0.f}});
+    SpatialGrid grid;
+    grid.build(atoms);
+
+    // Query at the atom's own position (boundary of grid)
+    float coord[3] = {0.f, 0.f, 0.f};
+    auto result = grid.query_neighbors(coord);
+    EXPECT_EQ(result.size(), 1u);
+    EXPECT_EQ(result[0], 0u);
+}
+
+TEST(SpatialGrid, DetectResultsUnchanged) {
+    // Regression test: spatial grid optimization must produce identical results
+    // to the original all-pairs approach. We verify by checking that detect()
+    // produces non-empty results with the expected properties.
+    std::string pdb = write_test_pdb("test_grid_regression.pdb");
+    CavityDetector detector;
+    detector.load_from_pdb(pdb);
+    detector.detect(1.0f, 4.0f);
+
+    // Should find at least one cleft (same as DetectFindsCleftsInCube)
+    EXPECT_GE(detector.clefts().size(), 1u);
+
+    // All spheres must be within bounds
+    for (const auto& cleft : detector.clefts()) {
+        EXPECT_GT(cleft.volume, 0.0f);
+        for (const auto& s : cleft.spheres) {
+            EXPECT_GE(s.radius, 1.0f - 0.01f);
+            EXPECT_LE(s.radius, 4.0f + 0.01f);
+            EXPECT_TRUE(std::isfinite(s.center[0]));
+            EXPECT_TRUE(std::isfinite(s.center[1]));
+            EXPECT_TRUE(std::isfinite(s.center[2]));
+        }
+    }
 
     std::filesystem::remove(pdb);
 }

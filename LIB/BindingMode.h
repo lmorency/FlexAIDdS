@@ -84,6 +84,10 @@ class BindingMode // aggregation of poses (Cluster)
 			std::vector<Pose>::const_iterator elect_Representative(bool useOPTICSordering) const;
 			inline bool const 			operator<(const BindingMode&);
 
+			// ═══ PUBLIC ACCESSORS (for bindings) ═══
+			const Pose&					get_pose(int index) const { return Poses.at(index); }
+			const std::vector<Pose>&	get_poses() const { return Poses; }
+
  	protected:
 		std::vector<Pose> Poses;
 		BindingPopulation* Population; // used to access the BindingPopulation
@@ -129,6 +133,10 @@ class BindingPopulation
 		 	double	compute_delta_G(const BindingMode& mode1, const BindingMode& mode2) const;
 		 	/// Get global ensemble StatMechEngine aggregating all binding modes
 		 	statmech::StatMechEngine get_global_ensemble() const;
+
+		 	// ═══ PUBLIC ACCESSORS (for bindings) ═══
+		 	const BindingMode& get_binding_mode(int index) const { return BindingModes.at(index); }
+		 	const std::vector<BindingMode>& get_binding_modes() const { return BindingModes; }
 
 	protected:
 		double PartitionFunction;	// sum of all Boltzmann_weight (DEPRECATED: use StatMechEngine)
