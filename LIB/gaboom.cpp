@@ -1131,6 +1131,62 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 		const int nopt  = FA->num_optres;
 		const int nctb  = FA->ntypes * FA->ntypes;
 
+		// ── Dirty-tracking optimisation ─────────────────────────────────
+		// ic2cf only modifies atoms belonging to optimizable residues
+		// (ligand + flex sidechains) and buildcc rebuilds their Cartesian
+		// coords. vcfunction writes .acs for these same atoms.
+		// When normal modes are disabled, we restore only these "dirty"
+		// atoms per chromosome instead of copying the entire atom array.
+		// This reduces per-eval memory bandwidth by 90%+ for typical systems.
+		bool has_normal_modes = false;
+		for (int p = 0; p < FA->npar; ++p) {
+			if (FA->map_par[p].typ == 3) { has_normal_modes = true; break; }
+		}
+
+		// Build sorted unique list of atom indices modified by ic2cf.
+		// Sources: mov[] lists (buildcc targets) + map_par[].atm (IC targets).
+		std::vector<int> dirty_atm;
+		std::vector<int> dirty_res_idx;
+		if (!has_normal_modes) {
+			// Atoms in mov[] rebuild lists (ligand + flex sidechain Cartesian)
+			for (int r = 0; r < FA->nors; ++r)
+				for (int m = 0; m < FA->nmov[r]; ++m)
+					dirty_atm.push_back(FA->mov[r][m]);
+			// Atoms directly referenced by map_par (IC fields: dis/ang/dih)
+			for (int p = 0; p < FA->npar; ++p)
+				dirty_atm.push_back(FA->map_par[p].atm);
+			// Cascade dihedral atoms (atoms whose .dih depends on a flex bond)
+			for (int p = 0; p < FA->npar; ++p) {
+				if (FA->map_par[p].typ == 2) {
+					int j = FA->map_par[p].atm;
+					int cat = atoms[j].rec[3];
+					while (cat != 0 && cat != FA->map_par[p].atm) {
+						dirty_atm.push_back(cat);
+						j = cat;
+						cat = atoms[j].rec[3];
+					}
+				}
+			}
+			// Sort and deduplicate
+			std::sort(dirty_atm.begin(), dirty_atm.end());
+			dirty_atm.erase(std::unique(dirty_atm.begin(), dirty_atm.end()),
+			                dirty_atm.end());
+
+			// Residue indices with rotamer genes (typ==4 modifies .rot)
+			for (int p = 0; p < FA->npar; ++p) {
+				if (FA->map_par[p].typ == 4)
+					dirty_res_idx.push_back(atoms[FA->map_par[p].atm].ofres);
+			}
+			std::sort(dirty_res_idx.begin(), dirty_res_idx.end());
+			dirty_res_idx.erase(
+				std::unique(dirty_res_idx.begin(), dirty_res_idx.end()),
+				dirty_res_idx.end());
+		}
+		const bool use_selective = !has_normal_modes &&
+		    static_cast<int>(dirty_atm.size()) < natm / 2;
+		const int n_dirty_atm = static_cast<int>(dirty_atm.size());
+		const int n_dirty_res = static_cast<int>(dirty_res_idx.size());
+
 		// Per-thread mutable atom arrays.
 		std::vector<std::vector<atom>>  tl_atoms(n_thr,
 		    std::vector<atom>(atoms, atoms + natm));
@@ -1191,7 +1247,8 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 	shared(chrom, pop_size, GB, gene_lim, cleftgrid, target, \
 	       atoms, residue, FA, VC, \
 	       tl_atoms, tl_res, tl_fa, tl_optres, tl_vc, \
-	       natm, nres, nopt)
+	       natm, nres, nopt, \
+	       use_selective, dirty_atm, dirty_res_idx, n_dirty_atm, n_dirty_res)
 #endif
 		for (int ii = 0; ii < pop_size; ++ii) {
 			if (chrom[ii].status == 'n') continue;
@@ -1201,8 +1258,21 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 			const int tid = 0;
 #endif
 			// Reset per-thread state to the reference protein configuration.
-			std::copy(atoms,   atoms + natm,   tl_atoms[tid].begin());
-			std::copy(residue, residue + nres, tl_res[tid].begin());
+			// When normal modes are off, only restore the atoms/residues that
+			// ic2cf + vcfunction actually modify (typically <10% of total).
+			if (use_selective) {
+				for (int d = 0; d < n_dirty_atm; ++d) {
+					const int ai = dirty_atm[d];
+					tl_atoms[tid][ai] = atoms[ai];
+				}
+				for (int d = 0; d < n_dirty_res; ++d) {
+					const int ri = dirty_res_idx[d];
+					tl_res[tid][ri] = residue[ri];
+				}
+			} else {
+				std::copy(atoms,   atoms + natm,   tl_atoms[tid].begin());
+				std::copy(residue, residue + nres, tl_res[tid].begin());
+			}
 			// optres cf fields are cleared by vcfunction itself; pre-clear for safety.
 			for (int o = 0; o < nopt; ++o) {
 				tl_optres[tid][o].cf.com    = 0.0;
@@ -1541,7 +1611,7 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 		std::vector<std::vector<atom>>   p_atoms(n_thr, std::vector<atom>(atoms, atoms + natm));
 		std::vector<std::vector<resid>>  p_res(n_thr, std::vector<resid>(residue, residue + nres));
 		std::vector<FA_Global>           p_fa(n_thr, *FA);
-		std::vector<std::vector<int>>    p_contacts(n_thr, std::vector<int>(100000, 0));
+		std::vector<std::vector<int>>    p_contacts(n_thr, std::vector<int>(MAX_ATOM_NUMBER, 0));
 		std::vector<std::vector<float>>  p_contrib(n_thr, std::vector<float>(nctb, 0.0f));
 		std::vector<std::vector<OptRes>> p_optres(n_thr,
 		    std::vector<OptRes>(FA->optres, FA->optres + nopt));
@@ -1578,10 +1648,52 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 
 		(void)range;  // suppress unused warning when _OPENMP not defined
 
+		// ── Dirty-tracking optimisation (same logic as main eval loop) ───
+		bool p_has_normal_modes = false;
+		for (int p = 0; p < FA->npar; ++p) {
+			if (FA->map_par[p].typ == 3) { p_has_normal_modes = true; break; }
+		}
+		std::vector<int> p_dirty_atm;
+		std::vector<int> p_dirty_res_idx;
+		if (!p_has_normal_modes) {
+			for (int r = 0; r < FA->nors; ++r)
+				for (int m = 0; m < FA->nmov[r]; ++m)
+					p_dirty_atm.push_back(FA->mov[r][m]);
+			for (int p = 0; p < FA->npar; ++p)
+				p_dirty_atm.push_back(FA->map_par[p].atm);
+			for (int p = 0; p < FA->npar; ++p) {
+				if (FA->map_par[p].typ == 2) {
+					int j = FA->map_par[p].atm;
+					int cat = atoms[j].rec[3];
+					while (cat != 0 && cat != FA->map_par[p].atm) {
+						p_dirty_atm.push_back(cat);
+						j = cat;
+						cat = atoms[j].rec[3];
+					}
+				}
+			}
+			std::sort(p_dirty_atm.begin(), p_dirty_atm.end());
+			p_dirty_atm.erase(std::unique(p_dirty_atm.begin(), p_dirty_atm.end()),
+			                   p_dirty_atm.end());
+			for (int p = 0; p < FA->npar; ++p) {
+				if (FA->map_par[p].typ == 4)
+					p_dirty_res_idx.push_back(atoms[FA->map_par[p].atm].ofres);
+			}
+			std::sort(p_dirty_res_idx.begin(), p_dirty_res_idx.end());
+			p_dirty_res_idx.erase(
+				std::unique(p_dirty_res_idx.begin(), p_dirty_res_idx.end()),
+				p_dirty_res_idx.end());
+		}
+		const bool p_use_selective = !p_has_normal_modes &&
+		    static_cast<int>(p_dirty_atm.size()) < natm / 2;
+		const int p_n_dirty_atm = static_cast<int>(p_dirty_atm.size());
+		const int p_n_dirty_res = static_cast<int>(p_dirty_res_idx.size());
+
 #ifdef _OPENMP
 #pragma omp parallel for schedule(dynamic) default(none) \
 	shared(chrom, FA, GB, VC, gene_lim, atoms, residue, cleftgrid, target, \
-	       popoffset, p_atoms, p_res, p_fa, p_optres, p_vc, natm, nres, nopt)
+	       popoffset, p_atoms, p_res, p_fa, p_optres, p_vc, natm, nres, nopt, \
+	       p_use_selective, p_dirty_atm, p_dirty_res_idx, p_n_dirty_atm, p_n_dirty_res)
 #endif
 		for(i=popoffset;i<GB->num_chrom;i++){
 #ifdef _OPENMP
@@ -1589,8 +1701,19 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 #else
 			const int tid = 0;
 #endif
-			std::copy(atoms,   atoms + natm,   p_atoms[tid].begin());
-			std::copy(residue, residue + nres, p_res[tid].begin());
+			if (p_use_selective) {
+				for (int d = 0; d < p_n_dirty_atm; ++d) {
+					const int ai = p_dirty_atm[d];
+					p_atoms[tid][ai] = atoms[ai];
+				}
+				for (int d = 0; d < p_n_dirty_res; ++d) {
+					const int ri = p_dirty_res_idx[d];
+					p_res[tid][ri] = residue[ri];
+				}
+			} else {
+				std::copy(atoms,   atoms + natm,   p_atoms[tid].begin());
+				std::copy(residue, residue + nres, p_res[tid].begin());
+			}
 			for (int o = 0; o < nopt; ++o) {
 				p_optres[tid][o].cf.com    = 0.0;
 				p_optres[tid][o].cf.wal    = 0.0;
