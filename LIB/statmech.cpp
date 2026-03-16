@@ -399,7 +399,6 @@ std::vector<WHAMBin> StatMechEngine::wham(
 #endif
         f_old = f_new;
         if (maxdiff < tolerance) break;
-#endif
     }
 
     // Build output

@@ -82,12 +82,10 @@ class BindingMode // aggregation of poses (Cluster)
 				int nbins = 20
 			) const;  // 1D FE profile along arbitrary coordinate
 			
-			const Pose&	get_pose(int index) const;
 		std::vector<Pose>::const_iterator elect_Representative(bool useOPTICSordering) const;
 			inline bool const 			operator<(const BindingMode&);
 
 			// ═══ PUBLIC ACCESSORS (for bindings) ═══
-			const Pose&					get_pose(int index) const { return Poses.at(index); }
 			const std::vector<Pose>&	get_poses() const { return Poses; }
 
  	protected:
@@ -144,7 +142,6 @@ class BindingPopulation
 		 	/// ΔG matrix between all pairs of binding modes (upper triangle, row-major)
 		 	std::vector<std::vector<double>> get_deltaG_matrix() const;
 		 	// ═══ PUBLIC ACCESSORS (for bindings) ═══
-		 	const BindingMode& get_binding_mode(int index) const { return BindingModes.at(index); }
 		 	const std::vector<BindingMode>& get_binding_modes() const { return BindingModes; }
 
 	protected:
