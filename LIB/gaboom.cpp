@@ -103,20 +103,24 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 
 	printf("num_genes=%d\n",GB->num_genes);
 
-	//GB->rrg_skip=0;
-	GB->adaptive_ga=0;
-	GB->num_print=10;
-	GB->print_int=1;
-	GB->seed = 0;
-
-	GB->ssnum = 1000;
-	GB->pbfrac = 1.0;
-	GB->duplicates = 0;
-	GB->intragenes = 0;
-
 	printf("file in GA is <%s>\n",gainpfile);
 
-	read_gainputs(FA,GB,&geninterval,&popszpartition,gainpfile);
+	if (gainpfile[0] != '\0') {
+		//GB->rrg_skip=0;
+		GB->adaptive_ga=0;
+		GB->num_print=10;
+		GB->print_int=1;
+		GB->seed = 0;
+
+		GB->ssnum = 1000;
+		GB->pbfrac = 1.0;
+		GB->duplicates = 0;
+		GB->intragenes = 0;
+
+		read_gainputs(FA,GB,&geninterval,&popszpartition,gainpfile);
+	} else {
+		printf("No GA input file — using pre-configured parameters\n");
+	}
 	unsigned int tt;
 	if (GB->seed==0)
 	{

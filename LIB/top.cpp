@@ -305,7 +305,10 @@ int main(int argc, char **argv){
 		fprintf(stderr, "Input pipeline integration in progress. Use --legacy for full runs.\n");
 		fprintf(stderr, "Config loaded: %s\n", config_path.empty() ? "(defaults)" : config_path.c_str());
 
-		// Set output prefix for end_strfile
+		const char* receptor_path = argv[1];
+		const char* ligand_path   = argv[2];
+
+		// Set output prefix
 		strncpy(end_strfile, output_prefix.c_str(), MAX_PATH__ - 1);
 		end_strfile[MAX_PATH__ - 1] = '\0';
 		strcpy(FA->rrgfile, end_strfile);
