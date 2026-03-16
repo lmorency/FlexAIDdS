@@ -63,4 +63,22 @@ export type {
   PoseQualityReport,
 } from './PoseQualityReport.js';
 
+export type {
+  CleftFeatures,
+} from './CleftFeatures.js';
+
+export type {
+  GAProgressSnapshot,
+} from './GAProgressSnapshot.js';
+
+export type {
+  PoseProfile,
+  PoseQualityContext,
+} from './PoseQualityContext.js';
+
+export type {
+  TargetDockingSummary,
+  SelectivityContext,
+} from './SelectivityContext.js';
+
 export { serializePopulation, deserializePopulation } from './BindingPopulation.js';

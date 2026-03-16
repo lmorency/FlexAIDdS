@@ -10,7 +10,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import type { DeviceCapability, WorkChunk } from '@bonhomme/flexaidds';
 import type { RefereeVerdict } from '@bonhomme/shared';
-import { RefereePanel } from './RefereePanel.js';
+import { IntelligencePanel } from './IntelligencePanel.js';
 
 interface FleetMetrics {
   jobID: string;
@@ -295,10 +295,10 @@ export function FleetDashboard({
         </section>
       )}
 
-      {/* Referee verdict panel */}
+      {/* Intelligence analysis panel */}
       {fleet.refereeVerdict && (
         <section style={{ marginTop: '1.5rem' }}>
-          <RefereePanel verdict={fleet.refereeVerdict} title="Fleet Referee Verdict" />
+          <IntelligencePanel verdict={fleet.refereeVerdict} title="Fleet Intelligence" />
         </section>
       )}
 
