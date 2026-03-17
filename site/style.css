@@ -1997,6 +1997,38 @@ code {
   margin-top: auto;
 }
 
+.pub-category {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text);
+  margin: 2rem 0 0.75rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.pub-category:first-of-type {
+  margin-top: 0.5rem;
+}
+
+.pub-category small {
+  font-weight: 400;
+  color: var(--color-text-muted);
+  font-size: 0.85em;
+}
+
+.publications-section .section-subtitle {
+  text-align: center;
+  color: var(--color-text-muted);
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+}
+
+.publications-section .section-subtitle a {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 @media (max-width: 768px) {
   .publications-grid {
     grid-template-columns: 1fr;

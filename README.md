@@ -870,23 +870,51 @@ Provides Python ports of StatMechEngine, ShannonThermoStack, TorsionalENM, and C
 
 ## 📄 Publications
 
+Full list: [Google Scholar](https://scholar.google.ca/citations?user=amFCT0oAAAAJ&hl=en)
+
 > **Primary citation** — if you use FlexAID∆S, please cite:
 >
-> Gaudreault & Najmanovich (2015). *J. Chem. Inf. Model.* 55(7):1323-36.
+> Gaudreault F & Najmanovich RJ (2015). *J. Chem. Inf. Model.* 55(7):1323-36.
 > [DOI:10.1021/acs.jcim.5b00078](https://doi.org/10.1021/acs.jcim.5b00078)
 
-**Additional references**:
+### FlexAID & Computational Biophysics
 
-2. **NRGsuite PyMOL plugin**:
-   > Gaudreault, Morency & Najmanovich (2015). *Bioinformatics* 31(23):3856-8. [DOI:10.1093/bioinformatics/btv458](https://doi.org/10.1093/bioinformatics/btv458)
+1. **FlexAID∆S: Entropy-driven molecular docking** *(in preparation)*:
+   > Morency LP & Najmanovich RJ (2026). "FlexAID∆S: Information-Theoretic Entropy Improves Molecular Docking Accuracy and Binding Mode Prediction." *Manuscript in preparation.*
 
-3. **ENCoM** (Elastic Network Contact Model):
-   > Frappier et al. (2015). *Proteins* 83(11):2073-82. [DOI:10.1002/prot.24922](https://doi.org/10.1002/prot.24922)
+2. **FlexAID in Drug Discovery** (first author):
+   > Morency LP, Gaudreault F & Najmanovich R (2018). *Methods Mol. Biol.* 1762:367-388. [DOI:10.1007/978-1-4939-7756-7_18](https://doi.org/10.1007/978-1-4939-7756-7_18)
 
-4. **FlexAID∆S: Entropy-driven molecular docking** (preprint pending):
-   > Morency LP & Najmanovich RJ (2026). "FlexAID∆S: Information-Theoretic Entropy Improves Molecular Docking Accuracy and Binding Mode Prediction." Preprint in preparation.
+3. **Drug off-target detection**:
+   > Chartier M, Morency LP, Zylber MI & Najmanovich RJ (2017). *BMC Pharmacol. Toxicol.* 18(1):18. [DOI:10.1186/s40360-017-0128-7](https://doi.org/10.1186/s40360-017-0128-7)
 
-   *Status*: Manuscript in preparation. Preprint expected on bioRxiv/ChemRxiv in 2026. This paper introduces the statistical mechanics framework, Shannon entropy scoring, and benchmark results on ITC-187 and CASF-2016.
+4. **NRGsuite PyMOL plugin**:
+   > Gaudreault F, Morency LP & Najmanovich RJ (2015). *Bioinformatics* 31(23):3856-8. [DOI:10.1093/bioinformatics/btv458](https://doi.org/10.1093/bioinformatics/btv458)
+
+5. **FlexAID docking engine**:
+   > Gaudreault F & Najmanovich RJ (2015). *J. Chem. Inf. Model.* 55(7):1323-36. [DOI:10.1021/acs.jcim.5b00078](https://doi.org/10.1021/acs.jcim.5b00078)
+
+6. **ENCoM** (Elastic Network Contact Model):
+   > Frappier V et al. (2015). *Proteins* 83(11):2073-82. [DOI:10.1002/prot.24922](https://doi.org/10.1002/prot.24922)
+
+### Biochemistry & Molecular Biology
+
+7. **GST tag alternative translation**:
+   > Bernier SC, Morency LP, Najmanovich R & Salesse C (2018). *J. Biotechnol.* 286:14-16. [DOI:10.1016/j.jbiotec.2018.09.003](https://doi.org/10.1016/j.jbiotec.2018.09.003)
+
+8. **TMPRSS6 isoform diversity**:
+   > Dion SP, Béliveau F, Morency LP, Désilets A, Najmanovich R & Leduc R (2018). *Sci. Rep.* 8(1):12562. [DOI:10.1038/s41598-018-30618-z](https://doi.org/10.1038/s41598-018-30618-z)
+
+### Medicinal Chemistry — HIV Antivirals (Boehringer Ingelheim)
+
+9. **NcRTI optimization**:
+   > Sturino CF, Bousquet Y, James CA, … Morency L, … Simoneau B (2013). *Bioorg. Med. Chem. Lett.* 23:3967-3975. [DOI:10.1016/j.bmcl.2013.04.043](https://doi.org/10.1016/j.bmcl.2013.04.043)
+
+10. **Non-basic NcRTI discovery**:
+    > James CA, DeRoy P, Duplessis M, … Morency L, … Sturino CF (2013). *Bioorg. Med. Chem. Lett.* 23(9):2781-6. [DOI:10.1016/j.bmcl.2013.02.021](https://doi.org/10.1016/j.bmcl.2013.02.021)
+
+11. **Benzofuranopyrimidinone NcRTI series**:
+    > Tremblay M, Bethell RC, Cordingley MG, … Morency L, … Sturino CF (2013). *Bioorg. Med. Chem. Lett.* 23(9):2775-80. [DOI:10.1016/j.bmcl.2013.01.058](https://doi.org/10.1016/j.bmcl.2013.01.058)
 
 **Related Work** (Inspiration Only):
 - **NRGRank** (GPL-3.0, *not a dependency*):
