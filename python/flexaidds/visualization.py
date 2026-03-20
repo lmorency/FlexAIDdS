@@ -70,8 +70,16 @@ def load_population(
     _require_pymol()
     from pathlib import Path
 
-    default_palette = ["cyan", "yellow", "green", "magenta", "orange",
-                       "pink", "slate", "salmon", "wheat", "violet"]
+    # Burgundy-to-purple spectrum palette
+    _cmd.set_color("_bp_0", [0.502, 0.000, 0.125])  # burgundy red
+    _cmd.set_color("_bp_1", [0.470, 0.000, 0.200])
+    _cmd.set_color("_bp_2", [0.435, 0.000, 0.270])
+    _cmd.set_color("_bp_3", [0.400, 0.000, 0.340])
+    _cmd.set_color("_bp_4", [0.365, 0.000, 0.400])
+    _cmd.set_color("_bp_5", [0.340, 0.000, 0.440])
+    _cmd.set_color("_bp_6", [0.294, 0.000, 0.510])  # purple blue
+    default_palette = ["_bp_0", "_bp_1", "_bp_2", "_bp_3",
+                       "_bp_4", "_bp_5", "_bp_6"]
     palette = palette or default_palette
     pdb_dir_path = Path(pdb_dir)
 
@@ -93,6 +101,19 @@ def load_population(
         )
 
 
+def _burgundy_purple_rgb(frac: float):
+    """Interpolate from burgundy red to purple blue.
+
+    frac = 0.0 → burgundy red (0.502, 0.0, 0.125)
+    frac = 1.0 → purple blue (0.294, 0.0, 0.510)
+    """
+    frac = max(0.0, min(1.0, frac))
+    r = 0.502 + frac * (0.294 - 0.502)
+    g = 0.0
+    b = 0.125 + frac * (0.510 - 0.125)
+    return [r, g, b]
+
+
 def color_by_energy(
     obj_name: str,
     energies: List[float],
@@ -100,13 +121,13 @@ def color_by_energy(
     low_color: str = "blue",
     high_color: str = "red",
 ) -> None:
-    """Color PyMOL object states by energy using a gradient.
+    """Color PyMOL object states by energy using a burgundy-to-purple gradient.
 
     Args:
         obj_name: PyMOL object name.
         energies: Energy value for each state (kcal/mol).
-        low_color: Color for lowest energy (most favorable).
-        high_color: Color for highest energy (least favorable).
+        low_color: Ignored (kept for API compat). Uses burgundy red.
+        high_color: Ignored (kept for API compat). Uses purple blue.
     """
     _require_pymol()
     if not energies:
@@ -117,13 +138,36 @@ def color_by_energy(
     e_range = e_max - e_min or 1.0
 
     for state_idx, energy in enumerate(energies, start=1):
-        frac = (energy - e_min) / e_range  # 0 = best, 1 = worst
-        # Interpolate RGB between low_color and high_color via spectrum
-        _cmd.set_color(
-            f"_energy_{state_idx}",
-            [1.0 - frac, 0.0, frac],  # blue → red gradient
-        )
+        frac = (energy - e_min) / e_range  # 0 = most favorable, 1 = least
+        # Burgundy red → purple blue spectrum
+        rgb = _burgundy_purple_rgb(frac)
+        _cmd.set_color(f"_energy_{state_idx}", rgb)
         _cmd.color(f"_energy_{state_idx}", f"{obj_name} and state {state_idx}")
+
+
+def color_by_boltzmann_weight(
+    obj_name: str,
+    weights: List[float],
+) -> None:
+    """Color PyMOL object states by Boltzmann weight (burgundy-to-purple).
+
+    High probability (weight ~ 1.0) → burgundy red.
+    Low probability (weight ~ 0.0) → purple blue.
+
+    Args:
+        obj_name: PyMOL object name.
+        weights: Boltzmann weight for each state (normalized, 0-1).
+    """
+    _require_pymol()
+    if not weights:
+        return
+
+    for state_idx, w in enumerate(weights, start=1):
+        # Invert: high weight = burgundy (frac=0), low weight = purple (frac=1)
+        frac = 1.0 - max(0.0, min(1.0, w))
+        rgb = _burgundy_purple_rgb(frac)
+        _cmd.set_color(f"_bw_{state_idx}", rgb)
+        _cmd.color(f"_bw_{state_idx}", f"{obj_name} and state {state_idx}")
 
 
 def show_cleft_spheres(sphere_pdb: str, *, color: str = "yellow",

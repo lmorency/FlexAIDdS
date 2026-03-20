@@ -34,7 +34,8 @@ def build_parser() -> argparse.ArgumentParser:
         action="version",
         version=f"%(prog)s {__version__}",
     )
-    parser.add_argument("results_dir", type=Path, help="Directory containing docking result PDB files")
+    parser.add_argument("results_dir", nargs="?", type=Path, default=None,
+                        help="Directory containing docking result PDB files")
     parser.add_argument(
         "--json",
         action="store_true",
@@ -52,6 +53,16 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
         help="Show only the top N binding modes in the summary table (default: all).",
+    )
+    parser.add_argument(
+        "--check-update",
+        action="store_true",
+        help="Check for newer versions of FlexAID∆S on GitHub.",
+    )
+    parser.add_argument(
+        "--self-update",
+        action="store_true",
+        help="Check for and install the latest version via pip.",
     )
     return parser
 
@@ -90,6 +101,39 @@ def _print_table(result, top_n: Optional[int]) -> None:
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
+
+    # Handle update flags first
+    if args.check_update or args.self_update:
+        from .updater import check_for_updates, update_pip
+
+        info = check_for_updates()
+        if info is None:
+            print("Could not reach GitHub API to check for updates.")
+            return 1
+
+        print(f"Current version: {info.current_version}")
+        print(f"Latest version:  {info.latest_version}")
+
+        if not info.update_available:
+            print("You are up to date.")
+            return 0
+
+        print(f"Update available: {info.release_url}")
+        if args.self_update:
+            print("Installing update via pip...")
+            version = info.latest_version.lstrip("v")
+            rc = update_pip(version)
+            if rc == 0:
+                print("Update installed successfully.")
+            else:
+                print(f"pip exited with code {rc}")
+            return rc
+
+        return 0
+
+    if args.results_dir is None:
+        parser.print_help()
+        return 0
 
     result = load_results(args.results_dir)
 

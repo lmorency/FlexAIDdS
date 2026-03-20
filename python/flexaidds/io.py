@@ -302,6 +302,25 @@ class Atom:
         return np.array([self.x, self.y, self.z])
 
 
+# ── Ion classification ────────────────────────────────────────────────────────
+_ION_RESNAMES: frozenset = frozenset({
+    "MG", "ZN", "CA", "NA", "K", "FE", "FE2", "FE3",
+    "CU", "CU1", "CU2", "MN", "CO", "NI", "CL", "BR",
+    "IOD", "LI", "CD", "HG", "PB",
+})
+
+
+def is_ion(atom: "Atom") -> bool:
+    """Return True if *atom* is a receptor-bound metal ion or halide.
+
+    Requires ``atom.record == 'HETATM'`` and a recognised single-atom residue
+    name (MG, ZN, CA, NA, K, FE, FE2, FE3, CU, CU1, CU2, MN, CO, NI, CL,
+    BR, IOD, LI, CD, HG, PB).  Protein Cα atoms (ATOM record, residue ALA
+    etc.) are *not* matched even though the atom name may be "CA".
+    """
+    return atom.record == "HETATM" and atom.resname.strip() in _ION_RESNAMES
+
+
 @dataclass
 class PDBStructure:
     """Parsed PDB structure."""

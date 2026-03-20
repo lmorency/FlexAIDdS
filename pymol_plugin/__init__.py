@@ -8,6 +8,10 @@ Features:
 - Pose ensemble visualization with Boltzmann weighting
 - Integration with NRGSuite workflow
 - Read-only loading of docking result ensembles through the flexaidds Python API
+- Entropy heatmap visualization (spatial entropy density)
+- Interactive docking workflow from PyMOL
+- Binding mode animation (coordinate interpolation morph)
+- ITC-style thermogram comparison plots
 
 Installation:
     1. PyMOL > Plugin Manager > Install New Plugin
@@ -28,7 +32,7 @@ except ImportError:
     import warnings
     warnings.warn("PyMOL not available. Plugin functionality disabled.", ImportWarning)
 
-__version__ = "1.0.0-alpha"
+__version__ = "2.0.0-alpha"
 __author__ = "Louis-Philippe Morency"
 __email__ = "lp.morency@umontreal.ca"
 
@@ -68,7 +72,14 @@ if PYMOL_AVAILABLE:
         color_mode_by_score,
         show_mode_details,
     )
-    
+    from .entropy_heatmap import render_entropy_heatmap
+    from .mode_animation import animate_binding_modes
+    from .itc_comparison import (
+        plot_enthalpy_entropy_compensation,
+        plot_free_energy_comparison,
+    )
+    from .interactive_docking import dock_interactive, dock_cancel
+
     cmd.extend("flexaids_load", load_binding_modes)
     cmd.extend("flexaids_show_ensemble", show_pose_ensemble)
     cmd.extend("flexaids_color_boltzmann", color_by_boltzmann_weight)
@@ -77,3 +88,9 @@ if PYMOL_AVAILABLE:
     cmd.extend("flexaids_show_mode", show_binding_mode)
     cmd.extend("flexaids_color_mode", color_mode_by_score)
     cmd.extend("flexaids_mode_details", show_mode_details)
+    cmd.extend("flexaids_entropy_heatmap", render_entropy_heatmap)
+    cmd.extend("flexaids_animate", animate_binding_modes)
+    cmd.extend("flexaids_itc_plot", plot_enthalpy_entropy_compensation)
+    cmd.extend("flexaids_itc_compare", plot_free_energy_comparison)
+    cmd.extend("flexaids_dock", dock_interactive)
+    cmd.extend("flexaids_dock_cancel", dock_cancel)

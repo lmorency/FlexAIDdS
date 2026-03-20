@@ -142,6 +142,9 @@ class BindingModeResult:
     frequency: Optional[int] = None
     temperature: Optional[float] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
+    # Receptor-bound ions/cofactors in the complex that influenced this mode.
+    # Format: "RESNAME:CHAIN:RESNUM" (e.g. "MG:A:101", "ZN:B:202").
+    cofactors: List[str] = field(default_factory=list)
 
     @property
     def n_poses(self) -> int:
@@ -205,6 +208,7 @@ class BindingModeResult:
             frequency=data.get("frequency"),
             temperature=data.get("temperature"),
             metadata=data.get("metadata", {}),
+            cofactors=data.get("cofactors", []),
         )
 
 
@@ -457,63 +461,6 @@ class DockingResult:
             binding_modes=modes,
             temperature=payload.get("temperature"),
             metadata=payload.get("metadata", {}),
-        )
-
-    @classmethod
-    def from_csv(cls, source: Union[str, Path]) -> "DockingResult":
-        """Reconstruct a DockingResult from CSV produced by :meth:`to_csv`.
-
-        Accepts either a file path or a CSV-encoded string.  Each row becomes
-        one :class:`BindingModeResult` with an empty ``poses`` list.
-
-        Args:
-            source: Path to a CSV file, or a CSV-encoded string.
-
-        Returns:
-            :class:`DockingResult` with binding modes populated from the
-            CSV rows.
-        """
-        source_path = Path(source)
-        if source_path.suffix == ".csv" or source_path.exists():
-            text = source_path.read_text(encoding="utf-8")
-        else:
-            text = str(source)
-
-        reader = csv.DictReader(io.StringIO(text))
-        modes: List[BindingModeResult] = []
-        for row in reader:
-
-            def _float_or_none(key: str) -> Optional[float]:
-                val = row.get(key)
-                if val is None or val == "" or val == "None":
-                    return None
-                return float(val)
-
-            def _int_or_none(key: str) -> Optional[int]:
-                val = row.get(key)
-                if val is None or val == "" or val == "None":
-                    return None
-                return int(float(val))
-
-            modes.append(
-                BindingModeResult(
-                    mode_id=int(row["mode_id"]),
-                    rank=int(row["rank"]),
-                    poses=[],
-                    free_energy=_float_or_none("free_energy"),
-                    enthalpy=_float_or_none("enthalpy"),
-                    entropy=_float_or_none("entropy"),
-                    heat_capacity=_float_or_none("heat_capacity"),
-                    std_energy=_float_or_none("std_energy"),
-                    best_cf=_float_or_none("best_cf"),
-                    temperature=_float_or_none("temperature"),
-                )
-            )
-
-        return cls(
-            source_dir=Path("."),
-            binding_modes=modes,
-            metadata={},
         )
 
     def to_csv(self, path: Union[str, Path, None] = None) -> Optional[str]:

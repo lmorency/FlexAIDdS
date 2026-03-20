@@ -505,8 +505,9 @@ TEST(PerResidueDecomposition, SumsToTotalSvib) {
     for (double sv : diff.per_residue_svib_ref) sum_ref += sv;
     for (double sv : diff.per_residue_svib_tgt) sum_tgt += sv;
 
-    EXPECT_NEAR(sum_ref, diff.svib_ref.S_vib_kcal_mol_K, 1e-8);
-    EXPECT_NEAR(sum_tgt, diff.svib_tgt.S_vib_kcal_mol_K, 1e-8);
+    // Tolerance allows for Eigen vectorised summation order differences
+    EXPECT_NEAR(sum_ref, diff.svib_ref.S_vib_kcal_mol_K, 1e-6);
+    EXPECT_NEAR(sum_tgt, diff.svib_tgt.S_vib_kcal_mol_K, 1e-6);
 
     // Delta per-residue should sum to total delta
     double sum_delta = 0.0;

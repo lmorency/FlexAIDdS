@@ -161,11 +161,15 @@ def color_mode_by_score(mode_id: int, metric: str = "cf") -> None:
         t = (value - vmin) / vrange
         t = max(0.0, min(1.0, t))
         color_name = f"{_loaded_prefix}_{metric}_m{mode.mode_id}_p{pose.pose_rank}"
-        cmd.set_color(color_name, [1.0 - t, 0.0, t])
+        # Burgundy red (0.502, 0.0, 0.125) → purple blue (0.294, 0.0, 0.510)
+        r = 0.502 + t * (0.294 - 0.502)
+        g = 0.0
+        b = 0.125 + t * (0.510 - 0.125)
+        cmd.set_color(color_name, [r, g, b])
         cmd.color(color_name, obj_name)
         cmd.enable(obj_name)
 
-    print(f"Colored mode {mode.mode_id} by {metric} (red=lower, blue=higher).")
+    print(f"Colored mode {mode.mode_id} by {metric} (burgundy=lower, purple=higher).")
 
 
 def show_mode_details(mode_id: int) -> None:

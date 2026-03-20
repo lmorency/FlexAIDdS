@@ -8,6 +8,7 @@
 #include <string>
 #include <unordered_map>
 #include "flexaid.h"   // reuses atom_struct / resid_struct
+#include "SpatialGrid.h"
 
 namespace cavity_detect {
 
@@ -59,6 +60,7 @@ public:
 private:
     std::vector<atom> m_atoms;               // internal copy
     std::vector<DetectedCleft> m_clefts;
+    SpatialGrid m_grid;                      // cube grid spatial index for detect()
     float m_sphere_lwb = 1.5f;
     float m_sphere_upb = 4.0f;
 

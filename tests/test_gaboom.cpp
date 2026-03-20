@@ -238,10 +238,6 @@ TEST_F(QuickSortTest, SortByEnergyAscending) {
 }
 
 TEST_F(QuickSortTest, SortByFitnessDescending) {
-    // KNOWN BUG: QuickSort has an asymmetric comparison in the right-scan
-    // for descending mode: uses truthiness check instead of `> 0`, causing
-    // incorrect partitioning. We verify the sort doesn't crash and the
-    // maximum element ends up at position 0.
     const int N = 8;
     ChromArray ca(N, 1);
     double fits[] = {1.0, 5.0, 3.0, 8.0, 2.0, 7.0, 4.0, 6.0};
@@ -249,6 +245,10 @@ TEST_F(QuickSortTest, SortByFitnessDescending) {
         ca[i].fitnes = fits[i];
 
     QuickSort(ca.data(), 0, N - 1, false);
+
+    // Verify descending order
+    for (int i = 0; i < N - 1; ++i)
+        EXPECT_GE(ca[i].fitnes, ca[i + 1].fitnes);
 
     // Verify all original values are still present (no data loss)
     std::vector<double> sorted_fits(N);
@@ -375,9 +375,6 @@ TEST(RemoveDups, WithinTolerance) {
 // ===========================================================================
 
 TEST(FitnessStats, CalculatesMaxAndAverage) {
-    // KNOWN BUG: fitness_stats has loop condition `i < pop_size - i` instead of
-    // `i < pop_size`, so it only iterates the first ~half of the population.
-    // For pop_size=4: iterates i=0,1 only (sum=30, avg=30/4=7.5, max=20).
     GB_Global gb{};
     ChromArray ca(4, 1);
     ca[0].fitnes = 10.0;
@@ -387,10 +384,10 @@ TEST(FitnessStats, CalculatesMaxAndAverage) {
 
     fitness_stats(&gb, ca.data(), 4);
 
-    // Buggy: sums only first 2 elements (10+20=30), divides by 4 → 7.5
-    EXPECT_DOUBLE_EQ(gb.fit_avg, 7.5);
-    // Max is only found among first 2 elements
-    EXPECT_DOUBLE_EQ(gb.fit_max, 20.0);
+    // Correct: sums all 4 elements (10+20+30+40=100), divides by 4 → 25.0
+    EXPECT_DOUBLE_EQ(gb.fit_avg, 25.0);
+    // Max across all elements
+    EXPECT_DOUBLE_EQ(gb.fit_max, 40.0);
 }
 
 TEST(FitnessStats, SingleChromosome) {
@@ -400,7 +397,6 @@ TEST(FitnessStats, SingleChromosome) {
 
     fitness_stats(&gb, ca.data(), 1);
 
-    // With single element and loop bug, should still work
     EXPECT_DOUBLE_EQ(gb.fit_avg, 42.0);
 }
 

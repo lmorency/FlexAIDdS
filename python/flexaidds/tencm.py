@@ -59,7 +59,7 @@ class FullThermoResult:
 
     Attributes:
         deltaG:                Total free energy (kcal/mol).
-        shannonEntropy:        Shannon configurational entropy (bits).
+        shannonEntropy:        Shannon configurational entropy (nats).
         torsionalVibEntropy:   Torsional vibrational entropy (kcal/mol·K).
         entropyContribution:   −T·S entropy term (kcal/mol).
         report:                Human-readable summary.
@@ -73,7 +73,7 @@ class FullThermoResult:
     def __repr__(self) -> str:
         return (
             f"<FullThermoResult ΔG={self.deltaG:.4f} "
-            f"H_shannon={self.shannonEntropy:.4f} bits "
+            f"H_shannon={self.shannonEntropy:.4f} nats "
             f"S_vib={self.torsionalVibEntropy:.6f} kcal/(mol·K)>"
         )
 
@@ -273,14 +273,14 @@ def compute_shannon_entropy(
 ) -> float:
     """Compute Shannon entropy of a continuous distribution.
 
-    Bins the values into a histogram and computes H = -Σ p_i log2(p_i).
+    Bins the values into a histogram and computes H = -Σ p_i ln(p_i).
 
     Args:
         values:    List of continuous values.
         num_bins:  Number of histogram bins (default 20).
 
     Returns:
-        Shannon entropy in bits.
+        Shannon entropy in nats (natural log).
     """
     if _HAS_CORE:
         try:
@@ -295,7 +295,7 @@ def compute_shannon_entropy(
     counts, _ = np.histogram(arr, bins=num_bins)
     probs = counts / counts.sum()
     probs = probs[probs > 0]
-    return -float(np.sum(probs * np.log2(probs)))
+    return -float(np.sum(probs * np.log(probs)))
 
 
 def compute_torsional_vibrational_entropy(
@@ -354,6 +354,11 @@ def run_shannon_thermo_stack(
     Combines Shannon configurational entropy from the GA ensemble with
     torsional vibrational entropy from the ENCoM backbone model.
 
+    Formula:
+        S_conf = k_B * H_nats           (nats → physical units)
+        S_total = S_conf + S_vib         (additive for independent DOFs)
+        ΔG = base_ΔG - T * S_total
+
     Args:
         energies:          List of pose energies from the GA ensemble.
         tencm_model:       Built TorsionalENM (optional; if None, vibrational
@@ -377,6 +382,7 @@ def run_shannon_thermo_stack(
 
     # Shannon entropy
     H_shannon = compute_shannon_entropy(energies) if energies else 0.0
+    S_conf_phys = H_shannon * kB_kcal
 
     # Torsional vibrational entropy
     S_vib = 0.0
@@ -384,7 +390,10 @@ def run_shannon_thermo_stack(
         S_vib = compute_torsional_vibrational_entropy(
             tencm_model.modes, temperature_K)
 
-    entropy_contribution = -temperature_K * S_vib
+    # Additive decomposition: S_total = S_conf + S_vib
+    # Valid for independent conformational and vibrational DOFs.
+    total_S = S_conf_phys + S_vib
+    entropy_contribution = -temperature_K * total_S
     deltaG = base_deltaG + entropy_contribution
 
     report = (

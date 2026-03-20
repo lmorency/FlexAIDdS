@@ -2,6 +2,7 @@
 
 from .models import BindingModeResult, DockingResult, PoseResult
 from .results import load_results
+from .io import is_ion, _ION_RESNAMES
 from .docking import Docking, BindingMode, BindingPopulation, Pose
 from .encom import ENCoMEngine, NormalMode, VibrationalEntropy
 from .tencm import (
@@ -10,6 +11,7 @@ from .tencm import (
     run_shannon_thermo_stack,
 )
 from .__version__ import __version__ as __version__
+from .updater import check_for_updates, UpdateInfo
 
 # Pure-Python thermodynamics (always available)
 from .thermodynamics import StatMechEngine, Thermodynamics, kB_kcal, kB_SI
@@ -41,6 +43,19 @@ except ImportError:
 
 from .supercluster import SuperCluster
 from .tencom_results import FlexModeResult, FlexPopulationResult, parse_tencom_pdb, parse_tencom_json
+from .energy_matrix import (
+    EnergyMatrix,
+    MatrixEntry,
+    DensityPoint,
+    encode_256_type,
+    decode_256_type,
+    base_to_sybyl,
+    sybyl_to_base,
+    parse_dat_file,
+    write_dat_file,
+    SYBYL_TYPE_NAMES,
+    SYBYL_RADII,
+)
 
 
 def dock(
@@ -150,6 +165,9 @@ __all__ = [
     # Physical constants
     "kB_kcal",
     "kB_SI",
+    # Updater
+    "check_for_updates",
+    "UpdateInfo",
     # Availability flag
     "HAS_CORE_BINDINGS",
     # Core types (C++ when available, pure-Python fallback otherwise)
@@ -163,6 +181,18 @@ __all__ = [
     "ENCoMEngine",
     "NormalMode",
     "VibrationalEntropy",
+    # Energy matrix I/O and 256-type encoding (always available — pure Python)
+    "EnergyMatrix",
+    "MatrixEntry",
+    "DensityPoint",
+    "encode_256_type",
+    "decode_256_type",
+    "base_to_sybyl",
+    "sybyl_to_base",
+    "parse_dat_file",
+    "write_dat_file",
+    "SYBYL_TYPE_NAMES",
+    "SYBYL_RADII",
 ]
 
 # C++ core extras (only available when compiled)

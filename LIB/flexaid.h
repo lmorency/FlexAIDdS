@@ -42,6 +42,7 @@
 #define MAX_NUM_ATM 10000           // max number of atoms allowed 
 #define MAX_ATM_HET 200             // max number of atoms in het groups allowed 
 //#define MAX_FLEX_BONDS 20           // max number of flexible bonds for het groups
+#define MAX_ATOM_NUMBER 100000      // Max PDB atom number for contacts/num_atm arrays
 #define MAX_GRID_POINTS 1000        // Total number of points to anchor ligand
 #define MAX_NORMAL_GRID 5000        // max number of grid points in normal grid
 #define MAX_SPHERE_POINTS 610       // Total number of points in atom surface sphere 
@@ -362,6 +363,9 @@ struct FA_Global_struct{
 	int   res_cnt;                       // total number of residues
 	int   exclude_het;                   // exclude HET groups when calculating CF
 	int   remove_water;                  // exclude water molecules (HET=HOH)
+	int   keep_ions;                     // retain metal ions even when exclude_het=1
+	int   keep_structural_waters;        // retain low-B-factor crystallographic waters
+	float structural_water_bfactor_max;  // B-factor cutoff for structural waters (Å²)
 	int   output_range;                  // outputs Sphere or Grid file(s)
 
 	int     bloops;                      // exclude interactions with atoms n bloops away (exclude dis-ang preferably)
@@ -595,7 +599,9 @@ double get_cf_evalue(cfstr* cf);
 
 double GetValueFromGaussian(double x,double max,double zero);
 
-void modify_pdb(char* infile, char* outfile, int exclude_het, int remove_water, int is_protein); // reorder protein atoms in PDB file
+void modify_pdb(char* infile, char* outfile, int exclude_het, int remove_water, int is_protein,
+                int keep_ions=1, int keep_structural_waters=1,
+                float structural_water_bfactor_max=20.0f); // reorder protein atoms in PDB file
 int rna_structure(char* infile);
 int get_NextLine(char lines[][100], int nlines);
 int is_rna_structure(char* infile);

@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass
 
-from .thermodynamics import Thermodynamics, StatMechEngine
+from .thermodynamics import Thermodynamics, StatMechEngine, kB_kcal
 
 try:
     from . import _core
@@ -69,6 +69,9 @@ class BindingMode:
         self._poses: List[Pose] = []
         self._temperature: float = temperature
         self._cached_thermo: Optional[Thermodynamics] = None
+        # Receptor-bound ions and cofactors present in the complex.
+        # Each entry is a string "RESNAME:CHAIN:RESNUM", e.g. "MG:A:101".
+        self.receptor_cofactors: List[str] = []
 
     def _invalidate_cache(self) -> None:
         self._cached_thermo = None
@@ -206,6 +209,59 @@ class BindingPopulation:
             engine.add_sample(e)
         return engine.compute()
     
+    def get_shannon_entropy(self) -> float:
+        """Population-level Shannon configurational entropy.
+
+        S = -kB * sum(p_i * ln(p_i)) over all poses across all modes,
+        where p_i are Boltzmann probabilities.
+
+        Returns:
+            Shannon entropy in kcal/mol/K
+        """
+        import math
+
+        all_energies = []
+        for mode in self._modes:
+            for pose in mode._poses:
+                all_energies.append(pose.energy)
+
+        if not all_energies:
+            return 0.0
+
+        beta = 1.0 / (kB_kcal * self._temperature)
+        # Log-sum-exp for numerical stability
+        neg_beta_e = [-beta * e for e in all_energies]
+        max_val = max(neg_beta_e)
+        log_Z = max_val + math.log(sum(math.exp(v - max_val) for v in neg_beta_e))
+
+        shannon_S = 0.0
+        for e in all_energies:
+            log_p = -beta * e - log_Z
+            p = math.exp(log_p)
+            if p > 1e-30:
+                shannon_S -= p * log_p
+        shannon_S *= kB_kcal
+
+        return shannon_S
+
+    def get_deltaG_matrix(self) -> List[List[float]]:
+        """ΔG matrix between all pairs of binding modes.
+
+        matrix[i][j] = F_i - F_j. Anti-symmetric: matrix[i][j] = -matrix[j][i].
+
+        Returns:
+            n x n matrix of pairwise ΔG values (kcal/mol)
+        """
+        n = len(self._modes)
+        energies = [m.free_energy for m in self._modes]
+        matrix = [[0.0] * n for _ in range(n)]
+        for i in range(n):
+            for j in range(i + 1, n):
+                dg = energies[i] - energies[j]
+                matrix[i][j] = dg
+                matrix[j][i] = -dg
+        return matrix
+
     @property
     def n_modes(self) -> int:
         """Number of binding modes."""
