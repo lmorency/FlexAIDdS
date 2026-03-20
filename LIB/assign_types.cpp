@@ -106,12 +106,35 @@ void assign_types(FA_Global* FA,atom* atoms,resid* residue,char aminofile[]){
 	CloseFile_B(&infile_ptr,"r");
 
 	// Set a Hydrophilic type to water molecules
-	for(k=1;k<=FA->res_cnt;k++){ 
+	for(k=1;k<=FA->res_cnt;k++){
 		rot=residue[k].rot;
-		for(i=residue[k].fatm[rot];i<=residue[k].latm[rot];i++){ 
+		for(i=residue[k].fatm[rot];i<=residue[k].latm[rot];i++){
 			if(strcmp(residue[atoms[i].ofres].name,"HOH") == 0){atoms[i].type = 1;}
 		}
 	}
-	
+
+	// Assign SYBYL atom types for metal ions by residue name (bounded by FA->ntypes)
+	// SYBYL numbering from atom_typing_256.h: MG=28, CU=30, MN=31, HG=32, CD=33,
+	// NI=34, ZN=35, CA=36, FE=37.  Fall back to dummy (ntypes-1) if matrix is smaller.
+	{
+		static const struct { const char* rnam; int sybyl; } ion_types[] = {
+			{"MG ", 28}, {"CU ", 30}, {"CU1", 30}, {"CU2", 30},
+			{"MN ", 31}, {"HG ", 32}, {"CD ", 33}, {"NI ", 34},
+			{"ZN ", 35}, {"CA ", 36}, {"FE ", 37}, {"FE2", 37}, {"FE3", 37},
+			{nullptr, 0}
+		};
+		for(k=1; k<=FA->res_cnt; k++){
+			if(residue[k].type != 1) continue;  // HETATM only
+			rot = residue[k].rot;
+			const char* rname = residue[k].name;
+			int sybyl = 0;
+			for(int n = 0; ion_types[n].rnam; ++n)
+				if(!strncmp(rname, ion_types[n].rnam, 3)){ sybyl = ion_types[n].sybyl; break; }
+			if(sybyl > 0 && sybyl <= FA->ntypes)
+				for(i = residue[k].fatm[rot]; i <= residue[k].latm[rot]; ++i)
+					atoms[i].type = sybyl;
+		}
+	}
+
 	return;
 }

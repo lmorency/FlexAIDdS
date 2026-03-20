@@ -16,6 +16,8 @@ from flexaidds.io import (
     infer_pose_rank,
     parse_remark_map,
     parse_pose_result,
+    is_ion,
+    Atom,
 )
 
 
@@ -369,3 +371,61 @@ class TestParsePoseResult:
         pose = parse_pose_result(p)
         assert "cf" in pose.remarks
         assert "temperature" in pose.remarks
+
+
+# ===========================================================================
+# is_ion
+# ===========================================================================
+
+
+def _make_atom(record: str, resname: str, name: str = " X  ") -> Atom:
+    """Minimal Atom helper for is_ion tests."""
+    return Atom(
+        serial=1, name=name, altloc="", resname=resname,
+        chainid="A", resseq=1, icode="",
+        x=0.0, y=0.0, z=0.0,
+        occupancy=1.0, bfactor=0.0, element="X",
+        record=record,
+    )
+
+
+class TestIsIon:
+    def test_mg_hetatm_is_ion(self):
+        assert is_ion(_make_atom("HETATM", "MG ")) is True
+
+    def test_zn_hetatm_is_ion(self):
+        assert is_ion(_make_atom("HETATM", "ZN ")) is True
+
+    def test_ca_hetatm_is_ion(self):
+        assert is_ion(_make_atom("HETATM", "CA ")) is True
+
+    def test_na_hetatm_is_ion(self):
+        assert is_ion(_make_atom("HETATM", "NA ")) is True
+
+    def test_fe2_hetatm_is_ion(self):
+        assert is_ion(_make_atom("HETATM", "FE2")) is True
+
+    def test_cl_hetatm_is_ion(self):
+        assert is_ion(_make_atom("HETATM", "CL ")) is True
+
+    def test_iod_hetatm_is_ion(self):
+        assert is_ion(_make_atom("HETATM", "IOD")) is True
+
+    def test_protein_ca_atom_record_not_ion(self):
+        """ATOM record CA (Cα) must not be classified as calcium."""
+        assert is_ion(_make_atom("ATOM", "ALA", " CA ")) is False
+
+    def test_organic_cofactor_not_ion(self):
+        """Heme (HEM) is HETATM but not a single-atom ion."""
+        assert is_ion(_make_atom("HETATM", "HEM")) is False
+
+    def test_water_not_ion(self):
+        assert is_ion(_make_atom("HETATM", "HOH")) is False
+
+    def test_stripped_resname_matches(self):
+        """Residue names may have trailing spaces — strip() must handle them."""
+        assert is_ion(_make_atom("HETATM", "MG  ")) is True  # 4-char with spaces
+
+    def test_atom_record_with_ion_resname_not_ion(self):
+        """ATOM record even with 'MG' resname → not classified as ion."""
+        assert is_ion(_make_atom("ATOM", "MG ")) is False

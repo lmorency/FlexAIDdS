@@ -78,7 +78,8 @@ int setup_direct_input(FA_Global* FA, GB_Global* GB, VC_Global* VC,
 
     printf("read PDB file <%s>\n", receptor_pdb);
     modify_pdb(const_cast<char*>(receptor_pdb), tmpprotname,
-               FA->exclude_het, FA->remove_water, FA->is_protein);
+               FA->exclude_het, FA->remove_water, FA->is_protein,
+               FA->keep_ions, FA->keep_structural_waters, FA->structural_water_bfactor_max);
     read_pdb(FA, atoms, residue, tmpprotname);
     remove(tmpprotname);
 

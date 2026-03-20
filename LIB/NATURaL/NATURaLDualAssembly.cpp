@@ -194,8 +194,20 @@ DualAssemblyEngine::DualAssemblyEngine(const NATURaLConfig& cfg,
                                          atom* atoms, resid* residues,
                                          int n_residues)
     : config_(cfg), FA_(FA), VC_(VC),
-      atoms_(atoms), residues_(residues), n_residues_(n_residues)
+      atoms_(atoms), residues_(residues), n_residues_(n_residues),
+      is_rna_receptor_(is_nucleic_acid_receptor(residues, n_residues))
 {}
+
+// Hill equation: k_eff = k_max × [Mg]ⁿ / (K_d ⁿ + [Mg]ⁿ)
+// Returns the fractional saturation of Mg²⁺ binding sites (0–1).
+double DualAssemblyEngine::mg_hill_factor() const noexcept {
+    double mg  = config_.mg_concentration_mM;
+    double kd  = ribosome::KD_MG_RNA_MM;
+    double n   = ribosome::N_HILL_MG;
+    double mgn = std::pow(mg, n);
+    double kdn = std::pow(kd, n);
+    return mgn / (kdn + mgn);
+}
 
 std::vector<DualAssemblyEngine::GrowthStep> DualAssemblyEngine::run() {
     std::vector<GrowthStep> trajectory;
@@ -287,9 +299,27 @@ std::vector<DualAssemblyEngine::GrowthStep> DualAssemblyEngine::run() {
         bool   in_tunnel   = (step < static_cast<int>(tunnel_len));
         bool   is_pause    = (!in_tunnel) && (k_n < pause_threshold * hmean_rate);
 
-        // Co-translational folding probability: P_fold = k_fold/(k_fold + k_el)
-        double k_fold_here = ribosome::K_FOLD_DEFAULT;
-        if (is_pause) k_fold_here *= 3.0;   // Pechmann 2013 pause-site boost
+        // Co-translational folding probability: P_fold = k_fold / (k_fold + k_el)
+        //
+        // RNA receptors use differentiated rates:
+        //   • Secondary structure (stems/hairpins) folds in microseconds — k ~ 1e4 s⁻¹
+        //     → P_fold ≈ 1 during continuous elongation at 25 nt/s
+        //   • Tertiary / active-site conformation is Mg²⁺-dependent (Hill equation)
+        //     → k_eff = K_FOLD_RNA_TERTIARY × [Mg]ⁿ/(K_d ⁿ + [Mg]ⁿ), only at pause sites
+        // Refs: Woodside 2006 PNAS (hairpin); Penedo 2004 RNA; Martick & Scott 2006 Cell.
+        double k_fold_here;
+        if (is_rna_receptor_ && config_.ion_dependent_folding) {
+            if (is_pause) {
+                // Pause site: tertiary folding window, Mg²⁺-gated
+                k_fold_here = config_.k_fold_rna_tertiary * mg_hill_factor();
+            } else {
+                // Continuous elongation: secondary structure (fast)
+                k_fold_here = config_.k_fold_rna_secondary;
+            }
+        } else {
+            k_fold_here = ribosome::K_FOLD_DEFAULT;
+            if (is_pause) k_fold_here *= 3.0;  // Pechmann 2013 pause-site boost
+        }
         double p_cotrans = k_fold_here / (k_fold_here + k_n);
 
         // CF score for partial complex

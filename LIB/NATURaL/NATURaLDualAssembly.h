@@ -52,6 +52,16 @@ struct NATURaLConfig {
     ribosome::Organism organism              = ribosome::Organism::EcoliK12;
     bool             use_ribosome_speed      = true;  // use Zhao 2011 rates
     bool             model_tm_insertion      = true;  // model TM translocon
+
+    // ── Ion-dependent RNA folding ──────────────────────────────────────────
+    // For RNA receptors (ribozymes, riboswitches), Mg²⁺ drives tertiary folding.
+    // Secondary structure (hairpins/stems) folds fast (~k_fold_rna_secondary).
+    // Active-site/tertiary conformation is Mg²⁺-dependent (Hill equation).
+    // References: Penedo 2004 RNA; Martick & Scott 2006 Cell 126:309.
+    double           mg_concentration_mM    = 2.0;   // physiological [Mg²⁺] (mM)
+    bool             ion_dependent_folding   = true;  // use Mg²⁺ Hill eq for RNA tertiary
+    double           k_fold_rna_secondary    = ribosome::K_FOLD_RNA_SECONDARY; // s⁻¹ hairpin
+    double           k_fold_rna_tertiary     = ribosome::K_FOLD_RNA_TERTIARY;  // s⁻¹ at K_d
 };
 
 // Auto-configure from receptor and ligand properties.
@@ -101,12 +111,17 @@ private:
     resid*        residues_;
     int           n_residues_;
     double        final_deltaG_ = 0.0;
+    bool          is_rna_receptor_ = false;  // set in constructor via is_nucleic_acid_receptor()
 
     // Compute a lightweight CF score for the current partial complex
     double compute_partial_cf(int n_grown_residues) const;
 
     // Compute Shannon entropy over accumulated growth ensemble
     double compute_growth_entropy(const std::vector<double>& cf_trajectory) const;
+
+    // Hill equation: k_eff = k_max × [Mg]ⁿ / (K_d ⁿ + [Mg]ⁿ)
+    // Used to scale RNA tertiary folding rate by Mg²⁺ availability.
+    double mg_hill_factor() const noexcept;
 };
 
 } // namespace natural

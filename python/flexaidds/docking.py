@@ -69,6 +69,9 @@ class BindingMode:
         self._poses: List[Pose] = []
         self._temperature: float = temperature
         self._cached_thermo: Optional[Thermodynamics] = None
+        # Receptor-bound ions and cofactors present in the complex.
+        # Each entry is a string "RESNAME:CHAIN:RESNUM", e.g. "MG:A:101".
+        self.receptor_cofactors: List[str] = []
 
     def _invalidate_cache(self) -> None:
         self._cached_thermo = None
