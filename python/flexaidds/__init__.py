@@ -2,6 +2,7 @@
 
 from .models import BindingModeResult, DockingResult, PoseResult
 from .results import load_results
+from .io import is_ion, _ION_RESNAMES
 from .docking import Docking, BindingMode, BindingPopulation, Pose
 from .encom import ENCoMEngine, NormalMode, VibrationalEntropy
 from .tencm import (

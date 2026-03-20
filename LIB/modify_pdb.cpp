@@ -21,7 +21,24 @@ static char protein_atoms_order[NLIST][5]   = { " N  "," CA "," C  "," O  "," CB
 						" CH "," CH1"," CH2"," OH "," NH1"," NH2",
 						" OXT" };
 
-void modify_pdb(char* infile, char* outfile, int exclude_het, int remove_water, int is_protein)
+static bool is_ion_resname(const char* r3) {
+    static const char* t[] = {
+        "MG ","ZN ","CA ","NA ","K  ","FE ","FE2","FE3",
+        "CU ","CU1","CU2","MN ","CO ","NI ","CL ","BR ",
+        "IOD","LI ","CD ","HG ","PB ", nullptr
+    };
+    for(int i=0; t[i]; ++i) if(!strncmp(r3, t[i], 3)) return true;
+    return false;
+}
+
+// PDB B-factor occupies columns 60-65 (0-indexed)
+static float pdb_bfactor(const char* buf) {
+    char tmp[7]; strncpy(tmp, &buf[60], 6); tmp[6]='\0';
+    return (float)atof(tmp);
+}
+
+void modify_pdb(char* infile, char* outfile, int exclude_het, int remove_water, int is_protein,
+                int keep_ions, int keep_structural_waters, float structural_water_bfactor_max)
 {
 	char bufnul[10];
 	char buffer[100];   // pdb line
@@ -126,9 +143,20 @@ void modify_pdb(char* infile, char* outfile, int exclude_het, int remove_water, 
 			// all other lines that do not start with 'ATOM  ' field
 
 			if(!strncmp(&buffer[0],"HETATM",6)){
-				if(exclude_het) { continue; }
-				else {
-					if(!strncmp(&buffer[17],"HOH",3) && remove_water){ continue; }
+				if(exclude_het) {
+					// Keep metal ions when keep_ions=1, regardless of exclude_het
+					if(keep_ions && is_ion_resname(&buffer[17])) { /* keep */ }
+					else { continue; }
+				} else {
+					if(!strncmp(&buffer[17],"HOH",3) && remove_water) {
+						// Retain low-B-factor structural waters when requested
+						if(keep_structural_waters) {
+							float bf = pdb_bfactor(buffer);
+							if(bf > structural_water_bfactor_max) continue;
+						} else {
+							continue;
+						}
+					}
 				}
 			}
 

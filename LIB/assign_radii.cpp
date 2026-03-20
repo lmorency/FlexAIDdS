@@ -156,8 +156,35 @@ void assign_radii(atom* atoms,resid* residue,int atm_cnt)
          
             
         } else {
-            // HETATM records (modified amino acids, bound ligands, metals, water)
-            
+            // HETATM records: ions (residue-name lookup) then organic cofactors (element)
+            static const struct { const char* rnam; float r; } ions[] = {
+                {"MG ", 1.73f}, {"ZN ", 1.39f}, {"CA ", 1.74f}, {"NA ", 2.27f},
+                {"K  ", 2.75f}, {"FE ", 1.47f}, {"FE2", 1.47f}, {"FE3", 1.47f},
+                {"CU ", 1.40f}, {"CU1", 1.40f}, {"CU2", 1.40f}, {"MN ", 1.61f},
+                {"CO ", 1.52f}, {"NI ", 1.63f}, {"CL ", 1.75f}, {"BR ", 1.85f},
+                {"IOD", 1.98f}, {"LI ", 1.82f}, {"CD ", 1.58f}, {"HG ", 1.55f},
+                {"PB ", 2.02f}, {nullptr, 0.0f}
+            };
+            const char* rname = residue[atoms[atomi].ofres].name;
+            bool assigned = false;
+            for (int n = 0; ions[n].rnam; ++n) {
+                if (!strncmp(rname, ions[n].rnam, 3)) {
+                    atoms[atomi].radius = ions[n].r;
+                    assigned = true;
+                    break;
+                }
+            }
+            if (!assigned) {
+                // Organic cofactor or modified residue: infer from element in atom name [1]
+                switch (atoms[atomi].name[1]) {
+                    case 'C': atoms[atomi].radius = 1.88f; break;  // C4
+                    case 'N': atoms[atomi].radius = 1.64f; break;  // N3H0
+                    case 'O': atoms[atomi].radius = 1.42f; break;  // O1H0
+                    case 'S': atoms[atomi].radius = 1.77f; break;
+                    case 'P': atoms[atomi].radius = 1.80f; break;
+                    default:  atoms[atomi].radius = 1.50f; break;  // generic
+                }
+            }
         }
         
         //    printf("Atom[%d]=%d\t%s(%s) Rad=%1.2f\n",atomi,atoms[atomi].number,atoms[atomi].name,residue[atoms[atomi].ofres].name,atoms[atomi].radius);

@@ -142,6 +142,9 @@ class BindingModeResult:
     frequency: Optional[int] = None
     temperature: Optional[float] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
+    # Receptor-bound ions/cofactors in the complex that influenced this mode.
+    # Format: "RESNAME:CHAIN:RESNUM" (e.g. "MG:A:101", "ZN:B:202").
+    cofactors: List[str] = field(default_factory=list)
 
     @property
     def n_poses(self) -> int:
@@ -205,6 +208,7 @@ class BindingModeResult:
             frequency=data.get("frequency"),
             temperature=data.get("temperature"),
             metadata=data.get("metadata", {}),
+            cofactors=data.get("cofactors", []),
         )
 
 

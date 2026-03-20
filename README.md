@@ -96,6 +96,8 @@ for mode in results.rank_by_free_energy():
 - **Dead-end elimination (DEE)** reduces ligand conformational search space
 - **Batch evaluation** via `VoronoiCFBatch` with OpenMP parallelism
 - **Multiple clustering** methods: centroid-first, FastOPTICS, Density Peak
+- **Metal ion and cofactor scoring** — receptor-bound ions (Mg²⁺, Zn²⁺, Ca²⁺, Fe²⁺/³⁺, Cu²⁺, Mn²⁺, Na⁺, K⁺, Cl⁻, Br⁻, and 11 more) receive crystallographic VdW radii and SYBYL atom types; organic cofactors (heme, FAD, ATP analogs) use element-based radii; all automatically participate in Voronoi tessellation and CleftDetector probing
+- **Structural water retention** — crystallographic waters with B-factor < 20 Å² are retained by default; their O atoms participate in Voronoi CF scoring as hydrophilic receptor environment atoms, capturing water-mediated H-bonds (~1–3 kcal/mol each) and displacement entropy (~0.4–2 kcal/mol per ordered water released)
 
 #### Thermodynamics
 - **Canonical ensemble** — partition function *Z*, Helmholtz free energy *F*, entropy *S*, heat capacity *C*<sub>v</sub>
@@ -119,7 +121,7 @@ for mode in results.rank_by_free_energy():
 
 #### Analysis & Integration
 - **Python package** (`flexaidds`) — docking API, result I/O, thermodynamics, CLI inspector, PyMOL plugin
-- **Co-translational assembly** (NATURaL) — ribosome-speed chain growth with Sec translocon TM insertion
+- **Co-translational assembly** (NATURaL) — ribosome-speed chain growth with Sec translocon TM insertion; RNA receptors use differentiated secondary (k ~ 10⁴ s⁻¹) vs. Mg²⁺-dependent tertiary folding rates (Hill equation, K_d = 1 mM, n = 2) with corrected elongation rate of 25 nt/s (mRNA in vivo)
 - **Automatic cavity detection** — SURFNET gap-sphere algorithm with Metal GPU support
 - **[FreeNRG](https://github.com/lmorency/FreeNRG) integration** — unified free energy framework bridging FlexAID∆S and NRGRank
 
@@ -362,8 +364,8 @@ python -m flexaidds /path/to/results/ --csv out.csv  # CSV export
 | `train_256x256` | Offline training pipeline for 256×256 soft contact matrix |
 | `tencom_results` | tENCoM output parser (PDB REMARK + JSON) |
 | `results` | `load_results()` file parser |
-| `models` | `PoseResult`, `BindingModeResult`, `DockingResult` data classes |
-| `io` | PDB/MOL2/config I/O utilities |
+| `models` | `PoseResult`, `BindingModeResult` (+ `cofactors: List[str]` field), `DockingResult` data classes |
+| `io` | PDB/MOL2/config I/O; `is_ion(atom)` classifier; `_ION_RESNAMES` frozenset |
 | `visualization` | PyMOL integration helpers |
 
 <details>
@@ -471,6 +473,7 @@ Tests marked `@requires_core` skip gracefully when the C++ extension is not buil
 | `test_sugar_pucker.cpp` | Sugar pucker pseudorotation |
 | `test_encom.cpp` | ENCoM vibrational entropy |
 | `test_ptm_attachment.cpp` | Post-translational modification |
+| `test_ion_handling.cpp` | HETATM ion/cofactor radii and SYBYL type assignment (`assign_radii`, `assign_types`) |
 
 **Python tests** (`python/tests/`):
 
@@ -536,6 +539,19 @@ C_v = k_B·β²·(⟨E²⟩ − ⟨E⟩²)       (heat capacity)
 
 Implementation (`LIB/statmech.{h,cpp}`): log-sum-exp stability, Boltzmann weight normalization, thermodynamic integration, WHAM.
 
+### Metal Ions and Structural Waters in Scoring
+
+Receptor-bound metal ions and ordered crystallographic waters are **thermodynamically significant** and are now fully accounted for in the Voronoi CF:
+
+**Metal ions** — ions such as Mg²⁺ at an RNA active site or Zn²⁺ in a metalloprotein directly coordinate ligand atoms and define binding geometry. Previously invisible to the scoring function (radius = 0), they now receive crystallographic VdW radii (e.g., Mg = 1.73 Å, Zn = 1.39 Å) and SYBYL atom types matching the energy matrix (MG=28, ZN=35, CA=36, FE=37). This propagates automatically to CleftDetector (which filters on radius > 0) and Voronoi tessellation — no separate change to the geometry pipeline is needed.
+
+**Structural waters** — ordered crystallographic waters (B-factor < 20 Å²) contribute to binding thermodynamics via:
+- **Water displacement entropy**: releasing one ordered water to bulk ≈ +0.4–2 kcal/mol (Williams et al., JACS 2003; Freire, Curr. Opin. Struct. Biol. 2004)
+- **Water-mediated H-bonds**: bridging receptor–ligand contacts worth ~1–3 kcal/mol each
+- **Voronoi CF**: water O atoms (radius 1.42 Å, type 1 hydrophilic) participate in contact surface tessellation, correctly penalising poses that clash with vs. displace well-ordered waters
+
+The B < 20 Å² cutoff selects ~10–30% of waters in well-diffracting structures (≤ 2.0 Å resolution), capturing only the most ordered binding-site waters while excluding mobile surface waters that would add noise. Set `keep_structural_waters=false` or `remove_water=1` to restore legacy behaviour (all waters excluded).
+
 ---
 
 <details>
@@ -574,6 +590,9 @@ All keys are optional. Defaults enable full flexibility at 300 K. Source of trut
 | `output` | `max_results` | `10` | Max result clusters |
 | `output` | `htp_mode` | `false` | High-throughput mode |
 | `advanced` | `assume_folded` | `false` | Skip NATURaL chain growth |
+| `protein` | `keep_ions` | `true` | Retain receptor metal ions even when `exclude_het=1`; ions receive VdW radii and SYBYL types for Voronoi CF scoring |
+| `protein` | `keep_structural_waters` | `true` | Retain crystallographic HOH with B-factor ≤ `structural_water_bfactor_max`; ordered waters participate in CF scoring as hydrophilic atoms |
+| `protein` | `structural_water_bfactor_max` | `20.0` | B-factor cutoff (Å²) for structural water selection; ~10–30% of waters in ≤ 2.0 Å structures |
 
 The `--rigid` flag sets all flexibility to off and temperature to 0.
 The `--folded` flag sets `assume_folded = true`.
@@ -693,6 +712,16 @@ Automatic binding site detection via gap-sphere algorithm. Metal GPU acceleratio
 ### NATURaL
 
 Co-translational / co-transcriptional assembly module. RibosomeElongation (Zhao 2011 master equation, *E. coli* K-12 and Human HEK293), TransloconInsertion (Sec61 lateral gating, Hessa 2007), and DualAssemblyEngine for incremental chain growth with CF + Shannon entropy at each step.
+
+**RNA-specific folding kinetics** — when the receptor is a nucleic acid, the engine uses differentiated rate constants:
+
+| Folding event | Rate constant | Physical basis |
+|:-------------|:-------------|:---------------|
+| Secondary structure (hairpin/stem) | k = 10⁴ s⁻¹ | RNA hairpin folding (Sclavi et al., PNAS 2002) |
+| Mg²⁺-dependent tertiary | k_eff = k_max · [Mg]ⁿ / (K_dⁿ + [Mg]ⁿ) | Hill equation; K_d = 1 mM, n = 2 (cooperative) |
+| Protein / non-RNA baseline | k = 1 s⁻¹ | Co-translational protein folding |
+
+At the default physiological [Mg²⁺] = 2 mM, the Hill factor ≈ 0.80, giving k_eff ≈ 0.80 s⁻¹ for tertiary folding at pause sites. The elongation rate is **25 nt/s** (in-vivo mRNA; Borg & Bhaskara, Sci. Rep. 2017), corrected from the previous value of 50 nt/s which conflated mRNA and rRNA rates. Configure via `NATURaLConfig`: `mg_concentration_mM`, `ion_dependent_folding`, `k_fold_rna_secondary`, `k_fold_rna_tertiary`.
 
 ### Hardware Dispatch
 

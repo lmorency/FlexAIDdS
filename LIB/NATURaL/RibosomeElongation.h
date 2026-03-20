@@ -40,13 +40,25 @@ inline constexpr double MEAN_EL_RATE_ECOLI = 16.5;  // aa/s (Wohlgemuth 2008)
 inline constexpr double MEAN_EL_RATE_HUMAN = 5.6;   // aa/s (Ingolia 2011)
 inline constexpr double K_TERM_DEFAULT     = 4.0;   // termination rate (s⁻¹)
 inline constexpr double K_INI_DEFAULT      = 0.1;   // initiation rate (s⁻¹)
-inline constexpr double K_FOLD_DEFAULT     = 1.0;   // baseline folding rate (s⁻¹)
+inline constexpr double K_FOLD_DEFAULT     = 1.0;   // baseline folding rate s⁻¹ (protein / Mg-dep. tertiary)
+
+// ─── RNA-specific folding rates ───────────────────────────────────────────────
+// RNA hairpin/stem (secondary structure) folds in microseconds (k ~ 10³–10⁶ s⁻¹).
+// References: Porschke 1974; Ninio 1987; Liphardt 2001; Woodside 2006 PNAS.
+inline constexpr double K_FOLD_RNA_SECONDARY = 1.0e4; // s⁻¹ RNA hairpin/stem formation
+// Mg²⁺-dependent tertiary folding (active-site conformation) — slow, at K_d = 1 mM.
+// Reference: Penedo 2004 RNA; Martick & Scott 2006 Cell 126:309.
+inline constexpr double K_FOLD_RNA_TERTIARY  = 1.0;   // s⁻¹ at Mg²⁺ = K_d (1 mM)
+inline constexpr double KD_MG_RNA_MM         = 1.0;   // mM  Mg²⁺ K_d for tertiary folding
+inline constexpr double N_HILL_MG            = 2.0;   // Hill coefficient (cooperative Mg²⁺)
 
 // ─── RNA polymerase constants (co-transcriptional folding) ────────────────────
 // Same Zhao 2011 master equation applied to nucleotide-by-nucleotide synthesis.
 // Reference: Uptain 1997 Annu. Rev. Biochem. 66:117; Jonkers 2014 Mol. Cell 54:591.
 inline constexpr double RNAP_TUNNEL_NT       = 8.0;   // nt in RNAP RNA:DNA hybrid
-inline constexpr double MEAN_NT_RATE_ECOLI   = 50.0;  // nt/s (Uptain 1997)
+// Corrected from 50 nt/s: genome-wide mRNA in vivo rate is 21–25 nt/s at 37°C.
+// Reference: Sci. Reports 2017 (doi:10.1038/s41598-017-17408-9); rRNA is 80–90 nt/s.
+inline constexpr double MEAN_NT_RATE_ECOLI   = 25.0;  // nt/s mRNA in vivo (Sci. Reports 2017)
 inline constexpr double MEAN_NT_RATE_HUMAN   = 25.0;  // nt/s (Jonkers 2014)
 inline constexpr double K_RNAP_INI_DEFAULT   = 0.05;  // initiation rate (s⁻¹)
 inline constexpr double K_RNAP_TERM_DEFAULT  = 5.0;   // termination rate (s⁻¹)

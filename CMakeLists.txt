@@ -593,6 +593,42 @@ if(BUILD_FLEXAIDDS_FAST)
     message(STATUS "FlexAIDdS fast executable enabled")
 endif()
 
+# ─── NATURaL Hammerhead Ribozyme simulation (standalone) ─────────────────────
+# Runs the Zhao 2011 RNAP master equation on the 40-nt Schistosoma mansoni
+# minimal hammerhead ribozyme in co-transcriptional (RNAP) mode.
+# Only depends on RibosomeElongation (pure C++20, no FlexAID engine needed).
+option(ENABLE_NATURAL_HAMMERHEAD "Build NATURaL co-transcriptional HHRz simulation" OFF)
+if(ENABLE_NATURAL_HAMMERHEAD)
+    add_executable(natural_hammerhead
+        tools/natural_hammerhead.cpp
+        LIB/NATURaL/RibosomeElongation.cpp
+        LIB/NATURaL/TransloconInsertion.cpp
+    )
+    target_include_directories(natural_hammerhead PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
+    )
+    if(MSVC)
+        target_compile_options(natural_hammerhead PRIVATE /O2 /fp:fast)
+        target_compile_definitions(natural_hammerhead PRIVATE
+            _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES NOMINMAX)
+    else()
+        target_compile_options(natural_hammerhead PRIVATE -O3 -ffast-math)
+    endif()
+    flexaids_configure_simd(natural_hammerhead)
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(natural_hammerhead PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
+        target_link_libraries(natural_hammerhead PRIVATE Eigen3::Eigen)
+        target_compile_definitions(natural_hammerhead PRIVATE FLEXAIDS_HAS_EIGEN)
+    elseif(FLEXAIDS_USE_EIGEN AND EIGEN3_FOUND)
+        target_include_directories(natural_hammerhead PRIVATE ${EIGEN3_INCLUDE_DIRS})
+        target_compile_definitions(natural_hammerhead PRIVATE FLEXAIDS_HAS_EIGEN)
+    endif()
+    message(STATUS "NATURaL HHRz simulation enabled — build target: natural_hammerhead")
+endif()
+
 # ─── Dispatch Benchmark (optional standalone binary) ─────────────────────────
 option(ENABLE_DISPATCH_BENCHMARK "Build the hardware dispatch benchmark binary" OFF)
 if(ENABLE_DISPATCH_BENCHMARK)
@@ -1167,7 +1203,23 @@ if(BUILD_TESTING)
         add_test(NAME SoftContactMatrixTests COMMAND test_soft_contact_matrix)
     endif()
 
-    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_hardware_detect_dispatch, test_tencom_diff, test_ptm_attachment, test_gaboom, test_vcontacts, test_cleft_cavity, test_encom, test_ring_conformer_library, test_sugar_pucker, test_chiral_center, test_cavity_detect, test_binding_mode_statmech, test_binding_mode_advanced, test_ga_core, test_ga_validation, test_soft_contact_matrix")
+    # test_ion_handling — assign_radii / assign_types HETATM + ion coverage
+    add_executable(test_ion_handling
+        tests/test_ion_handling.cpp
+        LIB/assign_radii.cpp
+        LIB/assign_types.cpp
+        LIB/fileio.cpp)
+    target_include_directories(test_ion_handling PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_ion_handling PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_ion_handling PRIVATE /O2)
+    else()
+        target_compile_options(test_ion_handling PRIVATE -O2)
+    endif()
+    flexaids_configure_msvc_test(test_ion_handling)
+    add_test(NAME IonHandlingTests COMMAND test_ion_handling)
+
+    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_hardware_detect_dispatch, test_tencom_diff, test_ptm_attachment, test_gaboom, test_vcontacts, test_cleft_cavity, test_encom, test_ring_conformer_library, test_sugar_pucker, test_chiral_center, test_cavity_detect, test_binding_mode_statmech, test_binding_mode_advanced, test_ga_core, test_ga_validation, test_soft_contact_matrix, test_ion_handling")
 endif()
 
 # ─── Swift Bridge (macOS only) ────────────────────────────────────────────

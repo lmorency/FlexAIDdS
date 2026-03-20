@@ -99,10 +99,13 @@ inline json::Value flexaid_default_config() {
 
         // ── Protein ──────────────────────────────────────────────
         {"protein", V(O{
-            {"is_protein",   V(true)},
-            {"exclude_het",  V(false)},
-            {"remove_water", V(true)},
-            {"omit_buried",  V(false)},
+            {"is_protein",                  V(true)},
+            {"exclude_het",                 V(false)},
+            {"remove_water",                V(true)},
+            {"keep_ions",                   V(true)},
+            {"keep_structural_waters",      V(true)},
+            {"structural_water_bfactor_max",V(20.0f)},
+            {"omit_buried",                 V(false)},
         })},
 
         // ── Advanced ─────────────────────────────────────────────

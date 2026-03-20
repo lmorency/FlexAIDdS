@@ -74,3 +74,6 @@ python/**/*.so
 # scripts
 !scripts
 !scripts/**
+# standalone tools / simulation drivers
+!tools
+!tools/**
