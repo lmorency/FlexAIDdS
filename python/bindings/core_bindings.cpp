@@ -15,12 +15,7 @@
 #include "../../LIB/BindingMode.h"
 #endif
 #include "../../LIB/encom.h"
-#include "../../LIB/ShannonThermoStack/ShannonThermoStack.h"
-
-#ifdef FLEXAIDS_USE_256_MATRIX
-// Defined in bindings_matrix.cpp, linked when 256-matrix is enabled
-void register_matrix_bindings(py::module_& m);
-#endif
+#include "../../LIB/fast_optics.hpp"
 
 namespace py = pybind11;
 using namespace statmech;
@@ -233,10 +228,8 @@ PYBIND11_MODULE(_core, m) {
             "ΔG between two binding modes (kcal/mol); positive = mode1 less favoured")
         .def("get_global_ensemble", &BindingPopulation::get_global_ensemble,
             "StatMechEngine aggregating all poses across all binding modes")
-        .def("get_shannon_entropy", &BindingPopulation::get_shannon_entropy,
-            "Population-level Shannon configurational entropy S = -kB * sum(p_i * ln(p_i)) (kcal/mol/K)")
-        .def("get_deltaG_matrix", &BindingPopulation::get_deltaG_matrix,
-            "Full ΔG matrix between all pairs of binding modes (kcal/mol); matrix[i][j] = F_i - F_j")
+        .def("get_super_cluster_ensemble", &BindingPopulation::get_super_cluster_ensemble,
+            "StatMechEngine with super-cluster filtered poses (dominant energy basin only)")
         .def("__len__", &BindingPopulation::get_Population_size)
         .def("__repr__", [](const BindingPopulation& p) {
             return "<BindingPopulation n_modes=" +
@@ -358,55 +351,37 @@ PYBIND11_MODULE(_core, m) {
             "F_total = F_elec − T·S_vib  (kcal/mol)");
 
     // ═══════════════════════════════════════════════════════════════════════
-    // ShannonEnergyMatrix: 256×256 precomputed lookup with file loading
+    // FastOPTICS: lightweight super-cluster extraction
     // ═══════════════════════════════════════════════════════════════════════
 
-    py::class_<shannon_thermo::ShannonEnergyMatrix>(m, "ShannonEnergyMatrix",
-        "256×256 precomputed Shannon energy matrix with O(1) lookup")
-        .def_static("instance", &shannon_thermo::ShannonEnergyMatrix::instance,
-            py::return_value_policy::reference,
-            "Get the singleton ShannonEnergyMatrix instance")
-        .def("initialise", &shannon_thermo::ShannonEnergyMatrix::initialise,
-            "Initialise from uniform priors (seed 42)")
-        .def("initialise_from_file",
-            &shannon_thermo::ShannonEnergyMatrix::initialise_from_file,
-            py::arg("path"),
-            "Load trained 256×256 matrix from SHNN binary blob")
-        .def("initialise_from_data",
-            [](shannon_thermo::ShannonEnergyMatrix& self,
-               py::array_t<float, py::array::c_style | py::array::forcecast> data) {
-                auto buf = data.request();
-                int count = static_cast<int>(buf.size);
-                self.initialise_from_data(static_cast<const float*>(buf.ptr), count);
-            },
-            py::arg("data"),
-            "Load matrix from float32 numpy array (256*256 elements)")
-        .def("lookup", &shannon_thermo::ShannonEnergyMatrix::lookup,
-            py::arg("bin_i"), py::arg("bin_j"),
-            "O(1) pairwise entropy contribution lookup")
-        .def("is_initialised",
-            &shannon_thermo::ShannonEnergyMatrix::is_initialised)
-        .def("as_numpy",
-            [](const shannon_thermo::ShannonEnergyMatrix& self) {
-                if (!self.is_initialised())
-                    throw std::runtime_error("Matrix not initialised");
-                return py::array_t<double>(
-                    {shannon_thermo::SHANNON_BINS, shannon_thermo::SHANNON_BINS},
-                    self.data(),
-                    py::cast(self)  // prevent dealloc
-                );
-            },
-            "Return matrix as numpy array (256×256, read-only view)")
-        .def("__repr__", [](const shannon_thermo::ShannonEnergyMatrix& self) {
-            return std::string("<ShannonEnergyMatrix 256×256 ") +
-                   (self.is_initialised() ? "initialised" : "uninitialised") + ">";
-        });
+    py::enum_<fast_optics::ClusterMode>(m, "ClusterMode",
+        "Clustering mode for FastOPTICS extraction")
+        .value("FULL_OPTICS", fast_optics::ClusterMode::FULL_OPTICS, "Full OPTICS hierarchy walk")
+        .value("SUPER_CLUSTER_ONLY", fast_optics::ClusterMode::SUPER_CLUSTER_ONLY,
+               "Fast super-cluster extraction (~40%% faster)")
+        .export_values();
 
-    // ShannonThermoStack constants
-    m.attr("SHANNON_BINS") = shannon_thermo::SHANNON_BINS;
+    py::class_<fast_optics::Point>(m, "Point", "N-dimensional point for OPTICS clustering")
+        .def(py::init<>())
+        .def(py::init([](std::vector<double> c) {
+            fast_optics::Point p; p.coords = std::move(c); return p;
+        }), py::arg("coords"))
+        .def_readwrite("coords", &fast_optics::Point::coords);
 
-#ifdef FLEXAIDS_USE_256_MATRIX
-    // Register 256×256 matrix bindings (atom256, SoftContactMatrix, ShannonMatrixScorer)
-    register_matrix_bindings(m);
-#endif
+    py::class_<fast_optics::Reachability>(m, "Reachability",
+        "OPTICS ordering entry with point index and reachability distance")
+        .def_readonly("index", &fast_optics::Reachability::index)
+        .def_readonly("reach", &fast_optics::Reachability::reach);
+
+    py::class_<fast_optics::FastOPTICS>(m, "FastOPTICSLight",
+        "Lightweight FastOPTICS clustering with super-cluster extraction")
+        .def(py::init<const std::vector<fast_optics::Point>&, int, double>(),
+            py::arg("points"), py::arg("min_pts") = 4, py::arg("eps") = 0.0,
+            "Build OPTICS ordering from points")
+        .def("get_ordering", &fast_optics::FastOPTICS::getOrdering,
+            py::return_value_policy::reference_internal,
+            "Return the OPTICS reachability ordering")
+        .def("extract_super_cluster", &fast_optics::FastOPTICS::extractSuperCluster,
+            py::arg("mode") = fast_optics::ClusterMode::FULL_OPTICS,
+            "Extract cluster indices (SUPER_CLUSTER_ONLY for fast mode)");
 }

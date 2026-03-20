@@ -135,6 +135,8 @@ class BindingPopulation
 		 	double	compute_delta_G(const BindingMode& mode1, const BindingMode& mode2) const;
 		 	/// Get global ensemble StatMechEngine aggregating all binding modes
 		 	statmech::StatMechEngine get_global_ensemble() const;
+		 	/// Get super-cluster filtered ensemble (dominant energy basin only)
+		 	statmech::StatMechEngine get_super_cluster_ensemble() const;
 
 		 	// ═══ POPULATION-LEVEL SHANNON ENTROPY ═══
 		 	/// Shannon configurational entropy across all binding modes: S = -kB * sum(p_i * ln(p_i))

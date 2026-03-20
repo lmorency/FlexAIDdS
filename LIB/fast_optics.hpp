@@ -7,6 +7,8 @@
 #include <algorithm>
 #include <limits>
 
+namespace fast_optics {
+
 struct Point {
     std::vector<double> coords;
 };
@@ -46,5 +48,7 @@ private:
     double coreDist(size_t idx) const;
     std::vector<size_t> extractClustersFromOrdering() const;
 };
+
+} // namespace fast_optics
 
 #endif // FAST_OPTICS_HPP

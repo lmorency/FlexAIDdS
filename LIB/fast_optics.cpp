@@ -3,6 +3,8 @@
 #include <numeric>
 #include <functional>
 
+namespace fast_optics {
+
 FastOPTICS::FastOPTICS(const std::vector<Point>& points, int minPts, double eps)
     : minPts_(minPts), eps_(eps), points_(points)
 {
@@ -91,22 +93,34 @@ const std::vector<Reachability>& FastOPTICS::getOrdering() const {
 
 std::vector<size_t> FastOPTICS::extractSuperCluster(ClusterMode mode) const {
     if (mode == ClusterMode::SUPER_CLUSTER_ONLY) {
-        // Connected-components on active rows at 0.8 * core-dist cutoff
+        size_t n = points_.size();
+        if (n == 0) return {};
+
+        // Connected-components flood-fill at 0.8 * core-dist cutoff.
+        // Start from the point with lowest reachability (most central).
         std::vector<size_t> superCluster;
-        std::vector<bool> visited(ordering_.size(), false);
-        // Start from the lowest-reachability point (most central)
-        size_t seed = 0;
+        std::vector<bool> visited(n, false);
+
+        // Find seed: ordering entry with lowest reachability distance,
+        // breaking ties by original point index for determinism.
+        size_t seed_pos = 0;
         for (size_t i = 1; i < ordering_.size(); ++i) {
-            if (ordering_[i].reach < ordering_[seed].reach) seed = i;
+            if (ordering_[i].reach < ordering_[seed_pos].reach ||
+                (ordering_[i].reach == ordering_[seed_pos].reach &&
+                 ordering_[i].index < ordering_[seed_pos].index))
+                seed_pos = i;
         }
-        // Simple flood-fill (linear pass)
+        // Convert ordering position → original point index
+        size_t seed = ordering_[seed_pos].index;
+
+        // Flood-fill over point indices
         std::queue<size_t> q;
         q.push(seed);
         visited[seed] = true;
         while (!q.empty()) {
             size_t u = q.front(); q.pop();
             superCluster.push_back(u);
-            for (size_t v = 0; v < ordering_.size(); ++v) {
+            for (size_t v = 0; v < n; ++v) {
                 if (!visited[v] && distance(points_[u], points_[v]) < 0.8 * coreDist(v)) {
                     visited[v] = true;
                     q.push(v);
@@ -127,3 +141,5 @@ std::vector<size_t> FastOPTICS::extractClustersFromOrdering() const {
     }
     return indices;
 }
+
+} // namespace fast_optics

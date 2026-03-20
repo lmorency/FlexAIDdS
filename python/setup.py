@@ -44,7 +44,14 @@ if _matrix_bindings.exists():
 ext_modules = [
     Extension(
         "flexaidds._core",
-        sources=_core_sources,
+        sources=[
+            "flexaidds/_core.cpp",
+            f"{_rel_lib}/statmech.cpp",
+            f"{_rel_lib}/encom.cpp",
+            f"{_rel_lib}/tencm.cpp",
+            f"{_rel_lib}/ShannonThermoStack/ShannonThermoStack.cpp",
+            f"{_rel_lib}/fast_optics.cpp",
+        ],
         include_dirs=[
             str(LIB_DIR),
             str(LIB_DIR / "ShannonThermoStack"),
