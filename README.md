@@ -7,12 +7,16 @@
 *Combining genetic algorithms with statistical mechanics thermodynamics*
 *for accurate binding free energy prediction*
 
+[![CI](https://github.com/lmorency/FlexAIDdS/actions/workflows/ci.yml/badge.svg)](https://github.com/lmorency/FlexAIDdS/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![C++20](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](https://en.cppreference.com/w/cpp/20)
 [![Python](https://img.shields.io/badge/python-%E2%89%A5%203.9-3776AB.svg)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg)](#)
+[![DOI](https://img.shields.io/badge/DOI-10.1021%2Facs.jcim.5b00078-blue)](https://doi.org/10.1021/acs.jcim.5b00078)
 
 </div>
+
+**[Installation](docs/INSTALLATION.md)** · **[User Guide](docs/USERGUIDE.md)** · **[Benchmarks](docs/BENCHMARKS.md)** · **[Website](https://lmorency.github.io/FlexAIDdS/)**
 
 ---
 
@@ -123,7 +127,7 @@ for mode in results.rank_by_free_energy():
 - **Python package** (`flexaidds`) — docking API, result I/O, thermodynamics, CLI inspector, PyMOL plugin
 - **Co-translational assembly** (NATURaL) — ribosome-speed chain growth with Sec translocon TM insertion; RNA receptors use differentiated secondary (k ~ 10⁴ s⁻¹) vs. Mg²⁺-dependent tertiary folding rates (Hill equation, K_d = 1 mM, n = 2) with corrected elongation rate of 25 nt/s (mRNA in vivo)
 - **Automatic cavity detection** — SURFNET gap-sphere algorithm with Metal GPU support
-- **[FreeNRG](https://github.com/lmorency/FreeNRG) integration** — unified free energy framework bridging FlexAID∆S and NRGRank
+- **Single JSON config** — all parameters in one file, sensible defaults for everything
 
 #### Distributed Docking (Bonhomme Fleet)
 - **Fleet scheduler** — distribute docking across Apple devices via iCloud Drive with automatic work-stealing
@@ -790,24 +794,14 @@ FlexAIDdS/
 
 ---
 
-## FreeNRG Integration
+## Documentation
 
-The [FreeNRG](https://github.com/lmorency/FreeNRG) package bridges FlexAID∆S with NRGRank in a unified free energy framework:
-
-```python
-from freenrg.pipeline import FreeNRGPipeline, FreeNRGConfig, DockingMode
-
-config = FreeNRGConfig(
-    mode=DockingMode.FLEXAID,
-    flexaid_binary="/path/to/FlexAID",
-    receptor_pdb="receptor.pdb",
-    ligand_inp="ligand.inp",
-    binding_site="cleft.pdb",
-)
-result = FreeNRGPipeline().run(config)
-```
-
-See [FREENRG_INTEGRATION.md](FREENRG_INTEGRATION.md) for details.
+| Document | Description |
+|:---------|:------------|
+| [Installation Guide](docs/INSTALLATION.md) | Prerequisites, build instructions, platform-specific notes, troubleshooting |
+| [User Guide](docs/USERGUIDE.md) | Full parameter reference, zero-config docking, Python API, PyMOL plugin, Fleet |
+| [Benchmarks](docs/BENCHMARKS.md) | Accuracy (ITC-187, CASF-2016, DUD-E) and hardware acceleration performance |
+| [Contributing](CONTRIBUTING.md) | Development setup, license policy, PR guidelines |
 
 ---
 
