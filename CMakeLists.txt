@@ -1204,11 +1204,13 @@ if(BUILD_TESTING)
     endif()
 
     # test_ion_handling — assign_radii / assign_types HETATM + ion coverage
+    #                     + tENCoM ion contact surface (TmContSct) tests
     add_executable(test_ion_handling
         tests/test_ion_handling.cpp
         LIB/assign_radii.cpp
         LIB/assign_types.cpp
-        LIB/fileio.cpp)
+        LIB/fileio.cpp
+        LIB/tencm.cpp)
     target_include_directories(test_ion_handling PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
     target_link_libraries(test_ion_handling PRIVATE GTest::gtest GTest::gtest_main)
     if(MSVC)

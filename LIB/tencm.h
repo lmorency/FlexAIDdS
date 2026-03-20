@@ -8,6 +8,16 @@
 //   – Normal modes via symmetric Jacobi diagonalisation
 //   – Mode-weighted Boltzmann sampling for backbone perturbation during GA
 //
+// Metal ion support (tmcontsct):
+//   – Ions (HETATM, matched by is_ion_resname) are appended as rigid pseudo-nodes
+//     after all protein Cα nodes (index ≥ n_protein_ca_)
+//   – Protein–ion contacts use surface-to-surface distance:
+//       d_surf = r_center − r_ion − R_CA_EFF   (R_CA_EFF = 1.88 Å)
+//   – Spring constant scaled by ion contact surface area:
+//       k_ij = k0 * (rc/d_surf)^6 * (r_ion/R_CA_EFF)²
+//   – Ion nodes have zero Jacobian (rigid; no torsional DOF)
+//   – tmcontsct() exposes per-contact surface-scaled contributions for scoring
+//
 // Used by FlexAIDdS to generate protein backbone flexibility without rebuilding
 // the full rotamer library every GA generation.
 #pragma once
@@ -40,7 +50,18 @@ inline constexpr int   N_MODES    = 20;            // low-frequency modes kept
 struct Contact {
     int   i, j;
     float k;     // spring constant k_ij = k0 * (rc/r0)^6
-    float r0;    // equilibrium Cα–Cα distance
+    float r0;    // equilibrium Cα–Cα distance (or surface-to-surface for ions)
+};
+
+// Per-contact surface-area-weighted spring score (tmcontsct).
+// For protein–protein contacts: k_scaled == k (area_scale = 1).
+// For protein–ion contacts: k_scaled = k0*(rc/d_surf)^6 * (r_ion/R_CA_EFF)²
+//   where d_surf = r_center − r_ion − R_CA_EFF (surface-to-surface distance).
+struct TmContSct {
+    int   i, j;        // node indices (same as Contact; j >= n_protein_ca_ for ions)
+    float k_scaled;    // area-scaled spring constant (kcal mol⁻¹ Å⁻²)
+    float d_surf;      // equilibrium distance used (Å)
+    bool  is_ion;      // true when one node is a metal ion pseudo-node
 };
 
 // Pseudo-torsion DOF: rotation about bond between Cα_k and Cα_{k+1}
@@ -97,21 +118,35 @@ public:
                        float k0     = DEFAULT_K0);
 
     // Getters
-    int n_residues() const noexcept { return static_cast<int>(ca_.size()); }
-    int n_bonds()    const noexcept { return static_cast<int>(bonds_.size()); }
-    const std::vector<NormalMode>& modes() const noexcept { return modes_; }
-    bool is_built()  const noexcept { return built_; }
+    int n_residues()    const noexcept { return static_cast<int>(ca_.size()); }
+    int n_protein_ca()  const noexcept { return n_protein_ca_; }
+    int n_bonds()       const noexcept { return static_cast<int>(bonds_.size()); }
+    const std::vector<NormalMode>&  modes()      const noexcept { return modes_; }
+    bool is_built()                              const noexcept { return built_; }
     const std::vector<std::array<float,3>>& ca_positions() const noexcept { return ca_; }
 
+    /// Per-contact surface-area-weighted spring scores.
+    /// Ion contacts (is_ion==true) have k_scaled = k0*(rc/d_surf)^6 * (r_ion/R_CA_EFF)²,
+    /// enabling callers to weight vibrational entropy by ion contact surface area.
+    const std::vector<TmContSct>& tmcontsct() const noexcept { return tmcontsct_; }
+
 private:
-    // Internal Cα coordinate store (row-major, index = sequential residue idx)
+    // Internal node coordinate store:
+    //   indices [0, n_protein_ca_)  → protein Cα atoms
+    //   indices [n_protein_ca_, N)  → metal ion pseudo-nodes (rigid)
     std::vector<std::array<float,3>> ca_;
-    // Map: sequential residue index → first atom index of Cα in FA atoms[]
+    // Map: sequential node index → atom index in FA atoms[]
     std::vector<int> ca_atom_idx_;
-    // For each Cα, the corresponding res_cnt index (1-based FA convention)
+    // Map: sequential node index → residue index (1-based FA convention)
     std::vector<int> res_idx_;
 
+    // Number of protein Cα nodes; ion nodes are appended after this boundary.
+    int n_protein_ca_ = 0;
+    // VdW radius for each ion node (indexed by node_index − n_protein_ca_).
+    std::vector<float> ion_radii_;
+
     std::vector<Contact>    contacts_;
+    std::vector<TmContSct>  tmcontsct_;  // surface-area-weighted per-contact scores
     std::vector<PseudoBond> bonds_;
     std::vector<NormalMode> modes_;
 

@@ -31,6 +31,7 @@
 //   5. Scalar  — always available
 #include "tencm.h"
 #include "simd_distance.h"
+#include "ion_utils.h"
 
 #include <cstring>
 #include <cmath>
@@ -102,11 +103,13 @@ void TorsionalENM::build_from_ca(const std::vector<std::array<float,3>>& ca_coor
     ca_ = ca_coords;
     ca_atom_idx_.clear();
     res_idx_.clear();
-    // Identity mapping — each sequential Cα is its own "residue"
+    ion_radii_.clear();
+    // Identity mapping — each sequential Cα is its own "residue"; no ions here.
     for (int i = 0; i < static_cast<int>(ca_.size()); ++i) {
         ca_atom_idx_.push_back(i);
         res_idx_.push_back(i);
     }
+    n_protein_ca_ = static_cast<int>(ca_.size());
 
     if (static_cast<int>(ca_.size()) < 3) {
         std::cerr << "TENCM: fewer than 3 Cα atoms; skipping.\n";
@@ -122,6 +125,10 @@ void TorsionalENM::build_from_ca(const std::vector<std::array<float,3>>& ca_coor
 }
 
 // ─── extract_ca ──────────────────────────────────────────────────────────────
+//
+// Phase 1: collect protein Cα atoms (residue.type == 0).
+// Phase 2: append metal ion atoms as rigid pseudo-nodes (residue.type == 1,
+//          matched by is_ion_resname).  Ion nodes have index >= n_protein_ca_.
 void TorsionalENM::extract_ca(const atom*  atoms,
                                const resid* residue,
                                int          res_cnt)
@@ -129,7 +136,9 @@ void TorsionalENM::extract_ca(const atom*  atoms,
     ca_.clear();
     ca_atom_idx_.clear();
     res_idx_.clear();
+    ion_radii_.clear();
 
+    // Phase 1: protein Cα atoms
     for (int ri = 1; ri <= res_cnt; ++ri) {
         if (residue[ri].type != 0) continue;   // protein residues only
 
@@ -150,18 +159,50 @@ void TorsionalENM::extract_ca(const atom*  atoms,
             }
         }
     }
+
+    // Mark the protein/ion boundary
+    n_protein_ca_ = static_cast<int>(ca_.size());
+
+    // Phase 2: metal ion pseudo-nodes (HETATM, single heavy atom each)
+    for (int ri = 1; ri <= res_cnt; ++ri) {
+        if (residue[ri].type != 1) continue;             // HETATM only
+        if (!is_ion_resname(residue[ri].name)) continue; // metal ions only
+
+        int first = residue[ri].fatm[0];
+        int last  = residue[ri].latm[0];
+        for (int ai = first; ai <= last; ++ai) {
+            float r = atoms[ai].radius;
+            if (r < 0.5f) continue;  // radius must be assigned (by assign_radii)
+            ca_.push_back({ atoms[ai].coor[0],
+                            atoms[ai].coor[1],
+                            atoms[ai].coor[2] });
+            ca_atom_idx_.push_back(ai);
+            res_idx_.push_back(ri);
+            ion_radii_.push_back(r);
+            break;  // one representative atom per ion
+        }
+    }
 }
 
 // ─── build_contacts ─────────────────────────────────────────────────────────
 //
-// O(N²) all-pairs distance check with hardware dispatch:
-//   AVX-512 → 16 distances/cycle
-//   AVX2    → 8  distances/cycle via simd::distance2_1x8
-//   OpenMP  → parallel outer loop with thread-local contact lists
+// Two phases:
+//  (A) Protein–protein Cα contacts — O(Np²) with hardware dispatch:
+//        AVX-512 → 16 distances/cycle
+//        AVX2    → 8  distances/cycle via simd::distance2_1x8
+//        OpenMP  → parallel outer loop with thread-local contact lists
+//  (B) Protein–ion contacts — scalar loop over (Np × N_ions) pairs:
+//        uses surface-to-surface distance and area-scaled spring constant
+//
+// Approximate Cα VdW radius for surface-distance computation:
+static constexpr float R_CA_EFF = 1.88f;  // aliphatic carbon (Å)
+
 void TorsionalENM::build_contacts()
 {
     contacts_.clear();
+    tmcontsct_.clear();
     const int N   = static_cast<int>(ca_.size());
+    const int Np  = n_protein_ca_;
     const float rc2 = cutoff_ * cutoff_;
 
 #if defined(_OPENMP) && !defined(TENCM_NO_OMP)
@@ -175,7 +216,7 @@ void TorsionalENM::build_contacts()
         auto& local = thread_contacts[tid];
 
         #pragma omp for schedule(dynamic, 4)
-        for (int i = 0; i < N - 1; ++i) {
+        for (int i = 0; i < Np - 1; ++i) {
             const float xi = ca_[i][0], yi = ca_[i][1], zi = ca_[i][2];
 
 #if defined(__AVX512F__)
@@ -188,7 +229,7 @@ void TorsionalENM::build_contacts()
             const __m512 vrc  = _mm512_set1_ps(cutoff_);
 
             int j = i + 2;
-            for (; j + 15 < N; j += 16) {
+            for (; j + 15 < Np; j += 16) {
                 // Gather 16 Cα positions
                 float jx[16], jy[16], jz[16];
                 for (int q = 0; q < 16; ++q) {
@@ -221,7 +262,7 @@ void TorsionalENM::build_contacts()
                 }
             }
             // Scalar tail for remaining j atoms
-            for (; j < N; ++j) {
+            for (; j < Np; ++j) {
                 float dx = ca_[i][0] - ca_[j][0];
                 float dy = ca_[i][1] - ca_[j][1];
                 float dz = ca_[i][2] - ca_[j][2];
@@ -237,7 +278,7 @@ void TorsionalENM::build_contacts()
 #elif FLEXAIDS_HAS_AVX2
             // AVX2: batch 8 j-atoms at a time using simd_distance.h patterns
             int j = i + 2;
-            for (; j + 7 < N; j += 8) {
+            for (; j + 7 < Np; j += 8) {
                 float jx[8], jy[8], jz[8], r2_arr[8];
                 for (int q = 0; q < 8; ++q) {
                     jx[q] = ca_[j+q][0];
@@ -254,7 +295,7 @@ void TorsionalENM::build_contacts()
                     }
                 }
             }
-            for (; j < N; ++j) {
+            for (; j < Np; ++j) {
                 float dx = ca_[i][0] - ca_[j][0];
                 float dy = ca_[i][1] - ca_[j][1];
                 float dz = ca_[i][2] - ca_[j][2];
@@ -269,7 +310,7 @@ void TorsionalENM::build_contacts()
 
 #else
             // Scalar path
-            for (int j = i + 2; j < N; ++j) {
+            for (int j = i + 2; j < Np; ++j) {
                 float dx = ca_[i][0] - ca_[j][0];
                 float dy = ca_[i][1] - ca_[j][1];
                 float dz = ca_[i][2] - ca_[j][2];
@@ -297,7 +338,7 @@ void TorsionalENM::build_contacts()
 #else
     // ── Serial path (no OpenMP) with SIMD distance batching ──
 
-    for (int i = 0; i < N - 1; ++i) {
+    for (int i = 0; i < Np - 1; ++i) {
         const float xi = ca_[i][0], yi = ca_[i][1], zi = ca_[i][2];
 
 #if defined(__AVX512F__)
@@ -307,7 +348,7 @@ void TorsionalENM::build_contacts()
         const __m512 vrc2 = _mm512_set1_ps(rc2);
 
         int j = i + 2;
-        for (; j + 15 < N; j += 16) {
+        for (; j + 15 < Np; j += 16) {
             float jx[16], jy[16], jz[16];
             for (int q = 0; q < 16; ++q) {
                 jx[q] = ca_[j+q][0]; jy[q] = ca_[j+q][1]; jz[q] = ca_[j+q][2];
@@ -329,7 +370,7 @@ void TorsionalENM::build_contacts()
                 }
             }
         }
-        for (; j < N; ++j) {
+        for (; j < Np; ++j) {
             float dx = ca_[i][0]-ca_[j][0], dy = ca_[i][1]-ca_[j][1], dz = ca_[i][2]-ca_[j][2];
             float r2 = dx*dx+dy*dy+dz*dz;
             if (r2 <= rc2) {
@@ -340,7 +381,7 @@ void TorsionalENM::build_contacts()
 
 #elif FLEXAIDS_HAS_AVX2
         int j = i + 2;
-        for (; j + 7 < N; j += 8) {
+        for (; j + 7 < Np; j += 8) {
             float jx[8], jy[8], jz[8], r2_arr[8];
             for (int q = 0; q < 8; ++q) {
                 jx[q] = ca_[j+q][0]; jy[q] = ca_[j+q][1]; jz[q] = ca_[j+q][2];
@@ -353,7 +394,7 @@ void TorsionalENM::build_contacts()
                 }
             }
         }
-        for (; j < N; ++j) {
+        for (; j < Np; ++j) {
             float dx = ca_[i][0]-ca_[j][0], dy = ca_[i][1]-ca_[j][1], dz = ca_[i][2]-ca_[j][2];
             float r2 = dx*dx+dy*dy+dz*dz;
             if (r2 <= rc2) {
@@ -363,7 +404,7 @@ void TorsionalENM::build_contacts()
         }
 
 #else
-        for (int j = i + 2; j < N; ++j) {
+        for (int j = i + 2; j < Np; ++j) {
             float dx = ca_[i][0]-ca_[j][0], dy = ca_[i][1]-ca_[j][1], dz = ca_[i][2]-ca_[j][2];
             float r2 = dx*dx+dy*dy+dz*dz;
             if (r2 <= rc2) {
@@ -377,6 +418,39 @@ void TorsionalENM::build_contacts()
     }
 #endif // _OPENMP
 
+    // ── Phase B: protein–ion contacts (scalar; few ions so SIMD not needed) ──
+    // Surface-to-surface distance: d_surf = r_center − r_ion − R_CA_EFF
+    // Spring constant: k_ij = k0 * (rc/d_surf)^6 * (r_ion/R_CA_EFF)²
+    {
+        const int N_ions = static_cast<int>(ion_radii_.size());
+        for (int i = 0; i < Np; ++i) {
+            for (int q = 0; q < N_ions; ++q) {
+                const int j = Np + q;
+                float dx = ca_[i][0] - ca_[j][0];
+                float dy = ca_[i][1] - ca_[j][1];
+                float dz = ca_[i][2] - ca_[j][2];
+                float r_center = std::sqrt(dx*dx + dy*dy + dz*dz);
+                float r_ion    = ion_radii_[static_cast<std::size_t>(q)];
+                float d_surf   = r_center - r_ion - R_CA_EFF;
+                if (d_surf < 0.01f) d_surf = 0.01f;  // clamp overlap
+                if (d_surf > cutoff_) continue;        // outside cutoff
+                float area_scale = (r_ion / R_CA_EFF) * (r_ion / R_CA_EFF);
+                float ratio = cutoff_ / d_surf;
+                float r3    = ratio * ratio * ratio;
+                float k_scaled = k0_ * (r3 * r3) * area_scale;
+                contacts_.push_back({i, j, k_scaled, d_surf});
+            }
+        }
+    }
+
+    // ── Build tmcontsct_ from all real contacts (protein–protein + protein–ion) ──
+    tmcontsct_.reserve(contacts_.size());
+    for (const auto& c : contacts_) {
+        if (c.k == 0.0f && c.i == 0 && c.j == 0) continue;  // skip sentinels
+        bool is_ion_contact = (c.j >= Np);
+        tmcontsct_.push_back({c.i, c.j, c.k, c.r0, is_ion_contact});
+    }
+
     // Pad contact list to next multiple of 16 for SIMD tail elimination.
     // Sentinel contacts have k=0, contributing nothing to the Hessian.
 #ifdef __AVX512F__
@@ -386,12 +460,14 @@ void TorsionalENM::build_contacts()
 }
 
 // ─── build_bonds ─────────────────────────────────────────────────────────────
+// Pseudo-bonds are defined only between consecutive protein Cα atoms.
+// Ion nodes (index >= n_protein_ca_) have no backbone torsions.
 void TorsionalENM::build_bonds()
 {
     bonds_.clear();
-    const int N = static_cast<int>(ca_.size());
+    const int Np = n_protein_ca_;  // protein nodes only
 
-    for (int k = 0; k < N - 1; ++k) {
+    for (int k = 0; k < Np - 1; ++k) {
         PseudoBond pb;
         pb.k = k;
 
@@ -415,7 +491,13 @@ void TorsionalENM::build_bonds()
 std::array<float,3>
 TorsionalENM::jac(int bond_k, int atom_i) const noexcept
 {
-    // Upstream atoms are unaffected by this torsion rotation
+    // Ion pseudo-nodes (index >= n_protein_ca_) are rigid: no torsional DOF.
+    // They constrain protein flexibility via Hessian spring terms but do not
+    // rotate themselves — J(ion) = 0 reduces the Hessian contribution to
+    //   k_ij * J_k(protein_i) * J_l(protein_i)   (restoring anchor effect).
+    if (atom_i >= n_protein_ca_) return {0.0f, 0.0f, 0.0f};
+
+    // Upstream protein atoms are unaffected by this torsion rotation
     if (atom_i <= bond_k) return {0.0f, 0.0f, 0.0f};
 
     const PseudoBond& pb = bonds_[static_cast<std::size_t>(bond_k)];
@@ -825,9 +907,10 @@ void TorsionalENM::apply(const Conformer& conf,
                           const resid*     residue) const
 {
     if (!built_) return;
-    const int N = static_cast<int>(ca_.size());
+    // Apply displacement only to protein Cα nodes (ion nodes are rigid; J=0).
+    const int Np = n_protein_ca_;
 
-    for (int seq = 0; seq < N; ++seq) {
+    for (int seq = 0; seq < Np; ++seq) {
         int ri = res_idx_[static_cast<std::size_t>(seq)];
         int   ai = ca_atom_idx_[static_cast<std::size_t>(seq)];
         float dx = conf.ca[static_cast<std::size_t>(seq)][0] - atoms[ai].coor[0];
@@ -847,20 +930,27 @@ void TorsionalENM::apply(const Conformer& conf,
 // ─── bfactors ────────────────────────────────────────────────────────────────
 // B_i = (8π²/3) <Δr_i²>  where <Δr_i²> = kBT Σ_m (σ_m² |J_m(i)|²)
 //
+// Only protein Cα nodes (indices 0..n_protein_ca_-1) are included.
+// Ion pseudo-nodes have zero Jacobian and thus zero B-factor — they are
+// excluded from the output to preserve backward compatibility with callers
+// that expect one B-factor per protein residue.
+//
 // Hardware dispatch:
 //   Eigen → vectorised eigenvector·Jacobian accumulation
 //   OpenMP → parallelize over residues (each independent)
 //   AVX-512 → vectorize mode accumulation loop (8 doubles/cycle)
 std::vector<float> TorsionalENM::bfactors(float temperature) const
 {
-    const int N  = static_cast<int>(ca_.size());
+    const int N  = static_cast<int>(ca_.size());   // total nodes (protein + ions)
+    const int Np = n_protein_ca_;                  // protein nodes only (output)
     const int M  = static_cast<int>(bonds_.size());
     const double kBT = static_cast<double>(kB_kcal) * temperature;
     const int SKIP = std::min(6, M);
     const int M_end = std::min(M, SKIP + N_MODES);
     const double BF_SCALE = 8.0 * std::numbers::pi * std::numbers::pi / 3.0;
 
-    std::vector<float> bf(static_cast<std::size_t>(N), 0.0f);
+    // Output only protein Cα B-factors; ion nodes are excluded (zero Jacobian).
+    std::vector<float> bf(static_cast<std::size_t>(Np), 0.0f);
 
     // Pre-compute per-mode: kBT / λ_m (skip modes with tiny eigenvalue)
     std::vector<double> inv_stiffness(static_cast<std::size_t>(M), 0.0);
@@ -873,7 +963,7 @@ std::vector<float> TorsionalENM::bfactors(float temperature) const
 #if defined(_OPENMP) && !defined(TENCM_NO_OMP)
     #pragma omp parallel for schedule(static)
 #endif
-    for (int i = 0; i < N; ++i) {
+    for (int i = 0; i < Np; ++i) {  // protein nodes only
         double msf = 0.0;  // mean-square fluctuation
         for (int m = SKIP; m < M_end; ++m) {
             double s2 = inv_stiffness[static_cast<std::size_t>(m)];

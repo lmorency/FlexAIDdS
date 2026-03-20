@@ -1,5 +1,6 @@
 #include "flexaid.h"
 #include "fileio.h"
+#include "ion_utils.h"
 
 #define NAA 20
 #define NNA 4
@@ -20,16 +21,6 @@ static char protein_atoms_order[NLIST][5]   = { " N  "," CA "," C  "," O  "," CB
 						" CZ "," NZ "," CZ1"," CZ2"," CZ3",
 						" CH "," CH1"," CH2"," OH "," NH1"," NH2",
 						" OXT" };
-
-static bool is_ion_resname(const char* r3) {
-    static const char* t[] = {
-        "MG ","ZN ","CA ","NA ","K  ","FE ","FE2","FE3",
-        "CU ","CU1","CU2","MN ","CO ","NI ","CL ","BR ",
-        "IOD","LI ","CD ","HG ","PB ", nullptr
-    };
-    for(int i=0; t[i]; ++i) if(!strncmp(r3, t[i], 3)) return true;
-    return false;
-}
 
 // PDB B-factor occupies columns 60-65 (0-indexed)
 static float pdb_bfactor(const char* buf) {

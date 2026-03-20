@@ -243,3 +243,197 @@ TEST(IonTypeTest, WaterGetsHydrophilic) {
     EXPECT_EQ(atoms[1].type, 1);  // hydrophilic
     free_residue_arrays(residue);
 }
+
+// ===========================================================================
+// tENCoM ion contact surface tests
+//
+// Build a synthetic receptor: N_PROT protein residues (Cα-only, linear chain
+// along X-axis at 4 Å spacing) + 1 MG ion 6 Å from the last Cα.
+// After assign_radii, MG gets radius=1.73 Å.  Surface distance =
+//   6.0 − 1.73 (MG) − 1.88 (Cα) = 2.39 Å < 9 Å cutoff → spring is formed.
+// ===========================================================================
+
+#include "../LIB/tencm.h"
+#include "../LIB/ion_utils.h"
+
+namespace {
+
+static constexpr int N_PROT = 10;  // need > 6 protein Cα so non-rigid modes exist
+static constexpr float CA_SPACING = 4.0f;
+static constexpr float MG_RADIUS  = 1.73f;
+static constexpr float MG_DIST    = 6.0f;  // center-to-center from last Cα
+
+// Helper: allocate fatm/latm arrays for one residue (rotamer 0 only)
+static void alloc_res(resid* r, int first, int last) {
+    r->fatm = (int*)calloc(2, sizeof(int));
+    r->latm = (int*)calloc(2, sizeof(int));
+    r->fatm[0] = first;
+    r->latm[0] = last;
+    r->rot  = 0;
+}
+static void free_res(resid* r) { free(r->fatm); free(r->latm); }
+
+// Build a minimal atom/resid array with N_PROT protein Cα + 1 MG ion.
+// atoms[1..N_PROT]  → protein residues (type=0), each with one " CA " atom
+// atoms[N_PROT+1]   → MG ion (type=1, residue name "MG ")
+// res_cnt = N_PROT + 1
+static void build_synthetic(atom* atoms, resid* residues) {
+    memset(atoms,   0, sizeof(atom)  * (N_PROT + 2));
+    memset(residues,0, sizeof(resid) * (N_PROT + 2));
+
+    // Protein Cα residues — zigzag ±1 Å in Y so pseudo-bond axes are non-collinear
+    // (avoids degenerate linear chain where all cross products are zero)
+    for (int i = 1; i <= N_PROT; ++i) {
+        residues[i].type = 0;   // ATOM / protein
+        strncpy(residues[i].name, "ALA", 3); residues[i].name[3] = '\0';
+        alloc_res(&residues[i], i, i);
+
+        strncpy(atoms[i].name, " CA ", 4); atoms[i].name[4] = '\0';
+        atoms[i].ofres   = i;
+        atoms[i].radius  = 1.88f;   // aliphatic C (pre-assigned)
+        atoms[i].coor[0] = static_cast<float>(i - 1) * CA_SPACING;
+        atoms[i].coor[1] = (i % 2 == 0) ? 1.0f : -1.0f;  // zigzag: non-linear
+        atoms[i].coor[2] = 0.0f;
+    }
+
+    // MG ion (HETATM, residue N_PROT+1) — placed 6 Å from last Cα along X
+    const int mg_idx = N_PROT + 1;
+    const float last_ca_x = static_cast<float>(N_PROT - 1) * CA_SPACING;
+    const float last_ca_y = (N_PROT % 2 == 0) ? 1.0f : -1.0f;
+
+    residues[mg_idx].type = 1;  // HETATM
+    strncpy(residues[mg_idx].name, "MG ", 3); residues[mg_idx].name[3] = '\0';
+    alloc_res(&residues[mg_idx], mg_idx, mg_idx);
+
+    strncpy(atoms[mg_idx].name, " MG ", 4); atoms[mg_idx].name[4] = '\0';
+    atoms[mg_idx].ofres   = mg_idx;
+    atoms[mg_idx].radius  = MG_RADIUS;
+    atoms[mg_idx].coor[0] = last_ca_x + MG_DIST;
+    atoms[mg_idx].coor[1] = last_ca_y;   // same Y as last Cα → center-to-center = MG_DIST
+    atoms[mg_idx].coor[2] = 0.0f;
+}
+
+static void free_synthetic(resid* residues) {
+    for (int i = 1; i <= N_PROT + 1; ++i) free_res(&residues[i]);
+}
+
+} // anonymous namespace
+
+// After build(), n_protein_ca() must equal N_PROT and the model must be built.
+TEST(TENCoMIonContact, IonNodePresent) {
+    atom   atoms[N_PROT + 2];
+    resid  residues[N_PROT + 2];
+    build_synthetic(atoms, residues);
+
+    tencm::TorsionalENM tenm;
+    tenm.build(atoms, residues, N_PROT + 1);
+
+    ASSERT_TRUE(tenm.is_built());
+    EXPECT_EQ(tenm.n_protein_ca(), N_PROT);
+    // Total nodes = protein Cα + 1 ion
+    EXPECT_EQ(tenm.n_residues(), N_PROT + 1);
+
+    free_synthetic(residues);
+}
+
+// tmcontsct() must contain at least one entry flagged as ion contact.
+TEST(TENCoMIonContact, TmContSctHasIonEntry) {
+    atom   atoms[N_PROT + 2];
+    resid  residues[N_PROT + 2];
+    build_synthetic(atoms, residues);
+
+    tencm::TorsionalENM tenm;
+    tenm.build(atoms, residues, N_PROT + 1);
+    ASSERT_TRUE(tenm.is_built());
+
+    bool found_ion = false;
+    for (const auto& c : tenm.tmcontsct())
+        found_ion |= c.is_ion;
+    EXPECT_TRUE(found_ion) << "No ion contact found in tmcontsct()";
+
+    free_synthetic(residues);
+}
+
+// Ion spring constant must be positive, finite, and scaled by area factor.
+// For MG at d_surf = 6.0 - 1.73 - 1.88 = 2.39 Å:
+//   area_scale = (1.73/1.88)^2 ≈ 0.848
+//   k_raw = k0 * (9/2.39)^6 ≈ 3400 * k0
+//   k_scaled ≈ 2880 * k0  — much larger than typical protein-protein spring
+TEST(TENCoMIonContact, IonSpringKIsPositiveAndFinite) {
+    atom   atoms[N_PROT + 2];
+    resid  residues[N_PROT + 2];
+    build_synthetic(atoms, residues);
+
+    tencm::TorsionalENM tenm;
+    tenm.build(atoms, residues, N_PROT + 1);
+    ASSERT_TRUE(tenm.is_built());
+
+    float max_ion_k = 0.0f;
+    int   n_ion_contacts = 0;
+    for (const auto& c : tenm.tmcontsct()) {
+        if (!c.is_ion) continue;
+        ++n_ion_contacts;
+        EXPECT_GT(c.k_scaled, 0.0f)           << "Ion spring k_scaled must be positive";
+        EXPECT_TRUE(std::isfinite(c.k_scaled)) << "Ion spring k_scaled must be finite";
+        EXPECT_GT(c.d_surf, 0.0f)             << "Ion surface distance must be positive";
+        if (c.k_scaled > max_ion_k) max_ion_k = c.k_scaled;
+    }
+    EXPECT_GT(n_ion_contacts, 0) << "At least one protein-ion contact expected";
+    // The closest Cα (d_surf=2.39 Å) should produce a very stiff spring:
+    //   k = k0*(9/2.39)^6*(1.73/1.88)^2 ≈ 2400; check the maximum is > 100.
+    EXPECT_GT(max_ion_k, 100.0f) << "Maximum ion spring too weak for d_surf=2.39 Å";
+
+    free_synthetic(residues);
+}
+
+// bfactors() must return exactly n_protein_ca() values (not n_residues()).
+TEST(TENCoMIonContact, BFactorLengthEqualsProteinCaCount) {
+    atom   atoms[N_PROT + 2];
+    resid  residues[N_PROT + 2];
+    build_synthetic(atoms, residues);
+
+    tencm::TorsionalENM tenm;
+    tenm.build(atoms, residues, N_PROT + 1);
+    ASSERT_TRUE(tenm.is_built());
+
+    auto bf = tenm.bfactors(300.0f);
+    EXPECT_EQ(static_cast<int>(bf.size()), tenm.n_protein_ca());
+    // All B-factors must be non-negative and finite
+    for (float b : bf) {
+        EXPECT_GE(b, 0.0f);
+        EXPECT_TRUE(std::isfinite(b));
+    }
+
+    free_synthetic(residues);
+}
+
+// The ion acts as a restoring anchor: residues near the ion should have
+// lower B-factors than residues far from it (ion stiffens the local network).
+TEST(TENCoMIonContact, IonReducesBFactorNearIon) {
+    atom   atoms[N_PROT + 2];
+    resid  residues[N_PROT + 2];
+    build_synthetic(atoms, residues);
+
+    // Build with ion (MG at end)
+    tencm::TorsionalENM tenm_with_ion;
+    tenm_with_ion.build(atoms, residues, N_PROT + 1);
+
+    // Build without ion (protein only)
+    tencm::TorsionalENM tenm_no_ion;
+    tenm_no_ion.build(atoms, residues, N_PROT);  // exclude ion residue
+
+    ASSERT_TRUE(tenm_with_ion.is_built());
+    ASSERT_TRUE(tenm_no_ion.is_built());
+
+    auto bf_ion    = tenm_with_ion.bfactors(300.0f);
+    auto bf_no_ion = tenm_no_ion.bfactors(300.0f);
+
+    ASSERT_EQ(bf_ion.size(), bf_no_ion.size());
+
+    // The last Cα (closest to Mg) should be stiffer with the ion present
+    const int last = static_cast<int>(bf_ion.size()) - 1;
+    EXPECT_LT(bf_ion[last], bf_no_ion[last])
+        << "Residue adjacent to Mg should have lower B-factor with ion present";
+
+    free_synthetic(residues);
+}
