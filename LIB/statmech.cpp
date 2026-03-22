@@ -379,26 +379,20 @@ std::vector<WHAMBin> StatMechEngine::wham(
         }
 #endif
 
+#ifndef FLEXAIDS_HAS_EIGEN
         // Shift so minimum = 0
         double fmin = *std::min_element(f_new.begin(), f_new.end());
         for (auto& f : f_new) f -= fmin;
 
         // Check convergence
         double maxdiff = 0.0;
-#ifdef FLEXAIDS_HAS_EIGEN
-        {
-            Eigen::Map<const Eigen::ArrayXd> fn(f_new.data(), n_bins);
-            Eigen::Map<const Eigen::ArrayXd> fo(f_old.data(), n_bins);
-            maxdiff = (fn - fo).abs().maxCoeff();
-        }
-#else
         for (int b = 0; b < n_bins; ++b)
             maxdiff = std::max(maxdiff,
                 std::abs(f_new[static_cast<std::size_t>(b)] -
                          f_old[static_cast<std::size_t>(b)]));
-#endif
         f_old = f_new;
         if (maxdiff < tolerance) break;
+#endif
     }
 
     // Build output

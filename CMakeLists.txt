@@ -412,6 +412,7 @@ if(BUILD_PYTHON_BINDINGS AND pybind11_FOUND)
         LIB/encom.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         LIB/tencm.cpp
+        LIB/fast_optics.cpp
         # BindingMode requires full GA infrastructure
         # Partial exposure for now (thermodynamics only)
     )
