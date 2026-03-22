@@ -25,7 +25,7 @@
 #endif
 
 #include "statmech.h"
-#include "tencm.h"
+#include "tENCoM/tencm.h"
 #include "ShannonThermoStack/ShannonThermoStack.h"
 #include "fast_optics.hpp"
 #include "NATURaL/NATURaLDualAssembly.h"

@@ -23,8 +23,8 @@
 //            Frappier et al., Proteins 83(11):2073-82 (2015)
 
 #include "tencm.h"
-#include "statmech.h"
-#include "encom.h"
+#include "../statmech.h"
+#include "../encom.h"
 
 #include <algorithm>
 #include <array>

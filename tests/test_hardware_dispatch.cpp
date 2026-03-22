@@ -7,7 +7,7 @@
 #include <gtest/gtest.h>
 #include "../LIB/ShannonThermoStack/ShannonThermoStack.h"
 #include "../LIB/statmech.h"
-#include "../LIB/tencm.h"
+#include "../LIB/tENCoM/tencm.h"
 #include <cmath>
 #include <vector>
 #include <numeric>

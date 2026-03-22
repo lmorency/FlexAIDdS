@@ -9,9 +9,9 @@
 
 // flexaid.h defines E as a macro which clashes with GoogleTest templates.
 // Include our headers after gtest, then the macro is already expanded in gtest.
-#include "pdb_calpha.h"
-#include "tencom_diff.h"
-#include "tencm.h"
+#include "tENCoM/pdb_calpha.h"
+#include "tENCoM/tencom_diff.h"
+#include "tENCoM/tencm.h"
 #include "encom.h"
 
 #include <cstdio>
