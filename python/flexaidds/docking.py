@@ -36,6 +36,13 @@ class Pose:
     coordinates: Optional[np.ndarray] = None
     boltzmann_weight: float = 0.0
     
+    def __repr__(self) -> str:
+        rmsd_str = f" RMSD={self.rmsd:.2f}" if self.rmsd is not None else ""
+        return (
+            f"<Pose {self.index} E={self.energy:.3f}{rmsd_str} "
+            f"w={self.boltzmann_weight:.4g}>"
+        )
+
     def to_dict(self) -> dict:
         return {
             'index': self.index,

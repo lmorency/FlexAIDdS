@@ -59,6 +59,13 @@ class Thermodynamics:
         """Entropic contribution to free energy: TΔS (kcal/mol)."""
         return self.temperature * self.entropy
     
+    def __repr__(self) -> str:
+        return (
+            f"<Thermodynamics T={self.temperature:.1f}K "
+            f"F={self.free_energy:.3f} S={self.entropy:.6f} "
+            f"Cv={self.heat_capacity:.6f}>"
+        )
+
     def to_dict(self) -> dict:
         """Convert to dictionary for serialization."""
         return {

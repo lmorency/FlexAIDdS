@@ -180,6 +180,13 @@ class BindingModeResult:
             return min(scored, key=lambda p: p.cf_app)
         return self.poses[0] if self.poses else None
 
+    def __repr__(self) -> str:
+        fe_str = f" F={self.free_energy:.3f}" if self.free_energy is not None else ""
+        return (
+            f"<BindingModeResult mode={self.mode_id} rank={self.rank} "
+            f"n_poses={self.n_poses}{fe_str}>"
+        )
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "BindingModeResult":
         """Reconstruct a BindingModeResult from a dictionary.
