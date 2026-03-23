@@ -73,6 +73,15 @@ ext_modules = [
             if os.name == "nt"
             else ["-std=c++20", "-O3"]
         ),
+        define_macros=(
+            [
+                ("_CRT_SECURE_NO_WARNINGS", "1"),
+                ("_USE_MATH_DEFINES", "1"),
+                ("NOMINMAX", "1"),
+            ]
+            if os.name == "nt"
+            else []
+        ),
     ),
 ]
 
