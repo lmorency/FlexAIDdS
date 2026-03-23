@@ -1,4 +1,4 @@
-name: Update Site
+name: Deploy Site
 
 on:
   push:
@@ -13,16 +13,21 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: site-deploy-${{ github.ref }}
+  group: pages
   cancel-in-progress: true
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
   issues: write
 
 jobs:
-  update-site:
+  deploy-site:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -44,13 +49,17 @@ jobs:
           git add site/index.html
           git diff --staged --quiet || git commit -m "Update: site stats (auto)" && git push
 
-      - name: Deploy to gh-pages
-        uses: peaceiris/actions-gh-pages@v4
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./site
-          publish_branch: gh-pages
-          force_orphan: true
+          path: ./site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
 
   check-cmake-deps:
     runs-on: ubuntu-latest
