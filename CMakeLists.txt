@@ -1311,4 +1311,6 @@ if(BUILD_SWIFT_BRIDGE)
         target_compile_definitions(test_unified_dispatch PRIVATE FLEXAIDS_HAS_EIGEN)
     endif()
     add_test(NAME UnifiedDispatchTests COMMAND test_unified_dispatch)
+
+    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_tencom_diff, test_unified_dispatch")
 endif()
