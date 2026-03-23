@@ -7,6 +7,7 @@
 
 import Foundation
 import FlexAIDdS
+import HealthIntegration
 
 /// Recommends fitness activities based on binding population entropy state.
 ///
@@ -38,6 +39,65 @@ public struct FitnessRecommender: Sendable {
             shannonS: shannonS,
             reasoning: reasoningText(intensity: intensity, shannonS: shannonS, hrv: hrv)
         )
+    }
+
+    /// Generate a fitness recommendation using decomposed entropy data.
+    ///
+    /// When `BindingEntropyScore` is available, uses convergence status and
+    /// vibrational dominance to refine the intensity recommendation:
+    /// - Not converged → gentle (uncertain state, recovery preferred)
+    /// - Vibrational dominance (S_vib >> S_conf) → moderate ("flow state")
+    /// - Mode imbalance (kinetic trapping) → vigorous (energizing)
+    public func recommend(entropyScore: BindingEntropyScore) -> FitnessRecommendation {
+        let intensity = computeDecomposedIntensity(score: entropyScore)
+        let activities = activitiesForIntensity(intensity)
+
+        var reasoning = "Shannon entropy S = \(String(format: "%.4f", entropyScore.shannonS)) kcal/mol/K"
+        if let decomp = entropyScore.shannonDecomposition {
+            reasoning += ", S_conf = \(String(format: "%.4f", decomp.configurational)) nats"
+            reasoning += ", S_vib = \(String(format: "%.6f", decomp.vibrational)) kcal/mol/K"
+            if !decomp.isConverged {
+                reasoning += ". Entropy not converged — calming activity recommended while sampling continues."
+            }
+        }
+        reasoning += " Recommendation: \(intensity.rawValue) activity."
+
+        return FitnessRecommendation(
+            intensity: intensity,
+            activities: activities,
+            shannonS: entropyScore.shannonS,
+            reasoning: reasoning
+        )
+    }
+
+    private func computeDecomposedIntensity(score: BindingEntropyScore) -> WorkoutIntensity {
+        guard let decomp = score.shannonDecomposition else {
+            return computeIntensity(shannonS: score.shannonS, hrv: score.hrvSDNN, sleepHours: score.sleepHours)
+        }
+
+        // Not converged → gentle (uncertain state)
+        if !decomp.isConverged {
+            return .gentle
+        }
+
+        // Vibrational dominance → moderate "flow state"
+        let kB = 0.001987206
+        let sConfPhysical = decomp.configurational * kB
+        if decomp.vibrational > sConfPhysical * 3.0 && decomp.vibrational > 0.001 {
+            return .moderate
+        }
+
+        // Mode imbalance (kinetic trapping suspected) → vigorous
+        if decomp.perModeEntropy.count >= 2 {
+            if let maxS = decomp.perModeEntropy.max(),
+               let minS = decomp.perModeEntropy.filter({ $0 > 0 }).min(),
+               maxS > minS * 10 {
+                return .vigorous
+            }
+        }
+
+        // Fall back to scalar-based intensity
+        return computeIntensity(shannonS: score.shannonS, hrv: score.hrvSDNN, sleepHours: score.sleepHours)
     }
 
     private func computeIntensity(shannonS: Double, hrv: Double?, sleepHours: Double?) -> WorkoutIntensity {

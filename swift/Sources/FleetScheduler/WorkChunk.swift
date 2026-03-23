@@ -204,6 +204,9 @@ public struct ChunkResult: Sendable, Codable, Identifiable {
     /// Computation time in seconds
     public let computeTimeSeconds: Double
 
+    /// Temperature used for this chunk (K)
+    public let temperature: Double
+
     /// Timestamp of completion
     public let completedAt: Date
 
@@ -213,10 +216,38 @@ public struct ChunkResult: Sendable, Codable, Identifiable {
     /// Battery level at completion (for fleet health tracking)
     public let batteryLevelAtCompletion: Double?
 
+    // MARK: - Thermodynamic Summary (for fleet-level referee without deserializing full results)
+
+    /// Helmholtz free energy of this chunk's ensemble (kcal/mol)
+    public let summaryFreeEnergy: Double
+
+    /// Conformational entropy of this chunk's ensemble (kcal/mol/K)
+    public let summaryEntropy: Double
+
+    /// Heat capacity of this chunk's ensemble
+    public let summaryHeatCapacity: Double
+
+    /// Mean energy <E> (kcal/mol)
+    public let summaryMeanEnergy: Double
+
+    /// Energy std dev σ_E (kcal/mol)
+    public let summaryStdEnergy: Double
+
+    /// Number of binding modes found in this chunk
+    public let summaryModeCount: Int
+
+    /// Best (lowest) free energy across modes in this chunk
+    public let summaryBestFreeEnergy: Double
+
     public init(
         chunkID: UUID, jobID: UUID, resultData: Data,
         computedBy: String, computeTimeSeconds: Double,
-        thermalState: String? = nil, batteryLevel: Double? = nil
+        temperature: Double = 298.15,
+        thermalState: String? = nil, batteryLevel: Double? = nil,
+        summaryFreeEnergy: Double = 0, summaryEntropy: Double = 0,
+        summaryHeatCapacity: Double = 0, summaryMeanEnergy: Double = 0,
+        summaryStdEnergy: Double = 0, summaryModeCount: Int = 0,
+        summaryBestFreeEnergy: Double = 0
     ) {
         self.id = UUID()
         self.chunkID = chunkID
@@ -224,9 +255,17 @@ public struct ChunkResult: Sendable, Codable, Identifiable {
         self.resultData = resultData
         self.computedBy = computedBy
         self.computeTimeSeconds = computeTimeSeconds
+        self.temperature = temperature
         self.completedAt = Date()
         self.thermalStateAtCompletion = thermalState
         self.batteryLevelAtCompletion = batteryLevel
+        self.summaryFreeEnergy = summaryFreeEnergy
+        self.summaryEntropy = summaryEntropy
+        self.summaryHeatCapacity = summaryHeatCapacity
+        self.summaryMeanEnergy = summaryMeanEnergy
+        self.summaryStdEnergy = summaryStdEnergy
+        self.summaryModeCount = summaryModeCount
+        self.summaryBestFreeEnergy = summaryBestFreeEnergy
     }
 }
 

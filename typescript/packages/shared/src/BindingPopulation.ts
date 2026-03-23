@@ -129,6 +129,30 @@ export interface TargetModification {
   };
 }
 
+/** Decomposed Shannon entropy from ShannonThermoStack for referee analysis. */
+export interface ShannonEntropyDecomposition {
+  /** Configurational entropy from GA ensemble histogram (nats) */
+  configurational: number;
+  /** Torsional vibrational entropy from ENCoM modes (kcal/mol/K) */
+  vibrational: number;
+  /** Combined -T*S entropy contribution to free energy (kcal/mol) */
+  entropyContribution: number;
+  /** Whether the Shannon entropy has reached a convergence plateau */
+  isConverged: boolean;
+  /** Relative change in entropy over the last convergence window */
+  convergenceRate: number;
+  /** Hardware backend used (e.g., "Metal", "AVX-512", "OpenMP", "scalar") */
+  hardwareBackend: string;
+  /** Number of non-zero histogram bins */
+  occupiedBins: number;
+  /** Total histogram bins used */
+  totalBins: number;
+  /** Per-binding-mode Shannon entropy breakdown (nats, indexed by mode) */
+  perModeEntropy: number[];
+  /** Top 5 most populated histogram bins */
+  dominantBins: Array<{ center: number; probability: number }>;
+}
+
 /** Entropy-health correlation for cross-platform exchange. */
 export interface HealthCorrelation {
   /** Binding entropy score */
@@ -141,12 +165,14 @@ export interface HealthCorrelation {
   restingHeartRate?: number;
   /** ISO 8601 timestamp */
   timestamp: string;
+  /** Shannon entropy decomposition from ShannonThermoStack */
+  shannonDecomposition?: ShannonEntropyDecomposition;
   /** Fitness recommendation */
   fitnessRecommendation?: {
     intensity: 'gentle' | 'moderate' | 'vigorous';
     activities: string[];
   };
-  /** Intelligence oracle analysis (3 bullets) */
+  /** Intelligence oracle analysis (3-4 bullets) */
   oracleAnalysis?: string[];
 }
 

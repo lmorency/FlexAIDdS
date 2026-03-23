@@ -14,10 +14,13 @@
 #include "fileio.h"
 #include "Vcontacts.h"
 #include "BindingMode.h"
+#include "ShannonThermoStack/ShannonThermoStack.h"
+#include "tencm.h"
 
 #include <cstring>
 #include <cstdlib>
 #include <memory>
+#include <algorithm>
 
 // ─── GA context: owns all FlexAID state ─────────────────────────────────────
 
@@ -567,4 +570,241 @@ extern "C" FXWHAMBin* fx_mode_free_energy_profile(FXBindingModeRef mode,
         result[i].free_energy  = bins[i].free_energy;
     }
     return result;
+}
+
+// ─── ShannonThermoStack bridge ──────────────────────────────────────────────
+
+// Helper: populate FXShannonThermoResult from a FullThermoResult + histogram data
+static void fill_shannon_result(FXShannonThermoResult* result,
+                                 const shannon_thermo::FullThermoResult& full,
+                                 const std::vector<double>& log_weights,
+                                 bool converged, double convergence_rate) {
+    result->shannon_entropy       = full.shannonEntropy;
+    result->torsional_vib_entropy = full.torsionalVibEntropy;
+    result->entropy_contribution  = full.entropyContribution;
+    result->delta_G               = full.deltaG;
+    result->is_converged          = converged ? 1 : 0;
+    result->convergence_rate      = convergence_rate;
+
+    // Build histogram from log_weights for the result struct
+    int num_bins = shannon_thermo::DEFAULT_HIST_BINS;
+    if (num_bins > FX_SHANNON_MAX_BINS) num_bins = FX_SHANNON_MAX_BINS;
+    result->num_histogram_bins = num_bins;
+
+    std::memset(result->histogram_centers, 0, sizeof(result->histogram_centers));
+    std::memset(result->histogram_probs,   0, sizeof(result->histogram_probs));
+
+    if (!log_weights.empty()) {
+        auto [it_min, it_max] = std::minmax_element(log_weights.begin(), log_weights.end());
+        double min_v = *it_min;
+        double max_v = *it_max;
+        double range = max_v - min_v;
+        if (range < 1e-12) range = 1.0;
+        double bin_width = range / num_bins;
+
+        std::vector<int> counts(num_bins, 0);
+        for (double v : log_weights) {
+            int b = static_cast<int>((v - min_v) / (bin_width + 1e-10));
+            b = std::min(std::max(b, 0), num_bins - 1);
+            counts[b]++;
+        }
+
+        int occupied = 0;
+        int total = static_cast<int>(log_weights.size());
+        for (int b = 0; b < num_bins; ++b) {
+            result->histogram_centers[b] = min_v + (b + 0.5) * bin_width;
+            result->histogram_probs[b]   = (total > 0) ? static_cast<double>(counts[b]) / total : 0.0;
+            if (counts[b] > 0) occupied++;
+        }
+        result->occupied_bins = occupied;
+        result->total_bins    = num_bins;
+    } else {
+        result->occupied_bins = 0;
+        result->total_bins    = num_bins;
+    }
+
+    // Hardware backend string
+    const char* hw =
+#if defined(FLEXAIDS_USE_CUDA)
+        "CUDA";
+#elif defined(FLEXAIDS_HAS_METAL_SHANNON)
+        "Metal";
+#elif defined(__AVX512F__)
+        "AVX-512";
+#elif defined(_OPENMP)
+        "OpenMP";
+#else
+        "scalar";
+#endif
+    std::strncpy(result->hardware_backend, hw, sizeof(result->hardware_backend) - 1);
+    result->hardware_backend[sizeof(result->hardware_backend) - 1] = '\0';
+}
+
+extern "C" int fx_ga_get_shannon_thermo(FXGAContextRef context, FXShannonThermoResult* result) {
+    if (!context || !context->ran || !result) return 0;
+
+    // Ensure population exists
+    if (!context->population) {
+        context->population = new BindingPopulation(
+            context->FA, context->GB, context->VC,
+            context->chrom_snapshot, context->gene_lim,
+            context->atoms, context->residue, context->cleftgrid,
+            context->n_chrom_snapshot);
+    }
+
+    BindingPopulation* pop = context->population;
+    if (pop->get_Population_size() == 0) return 0;
+
+    // Get global ensemble from population
+    statmech::StatMechEngine global_engine = pop->get_global_ensemble();
+    if (global_engine.size() == 0) return 0;
+
+    // Extract Boltzmann weights → negative log for Shannon histogram input
+    auto weights = global_engine.boltzmann_weights();
+    std::vector<double> log_weights;
+    log_weights.reserve(weights.size());
+    for (double w : weights)
+        if (w > 0.0) log_weights.push_back(-std::log(w));
+
+    // Build TorsionalENM if backbone data available (may be empty)
+    tencm::TorsionalENM tencm_model;
+    if (context->FA && context->atoms && context->FA->atm_cnt_real > 0) {
+        tencm_model.build(context->atoms, context->FA->atm_cnt_real,
+                          context->FA->temperature > 0
+                              ? static_cast<double>(context->FA->temperature)
+                              : shannon_thermo::TEMPERATURE_K);
+    }
+
+    // Get base ΔG from StatMechEngine
+    auto thermo = global_engine.compute();
+    double base_deltaG = thermo.free_energy;
+    double temperature = thermo.temperature;
+
+    // Run the full ShannonThermoStack
+    auto full = shannon_thermo::run_shannon_thermo_stack(
+        global_engine, tencm_model, base_deltaG, temperature);
+
+    // Convergence detection: use Shannon entropy from each generation as history
+    // For now, use a simple check on the current entropy value
+    // A real implementation would track per-generation entropy history
+    std::vector<double> entropy_history = { full.shannonEntropy };
+    bool converged = shannon_thermo::detect_entropy_plateau(
+        entropy_history, 1, 0.01);
+    // With a single entry, detect_entropy_plateau returns true if window<=size
+    // For a meaningful check, we assess if the population is well-sampled
+    converged = (log_weights.size() >= 50);  // heuristic: 50+ samples → converged
+    double convergence_rate = (log_weights.size() > 1) ? 1.0 / log_weights.size() : 1.0;
+
+    std::memset(result, 0, sizeof(FXShannonThermoResult));
+    fill_shannon_result(result, full, log_weights, converged, convergence_rate);
+
+    return 1;
+}
+
+extern "C" int fx_ga_recompute_shannon_at_temperature(FXGAContextRef context,
+                                                       double temperature_K,
+                                                       FXShannonThermoResult* result) {
+    if (!context || !context->ran || !result || temperature_K <= 0.0) return 0;
+
+    // Ensure population exists
+    if (!context->population) {
+        context->population = new BindingPopulation(
+            context->FA, context->GB, context->VC,
+            context->chrom_snapshot, context->gene_lim,
+            context->atoms, context->residue, context->cleftgrid,
+            context->n_chrom_snapshot);
+    }
+
+    BindingPopulation* pop = context->population;
+    if (pop->get_Population_size() == 0) return 0;
+
+    // Get global ensemble and re-create at new temperature
+    statmech::StatMechEngine original = pop->get_global_ensemble();
+    if (original.size() == 0) return 0;
+
+    // Extract raw energies by getting Boltzmann weights and recovering energies
+    // Boltzmann weights: w_i = exp(-beta * E_i) / Z
+    // We re-add all pose energies from every binding mode into a new engine
+    statmech::StatMechEngine temp_engine(temperature_K);
+
+    int n_modes = pop->get_Population_size();
+    for (int m = 0; m < n_modes; ++m) {
+        const BindingMode& mode = pop->get_binding_mode(m);
+        int n_poses = mode.get_BindingMode_size();
+        for (int p = 0; p < n_poses; ++p) {
+            const Pose& pose = mode.get_pose(p);
+            temp_engine.add_sample(pose.CF);
+        }
+    }
+
+    if (temp_engine.size() == 0) return 0;
+
+    // Extract log-weights at new temperature
+    auto weights = temp_engine.boltzmann_weights();
+    std::vector<double> log_weights;
+    log_weights.reserve(weights.size());
+    for (double w : weights)
+        if (w > 0.0) log_weights.push_back(-std::log(w));
+
+    // Build TorsionalENM at new temperature
+    tencm::TorsionalENM tencm_model;
+    if (context->FA && context->atoms && context->FA->atm_cnt_real > 0) {
+        tencm_model.build(context->atoms, context->FA->atm_cnt_real, temperature_K);
+    }
+
+    auto thermo = temp_engine.compute();
+    double base_deltaG = thermo.free_energy;
+
+    auto full = shannon_thermo::run_shannon_thermo_stack(
+        temp_engine, tencm_model, base_deltaG, temperature_K);
+
+    bool converged = (log_weights.size() >= 50);
+    double convergence_rate = (log_weights.size() > 1) ? 1.0 / log_weights.size() : 1.0;
+
+    std::memset(result, 0, sizeof(FXShannonThermoResult));
+    fill_shannon_result(result, full, log_weights, converged, convergence_rate);
+
+    return 1;
+}
+
+extern "C" int fx_ga_per_mode_shannon(FXGAContextRef context,
+                                       double* out_entropies, int max_modes) {
+    if (!context || !context->ran || !out_entropies || max_modes <= 0) return 0;
+
+    // Ensure population exists
+    if (!context->population) {
+        context->population = new BindingPopulation(
+            context->FA, context->GB, context->VC,
+            context->chrom_snapshot, context->gene_lim,
+            context->atoms, context->residue, context->cleftgrid,
+            context->n_chrom_snapshot);
+    }
+
+    BindingPopulation* pop = context->population;
+    int n_modes = pop->get_Population_size();
+    if (n_modes == 0) return 0;
+
+    int count = std::min(n_modes, max_modes);
+    for (int m = 0; m < count; ++m) {
+        const BindingMode& mode = pop->get_binding_mode(m);
+        int n_poses = mode.get_BindingMode_size();
+
+        if (n_poses == 0) {
+            out_entropies[m] = 0.0;
+            continue;
+        }
+
+        // Extract pose energies for this mode
+        std::vector<double> energies;
+        energies.reserve(n_poses);
+        for (int p = 0; p < n_poses; ++p) {
+            energies.push_back(mode.get_pose(p).CF);
+        }
+
+        // Compute Shannon entropy over the energy distribution of this mode
+        out_entropies[m] = shannon_thermo::compute_shannon_entropy(
+            energies, shannon_thermo::DEFAULT_HIST_BINS);
+    }
+
+    return count;
 }

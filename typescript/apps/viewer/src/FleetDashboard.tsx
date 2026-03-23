@@ -9,6 +9,8 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import type { DeviceCapability, WorkChunk } from '@bonhomme/flexaidds';
+import type { RefereeVerdict } from '@bonhomme/shared';
+import { IntelligencePanel } from './IntelligencePanel.js';
 
 interface FleetMetrics {
   jobID: string;
@@ -31,6 +33,7 @@ interface FleetState {
   failedChunks: number;
   orphanedChunks: number;
   metrics: FleetMetrics | null;
+  refereeVerdict: RefereeVerdict | null;
   connectionStatus: 'connected' | 'polling' | 'disconnected';
   lastUpdate: Date | null;
 }
@@ -57,6 +60,7 @@ export function FleetDashboard({
     failedChunks: 0,
     orphanedChunks: 0,
     metrics: null,
+    refereeVerdict: null,
     connectionStatus: 'disconnected',
     lastUpdate: null,
   });
@@ -68,6 +72,7 @@ export function FleetDashboard({
     const devices = (data.devices ?? []) as DeviceCapability[];
     const chunks = (data.activeChunks ?? []) as WorkChunk[];
     const metrics = (data.metrics ?? null) as FleetMetrics | null;
+    const refereeVerdict = (data.refereeVerdict ?? null) as RefereeVerdict | null;
 
     setFleet((prev) => ({
       ...prev,
@@ -78,6 +83,7 @@ export function FleetDashboard({
       failedChunks: metrics?.failedChunks ?? 0,
       orphanedChunks: metrics?.orphanedChunks ?? 0,
       metrics,
+      refereeVerdict,
       lastUpdate: new Date(),
     }));
   }, []);
@@ -286,6 +292,13 @@ export function FleetDashboard({
             {fleet.failedChunks > 0 && <span style={{ color: '#ef4444' }}> ({fleet.failedChunks} failed)</span>}
             {fleet.orphanedChunks > 0 && <span style={{ color: '#f97316' }}> ({fleet.orphanedChunks} orphaned, retrying)</span>}
           </p>
+        </section>
+      )}
+
+      {/* Intelligence analysis panel */}
+      {fleet.refereeVerdict && (
+        <section style={{ marginTop: '1.5rem' }}>
+          <IntelligencePanel verdict={fleet.refereeVerdict} title="Fleet Intelligence" />
         </section>
       )}
 
