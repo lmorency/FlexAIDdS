@@ -496,6 +496,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 				if (!trajectory.empty()) {
 					printf("  Final ΔG (co-translational) = %10.4f kcal/mol\n",
 					       engine.final_deltaG());
+					FA->natural_deltaG = engine.final_deltaG();
 					int n_pause = 0, n_tm = 0;
 					for (const auto& step : trajectory) {
 						if (step.is_pause_site) ++n_pause;

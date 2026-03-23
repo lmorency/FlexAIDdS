@@ -95,22 +95,24 @@ NATURaLConfig auto_configure(const atom*  atoms,
     bool nucl_lig = is_nucleotide_ligand(atoms, n_lig_atoms);
     bool nucl_rec = is_nucleic_acid_receptor(residues, n_residues);
 
-    if (nucl_lig || nucl_rec) {
-        cfg.enabled                = true;
+    // Enable for any receptor with residues.
+    // Protein receptor → ribosomal elongation rates (Zhao 2011 / Dong 1996).
+    // Nucleic acid receptor → RNAP rates (Uptain 1997 / Jonkers 2014).
+    // Callers opt out by setting FA->assume_folded (advanced.assume_folded in config).
+    if (n_residues > 0) {
+        cfg.enabled                 = true;
         cfg.co_translational_growth = true;
         cfg.sugar_pucker_auto       = nucl_lig;
-        // Nucleotide context: use RNAP rates (same master equation, different table)
-        if (nucl_rec && !nucl_lig) {
-            // Pure nucleic acid receptor — co-transcriptional assembly
-            cfg.use_ribosome_speed = false;  // will use RNAP rates
-        }
+        // Pure nucleic acid receptor → RNAP rates; all other cases → ribosome rates
+        cfg.use_ribosome_speed    = !(nucl_rec && !nucl_lig);
+        // Mg²⁺ Hill equation only applies to RNA tertiary folding
+        cfg.ion_dependent_folding = nucl_rec;
 
-        std::cout << "[NATURaL] Auto-detected "
-                  << (nucl_lig ? "nucleotide ligand" : "")
-                  << (nucl_lig && nucl_rec ? " + " : "")
-                  << (nucl_rec ? "nucleic acid receptor" : "")
-                  << " → enabling co-"
-                  << (cfg.use_ribosome_speed ? "translational" : "transcriptional")
+        std::cout << "[NATURaL] "
+                  << (nucl_rec ? "Nucleic acid" : "Protein")
+                  << " receptor detected → co-"
+                  << (cfg.use_ribosome_speed ? "translational (ribosome)"
+                                             : "transcriptional (RNAP)")
                   << " DualAssembly ["
                   << (cfg.organism == ribosome::Organism::EcoliK12 ? "E.coli" : "Human")
                   << "]\n";

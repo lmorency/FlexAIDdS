@@ -140,6 +140,7 @@ int main(int argc, char **argv){
 	FA->refstructure=0;
 	FA->omit_buried=0;
 	FA->assume_folded=0;
+	FA->natural_deltaG=0.0;
 	FA->is_protein=1;
 
 	FA->delta_angstron=0.25;
