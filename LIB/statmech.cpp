@@ -364,9 +364,11 @@ std::vector<WHAMBin> StatMechEngine::wham(
         fn -= fn.minCoeff();
 
         // Check convergence
-        double maxdiff = (fn - fo).abs().maxCoeff();
-        fo = fn;
-        if (maxdiff < tolerance) break;
+        {
+            double maxdiff = (fn - fo).abs().maxCoeff();
+            fo = fn;
+            if (maxdiff < tolerance) break;
+        }
 #else
         for (int b = 0; b < n_bins; ++b) {
             if (raw_count[static_cast<std::size_t>(b)] > 0.0) {
