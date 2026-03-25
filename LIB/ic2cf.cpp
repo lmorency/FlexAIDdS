@@ -126,7 +126,9 @@ cfstr ic2cf(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue,
 	bool error;
 	double penalty = vcfunction(FA,VC,atoms,residue,intraclashes,&error);
 	if(error){
-		cfstr cf_clash = { 0.0, 0.0, penalty, 0.0, 1 };
+		cfstr cf_clash = {};
+		cf_clash.wal = penalty;
+		cf_clash.rclash = 1;
 		return(cf_clash);
 	}
 	

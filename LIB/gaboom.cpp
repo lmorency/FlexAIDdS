@@ -603,15 +603,8 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 				printf("  log(Z) approx              = %.6f\n", static_cast<double>(log_Z_approx));
 				printf("  |Δlog(Z)|                  = %.6e\n", pf_err);
 			} else {
-				// ── Legacy scalar-only diagnostic (TQ_DIM=1) ──
+				// ── Legacy scalar-only diagnostic (d=1, skip TurboQuant which requires d>=2) ──
 				constexpr int TQ_DIM = 1;
-				turboquant::TurboQuantMSE tq_mse(TQ_DIM, TQ_BITS, /*seed=*/42);
-				tq_mse.initialize();
-
-				std::vector<float> energies_f(n_chrom_snapshot);
-				for (int s = 0; s < n_chrom_snapshot; ++s)
-					energies_f[s] = static_cast<float>((*chrom_snapshot)[s].evalue);
-
 				size_t raw_bytes = n_chrom_snapshot * sizeof(float);
 				size_t quant_bytes = n_chrom_snapshot * ((TQ_DIM * TQ_BITS + 7) / 8 + sizeof(float));
 				printf("--- TurboQuant ensemble compression (b=%d, d=%d) ---\n", TQ_BITS, TQ_DIM);
@@ -620,7 +613,6 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 				printf("  Quantized size             = %zu bytes\n", quant_bytes);
 				printf("  Compression ratio          = %.1f×\n",
 				       static_cast<double>(raw_bytes) / quant_bytes);
-				printf("  Theoretical MSE bound      = %.6f\n", tq_mse.theoretical_mse());
 			}
 		}
 
@@ -1464,10 +1456,10 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 
 		// Per-thread mutable atom arrays.
 		std::vector<std::vector<atom>>  tl_atoms(n_thr,
-		    std::vector<atom>(atoms, atoms + natm));
+		    std::vector<atom>(atoms, atoms + natm + 1));
 		// Per-thread residue arrays (pointer fields shared read-only; .rot private).
 		std::vector<std::vector<resid>> tl_res(n_thr,
-		    std::vector<resid>(residue, residue + nres));
+		    std::vector<resid>(residue, residue + nres + 1));
 		// Per-thread FA copies with redirected mutable scratch buffers.
 		std::vector<FA_Global>           tl_fa(n_thr, *FA);
 		std::vector<std::vector<int>>    tl_contacts(n_thr, std::vector<int>(MAX_ATOM_NUMBER, 0));
@@ -1545,8 +1537,18 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 					tl_res[tid][ri] = residue[ri];
 				}
 			} else {
-				std::copy(atoms,   atoms + natm,   tl_atoms[tid].begin());
-				std::copy(residue, residue + nres, tl_res[tid].begin());
+				std::copy(atoms,   atoms + natm + 1,   tl_atoms[tid].begin());
+				std::copy(residue, residue + nres + 1, tl_res[tid].begin());
+			}
+			// Redirect per-thread atom optres pointers to per-thread optres array.
+			// atoms[j].optres points to FA->optres (original); redirect to tl_optres[tid]
+			// so vcfunction scoring writes to (and ic2cf reads from) the same buffer.
+			for (int ai = 1; ai <= natm; ++ai) {
+				atom& a = tl_atoms[tid][ai];
+				if (a.optres) {
+					ptrdiff_t oidx = a.optres - FA->optres;
+					a.optres = &tl_optres[tid][oidx];
+				}
 			}
 			// optres cf fields are cleared by vcfunction itself; pre-clear for safety.
 			for (int o = 0; o < nopt; ++o) {
@@ -1990,8 +1992,8 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 		const int nctb  = FA->ntypes * FA->ntypes;
 		const int range = GB->num_chrom - popoffset;
 
-		std::vector<std::vector<atom>>   p_atoms(n_thr, std::vector<atom>(atoms, atoms + natm));
-		std::vector<std::vector<resid>>  p_res(n_thr, std::vector<resid>(residue, residue + nres));
+		std::vector<std::vector<atom>>   p_atoms(n_thr, std::vector<atom>(atoms, atoms + natm + 1));
+		std::vector<std::vector<resid>>  p_res(n_thr, std::vector<resid>(residue, residue + nres + 1));
 		std::vector<FA_Global>           p_fa(n_thr, *FA);
 		std::vector<std::vector<int>>    p_contacts(n_thr, std::vector<int>(MAX_ATOM_NUMBER, 0));
 		std::vector<std::vector<float>>  p_contrib(n_thr, std::vector<float>(nctb, 0.0f));
@@ -2093,8 +2095,16 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 					p_res[tid][ri] = residue[ri];
 				}
 			} else {
-				std::copy(atoms,   atoms + natm,   p_atoms[tid].begin());
-				std::copy(residue, residue + nres, p_res[tid].begin());
+				std::copy(atoms,   atoms + natm + 1,   p_atoms[tid].begin());
+				std::copy(residue, residue + nres + 1, p_res[tid].begin());
+			}
+			// Redirect per-thread atom optres pointers to per-thread optres array.
+			for (int ai = 1; ai <= natm; ++ai) {
+				atom& a = p_atoms[tid][ai];
+				if (a.optres) {
+					ptrdiff_t oidx = a.optres - FA->optres;
+					a.optres = &p_optres[tid][oidx];
+				}
 			}
 			for (int o = 0; o < nopt; ++o) {
 				p_optres[tid][o].cf.com    = 0.0;
