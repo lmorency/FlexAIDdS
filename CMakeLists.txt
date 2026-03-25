@@ -305,6 +305,9 @@ target_sources(FlexAID PRIVATE
         LIB/GridDecomposer.cpp
         LIB/SharedPosePool.cpp
         LIB/ParallelDock.cpp
+        # ── CoarseScreen: NRGRank coarse-grained screening ──
+        LIB/CoarseScreen.cpp
+        LIB/TwoStageScreen.cpp
 )
 
 target_include_directories(FlexAID PRIVATE
@@ -731,6 +734,34 @@ if(ENABLE_DISPATCH_BENCHMARK)
         target_compile_definitions(benchmark_dispatch PRIVATE FLEXAIDS_HAS_EIGEN)
     endif()
     message(STATUS "Dispatch benchmark enabled — build target: benchmark_dispatch")
+endif()
+
+# ─── Benchmark Dataset Runner ──────────────────────────────────────────────
+option(ENABLE_BENCHMARK_DATASETS "Build benchmark dataset runner" ON)
+if(ENABLE_BENCHMARK_DATASETS)
+    find_package(CURL QUIET)
+
+    add_executable(benchmark_datasets
+        LIB/benchmark_datasets.cpp
+        LIB/DatasetRunner.cpp
+    )
+    target_include_directories(benchmark_datasets PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    if(MSVC)
+        target_compile_options(benchmark_datasets PRIVATE /O2 /fp:fast)
+        target_compile_definitions(benchmark_datasets PRIVATE
+            _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES NOMINMAX)
+    else()
+        target_compile_options(benchmark_datasets PRIVATE -O3 -ffast-math)
+    endif()
+    flexaids_configure_simd(benchmark_datasets)
+    if(CURL_FOUND)
+        target_link_libraries(benchmark_datasets PRIVATE CURL::libcurl)
+        target_compile_definitions(benchmark_datasets PRIVATE FLEXAIDS_HAS_LIBCURL)
+    endif()
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(benchmark_datasets PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    message(STATUS "Benchmark dataset runner enabled — build target: benchmark_datasets")
 endif()
 
 # ─── Unit Tests (GoogleTest) ───────────────────────────────────────────────
@@ -1516,7 +1547,50 @@ flexaids_configure_simd(test_cavity_detect)
     flexaids_configure_msvc_test(test_mol2_sdf_reader)
     add_test(NAME Mol2SdfReaderTests COMMAND test_mol2_sdf_reader)
 
-    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_hardware_detect_dispatch, test_tencom_diff, test_ptm_attachment, test_gaboom, test_vcontacts, test_cleft_cavity, test_encom, test_ring_conformer_library, test_sugar_pucker, test_chiral_center, test_cavity_detect, test_binding_mode_statmech, test_binding_mode_advanced, test_ga_core, test_ga_validation, test_fast_optics, test_entropy_ga, test_soft_contact_matrix, test_cube_grid, test_parallel_dock, test_mol2_sdf_reader")
+    # test_turboquant — TurboQuant quantisation library unit tests
+    add_executable(test_turboquant
+        tests/test_turboquant.cpp
+        LIB/TurboQuant.cpp
+    )
+    target_include_directories(test_turboquant PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_turboquant PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_turboquant PRIVATE /O2)
+    else()
+        target_compile_options(test_turboquant PRIVATE -O2)
+    endif()
+    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
+        target_link_libraries(test_turboquant PRIVATE Eigen3::Eigen)
+        target_compile_definitions(test_turboquant PRIVATE FLEXAIDS_HAS_EIGEN)
+    elseif(FLEXAIDS_USE_EIGEN AND EIGEN3_FOUND)
+        target_include_directories(test_turboquant PRIVATE ${EIGEN3_INCLUDE_DIRS})
+        target_compile_definitions(test_turboquant PRIVATE FLEXAIDS_HAS_EIGEN)
+    endif()
+    flexaids_configure_msvc_test(test_turboquant)
+    add_test(NAME TurboQuantTests COMMAND test_turboquant)
+
+    # test_dataset_runner — benchmark dataset runner tests
+    add_executable(test_dataset_runner
+        tests/test_dataset_runner.cpp
+        LIB/DatasetRunner.cpp
+    )
+    target_include_directories(test_dataset_runner PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_dataset_runner PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_dataset_runner PRIVATE /O2)
+        target_compile_definitions(test_dataset_runner PRIVATE
+            _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES NOMINMAX)
+    else()
+        target_compile_options(test_dataset_runner PRIVATE -O2)
+    endif()
+    if(CURL_FOUND)
+        target_link_libraries(test_dataset_runner PRIVATE CURL::libcurl)
+        target_compile_definitions(test_dataset_runner PRIVATE FLEXAIDS_HAS_LIBCURL)
+    endif()
+    flexaids_configure_msvc_test(test_dataset_runner)
+    add_test(NAME DatasetRunnerTests COMMAND test_dataset_runner)
+
+    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_hardware_detect_dispatch, test_tencom_diff, test_ptm_attachment, test_gaboom, test_vcontacts, test_cleft_cavity, test_encom, test_ring_conformer_library, test_sugar_pucker, test_chiral_center, test_cavity_detect, test_binding_mode_statmech, test_binding_mode_advanced, test_ga_core, test_ga_validation, test_fast_optics, test_entropy_ga, test_soft_contact_matrix, test_cube_grid, test_parallel_dock, test_mol2_sdf_reader, test_turboquant, test_dataset_runner")
 endif()
 
 # ─── Swift Bridge (macOS only) ────────────────────────────────────────────
@@ -1586,5 +1660,26 @@ if(BUILD_SWIFT_BRIDGE)
     endif()
     add_test(NAME UnifiedDispatchTests COMMAND test_unified_dispatch)
 
-    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_tencom_diff, test_unified_dispatch")
+    # test_coarse_screen — NRGRank CoarseScreen + TwoStageScreen unit tests
+    add_executable(test_coarse_screen
+        tests/test_coarse_screen.cpp
+        LIB/CoarseScreen.cpp
+        LIB/TwoStageScreen.cpp
+    )
+    target_include_directories(test_coarse_screen PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_coarse_screen PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_coarse_screen PRIVATE /O2)
+    else()
+        target_compile_options(test_coarse_screen PRIVATE -O2)
+    endif()
+    flexaids_configure_simd(test_coarse_screen)
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(test_coarse_screen PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    flexaids_configure_msvc_test(test_coarse_screen)
+    add_test(NAME CoarseScreenTests COMMAND test_coarse_screen)
+
+    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_tencom_diff, test_unified_dispatch, test_coarse_screen")
 endif()

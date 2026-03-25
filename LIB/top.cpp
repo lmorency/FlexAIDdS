@@ -12,6 +12,8 @@
 #include "ProcessLigand/CoordBuilder.h"
 #include "LibrarySplitter.h"
 #include "ReferenceEntropy.h"
+#include "CoarseScreen.h"
+#include "TwoStageScreen.h"
 
 #include <cstring>
 #include <string>
@@ -102,8 +104,11 @@ static void print_usage(const char* progname) {
 	printf("  -c, --config <file.json>   JSON config (overrides defaults)\n");
 	printf("  -o, --output <prefix>      Output prefix (default: flexaid_out)\n");
 	printf("  --rigid                    Fast rigid-body screening\n");
+	printf("  --screen                   NRGRank coarse-grained screening mode\n");
+	printf("  --screen-top-n <N>         Return top N from coarse screen (default: 100)\n");
 	printf("  --folded                   Skip NATURaL chain growth\n");
 	printf("  --legacy                   Legacy 3-file input mode\n");
+	printf("  --benchmark <set>          Run benchmark dataset (astex, casf2016, etc.)\n");
 	printf("  -h, --help                 Show this help\n\n");
 	printf("Library input (virtual screening):\n");
 	printf("  Ligand can be a multi-molecule SDF, a SMILES file (.smi),\n");
@@ -327,6 +332,8 @@ int main(int argc, char **argv){
 	bool legacy_mode = false;
 	bool use_rigid = false;
 	bool use_folded = false;
+	bool use_screen = false;
+	int  screen_top_n = 100;
 	std::string config_path;
 	std::string output_prefix = "flexaid_out";
 
@@ -346,6 +353,27 @@ int main(int argc, char **argv){
 	// ── Idiotproof argument parsing ──────────────────────────────────────────
 	// Accepts files in any order. Auto-detects receptor vs ligand.
 	// Handles: PDB receptor, MOL2/SDF/PDB ligand, SMILES, JSON config.
+
+	// Check for --benchmark mode
+	if (strcmp(argv[1], "--benchmark") == 0) {
+		if (argc < 3) {
+			fprintf(stderr, "ERROR: --benchmark requires a dataset name\n");
+			fprintf(stderr, "  Available: astex, astex_nonnative, hap2, casf2016, posebusters,\n");
+			fprintf(stderr, "             dude, bindingdb_itc, sampl6, sampl7, pdbbind, all\n");
+			fprintf(stderr, "  Also: doi:<DOI>, pdb_list:<file>\n");
+			Terminate(1);
+		}
+		// Forward to benchmark_datasets executable or run inline
+		// Build the command to invoke the benchmark_datasets binary
+		std::string cmd = "benchmark_datasets";
+		for (int a = 1; a < argc; a++) {
+			cmd += " ";
+			cmd += argv[a];
+		}
+		printf("Launching benchmark runner: %s\n", cmd.c_str());
+		int ret = system(cmd.c_str());
+		Terminate(WEXITSTATUS(ret));
+	}
 
 	// Check for --legacy mode first
 	if (strcmp(argv[1], "--legacy") == 0) {
@@ -378,6 +406,11 @@ int main(int argc, char **argv){
 				continue;
 			}
 			if (arg == "--rigid")  { use_rigid = true;  continue; }
+			if (arg == "--screen") { use_screen = true; continue; }
+			if (arg == "--screen-top-n") {
+				if (a + 1 < argc) screen_top_n = std::atoi(argv[++a]);
+				continue;
+			}
 			if (arg == "--folded") { use_folded = true; continue; }
 			if (arg == "-h" || arg == "--help") { print_usage(argv[0]); Terminate(0); }
 
