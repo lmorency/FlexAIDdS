@@ -1516,7 +1516,29 @@ flexaids_configure_simd(test_cavity_detect)
     flexaids_configure_msvc_test(test_mol2_sdf_reader)
     add_test(NAME Mol2SdfReaderTests COMMAND test_mol2_sdf_reader)
 
-    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_hardware_detect_dispatch, test_tencom_diff, test_ptm_attachment, test_gaboom, test_vcontacts, test_cleft_cavity, test_encom, test_ring_conformer_library, test_sugar_pucker, test_chiral_center, test_cavity_detect, test_binding_mode_statmech, test_binding_mode_advanced, test_ga_core, test_ga_validation, test_fast_optics, test_entropy_ga, test_soft_contact_matrix, test_cube_grid, test_parallel_dock, test_mol2_sdf_reader")
+    # test_turboquant — TurboQuant quantisation library unit tests
+    add_executable(test_turboquant
+        tests/test_turboquant.cpp
+        LIB/TurboQuant.cpp
+    )
+    target_include_directories(test_turboquant PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_turboquant PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_turboquant PRIVATE /O2)
+    else()
+        target_compile_options(test_turboquant PRIVATE -O2)
+    endif()
+    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
+        target_link_libraries(test_turboquant PRIVATE Eigen3::Eigen)
+        target_compile_definitions(test_turboquant PRIVATE FLEXAIDS_HAS_EIGEN)
+    elseif(FLEXAIDS_USE_EIGEN AND EIGEN3_FOUND)
+        target_include_directories(test_turboquant PRIVATE ${EIGEN3_INCLUDE_DIRS})
+        target_compile_definitions(test_turboquant PRIVATE FLEXAIDS_HAS_EIGEN)
+    endif()
+    flexaids_configure_msvc_test(test_turboquant)
+    add_test(NAME TurboQuantTests COMMAND test_turboquant)
+
+    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_hardware_detect_dispatch, test_tencom_diff, test_ptm_attachment, test_gaboom, test_vcontacts, test_cleft_cavity, test_encom, test_ring_conformer_library, test_sugar_pucker, test_chiral_center, test_cavity_detect, test_binding_mode_statmech, test_binding_mode_advanced, test_ga_core, test_ga_validation, test_fast_optics, test_entropy_ga, test_soft_contact_matrix, test_cube_grid, test_parallel_dock, test_mol2_sdf_reader, test_turboquant")
 endif()
 
 # ─── Swift Bridge (macOS only) ────────────────────────────────────────────
