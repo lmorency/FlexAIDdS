@@ -51,6 +51,7 @@ inline json::Value flexaid_default_config() {
             {"bonded_loops",                V(2)},      // bloops: exclude interactions n bonds away
             {"use_flexdee",                 V(false)},  // dead-end elimination for sidechains
             {"dee_clash",                   V(0.5)},
+            {"multi_model",                 V(false)},  // CCBM: multi-conformer receptor docking
         })},
 
         // ── Thermodynamics ───────────────────────────────────────

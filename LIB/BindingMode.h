@@ -30,6 +30,21 @@ struct Pose
 	double CF;
 	double boltzmann_weight;  // ← DEPRECATED: now computed by StatMechEngine
 	std::vector<float> vPose;
+
+	// ═══ CONFORMER-COUPLED BINDING MODE (CCBM) FIELDS ═══
+	int    model_index;       // receptor conformer index (0 = single model)
+	float* model_coords;      // pointer to this conformer's atom coordinates (NOT owned)
+	double receptor_strain;   // E_strain(r) = E_conformer(r) - E_conformer(r_ref)
+	//
+	// The TOTAL energy of this microstate is:
+	//   E_total = CF + receptor_strain
+	// where CF is the ligand-receptor interaction + ligand internal energy
+	// and receptor_strain is the conformational penalty for adopting conformer r.
+	//
+	// This means a high-affinity pose on a strained receptor conformer may
+	// be disfavored compared to a medium-affinity pose on the relaxed conformer.
+	double total_energy() const { return CF + receptor_strain; }
+
 	inline bool const operator< (const Pose& rhs);
 };
 
@@ -87,6 +102,40 @@ class BindingMode // aggregation of poses (Cluster)
 
 			// ═══ PUBLIC ACCESSORS (for bindings) ═══
 			const std::vector<Pose>&	get_poses() const { return Poses; }
+
+			// ═══ CONFORMER-COUPLED ENSEMBLE THERMODYNAMICS (CCBM) ═══
+
+			/// Receptor conformer population weights:
+			/// p(r) = Σ_i w(r,i) / Σ_{r',i} w(r',i)
+			/// where w(r,i) = exp(-β·E_total(r,i)) / Z
+			/// This tells you which receptor conformer is most populated
+			/// in the BOUND state — conformational selection vs induced fit!
+			std::vector<double> conformer_populations() const;
+
+			/// Shannon entropy of the receptor conformer distribution:
+			/// S_receptor = -kB Σ_r p(r) ln p(r)
+			/// Quantifies how much receptor flexibility contributes to binding entropy.
+			/// If S_receptor ≈ 0: one dominant conformer (conformational selection)
+			/// If S_receptor is high: many conformers contribute (induced fit / population shift)
+			double receptor_conformational_entropy() const;
+
+			/// Mutual information between ligand pose and receptor conformer:
+			/// I(ligand; receptor) = S_ligand + S_receptor - S_joint
+			/// This quantifies the coupling between ligand pose choice and
+			/// receptor conformer selection. High MI = strongly coupled binding.
+			double ligand_receptor_mutual_information() const;
+
+			/// Decompose total entropy into:
+			///   S_total = S_ligand_pose + S_receptor_conformer - I(ligand; receptor)
+			/// This is the entropy decomposition that NO other docking tool can do.
+			struct EntropyDecomposition {
+				double S_total;          // total configurational entropy
+				double S_ligand;         // marginal ligand pose entropy
+				double S_receptor;       // marginal receptor conformer entropy
+				double I_mutual;         // mutual information (coupling)
+				double S_vibrational;    // from ENCoM/tENCoM modes
+			};
+			EntropyDecomposition decompose_entropy() const;
 
  	protected:
 		std::vector<Pose> Poses;

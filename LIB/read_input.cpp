@@ -182,6 +182,10 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 		if(strcmp(field,"DEFTYP") == 0){strncpy(deftyp_forced,&buffer[7],MAX_PATH__-1);deftyp_forced[MAX_PATH__-1]='\0';}
 		if(strcmp(field,"CLRMSD") == 0){sscanf(buffer,"%s %f",a,&FA->cluster_rmsd);}
 		if(strcmp(field,"SUPCLU") == 0){FA->use_super_cluster=true;}
+		if(strcmp(field,"TQCM__") == 0){FA->use_tqcm=true;}
+		if(strcmp(field,"TQENS_") == 0){FA->use_tqens=true;}
+		if(strcmp(field,"TQNN__") == 0){FA->use_tqnn=true;}
+		if(strcmp(field,"MULTIM") == 0){FA->multi_model=true;}  // CCBM: multi-model ensemble docking
 		if(strcmp(field,"ROTOUT") == 0){FA->rotout=1;}
 		if(strcmp(field,"NMAMOD") == 0){sscanf(buffer,"%s %d",a,&FA->normal_modes);}
 		if(strcmp(field,"NMAAMP") == 0){strncpy(normal_file,&buffer[7],MAX_PATH__-1);normal_file[MAX_PATH__-1]='\0';}
