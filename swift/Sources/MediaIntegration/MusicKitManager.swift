@@ -7,6 +7,7 @@
 
 import Foundation
 import FlexAIDdS
+import HealthIntegration
 
 #if canImport(MusicKit)
 import MusicKit
@@ -53,9 +54,34 @@ public actor MusicKitManager {
         return response.songs
     }
 
+    /// Generate a playlist using decomposed entropy from BindingEntropyScore.
+    ///
+    /// Uses convergence status and vibrational dominance to refine the mood:
+    /// - Not converged → calming music (uncertain state)
+    /// - Vibrational dominance → "flow state" music
+    /// - Mode imbalance → energizing music to break kinetic trapping
+    public func generatePlaylist(
+        entropyScore: BindingEntropyScore,
+        limit: Int = 20
+    ) async throws -> MusicItemCollection<Song> {
+        let mood = EntropyMood.from(entropyScore: entropyScore)
+
+        var request = MusicCatalogSearchRequest(term: mood.searchTerm, types: [Song.self])
+        request.limit = limit
+
+        let response = try await request.response()
+        return response.songs
+    }
+
     /// Get a curated search term based on entropy-health state.
     public nonisolated func moodDescription(shannonS: Double, hrv: Double? = nil) -> String {
         let mood = EntropyMood.from(shannonS: shannonS, hrv: hrv)
+        return mood.description
+    }
+
+    /// Get mood description from decomposed entropy score.
+    public nonisolated func moodDescription(entropyScore: BindingEntropyScore) -> String {
+        let mood = EntropyMood.from(entropyScore: entropyScore)
         return mood.description
     }
 }
@@ -107,6 +133,38 @@ enum EntropyMood {
         } else {
             return .expanding
         }
+    }
+
+    /// Map entropy mood from decomposed BindingEntropyScore.
+    /// Uses convergence and vibrational dominance for refined mapping.
+    static func from(entropyScore: BindingEntropyScore) -> EntropyMood {
+        guard let decomp = entropyScore.shannonDecomposition else {
+            return from(shannonS: entropyScore.shannonS, hrv: entropyScore.hrvSDNN)
+        }
+
+        // Not converged → calming (uncertain state)
+        if !decomp.isConverged {
+            return .collapsed
+        }
+
+        // Vibrational dominance → converging (focused "flow state")
+        let kB = 0.001987206
+        let sConfPhysical = decomp.configurational * kB
+        if decomp.vibrational > sConfPhysical * 3.0 && decomp.vibrational > 0.001 {
+            return .converging
+        }
+
+        // Mode imbalance → expanding (energizing to break trapping)
+        if decomp.perModeEntropy.count >= 2 {
+            if let maxS = decomp.perModeEntropy.max(),
+               let minS = decomp.perModeEntropy.filter({ $0 > 0 }).min(),
+               maxS > minS * 10 {
+                return .expanding
+            }
+        }
+
+        // Fall back to scalar mapping
+        return from(shannonS: entropyScore.shannonS, hrv: entropyScore.hrvSDNN)
     }
 }
 #endif

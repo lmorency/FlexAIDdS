@@ -6,11 +6,7 @@ std::string get_key(const float* coor){
 	char char_coor[9];
 	
 	for(int i=0; i<3; i++){
-#ifdef _WIN32
-		sprintf_s(char_coor, "%8.3f", coor[i]);
-#else
-		sprintf(char_coor, "%8.3f", coor[i]);
-#endif
+		snprintf(char_coor, sizeof(char_coor), "%8.3f", coor[i]);
 		ss << char_coor;
 	}
 

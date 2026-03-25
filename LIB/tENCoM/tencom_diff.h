@@ -6,7 +6,7 @@
 #pragma once
 
 #include "tencm.h"
-#include "encom.h"
+#include "../encom.h"
 
 #include <string>
 #include <vector>

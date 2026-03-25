@@ -37,6 +37,17 @@
 #define MAX_SHORTEST_PATH 25        // max number of atom to reach any atom of the same molecule
 #define MAX_PATH__ 255              // max size of path length
 #define MAX_REMARK 5000             // max size of comment length
+
+// Safe remark buffer append: prevents buffer overflow in remark accumulation.
+// Usage: safe_remark_cat(remark, tmpremark, &remark_len);
+static inline void safe_remark_cat(char* remark, const char* src, size_t* cur_len) {
+    size_t src_len = strlen(src);
+    size_t avail = (MAX_REMARK - 1) > *cur_len ? (MAX_REMARK - 1) - *cur_len : 0;
+    if (src_len > 0 && src_len <= avail) {
+        memcpy(remark + *cur_len, src, src_len + 1);
+        *cur_len += src_len;
+    }
+}
 #define MAX_NUM_RES 250             // max number of residues allowed 
 #define MAX_NUM_MODES 5             // max number of normal modes
 #define MAX_NUM_ATM 10000           // max number of atoms allowed 
@@ -339,6 +350,10 @@ struct FA_Global_struct{
 	float maxdst;                        // max distance from a protein atom to PCG 
 	float cluster_rmsd;                  // rmsd between poses when clustering
 	char  clustering_algorithm[3];
+	bool  use_super_cluster;             // use SUPER_CLUSTER_ONLY mode for faster clustering
+	bool  use_tqcm;                      // TurboQuant compressed contact matrix scoring
+	bool  use_tqens;                     // TurboQuant ensemble compression for partition function
+	bool  use_tqnn;                      // TurboQuant compressed NN for FastOPTICS
 	uint temperature;					 // temperature parameter 
 	double beta;						 // Metropolis ß parament == 1/T *may be worth trying 1/kT*
 	float permeability;                  // allow permeability or not between atoms
@@ -491,6 +506,34 @@ struct FA_Global_struct{
 	int    MIN_FLEX_RESIDUE;
 	int    MIN_NORMAL_GRID_POINTS;
 	int    MIN_CONSTRAINTS;
+
+	// ── MIF + Grid Prioritization ──
+	float*  mif_energies;          // parallel array [num_grd], MIF energy per grid point
+	int*    mif_sorted;            // grid indices sorted by energy (ascending)
+	double* mif_cdf;               // Boltzmann CDF for sampling
+	int     mif_count;             // entries in sorted/cdf (= num_grd - 1)
+	int     mif_enabled;           // 1 if MIF-weighted init is active
+	float   mif_temperature;       // Boltzmann temperature (default 300K)
+	float   grid_prio_percent;     // top-K% to keep (default 100 = no filtering)
+
+	// ── Reference Ligand Seeding ──
+	char    reflig_file[MAX_PATH__]; // path to reference ligand PDB/MOL2
+	float   reflig_seed_fraction;    // fraction of population to seed (default 0.25)
+	int     reflig_k_nearest;        // K nearest grid points (default 10)
+	int*    reflig_nearest_grid;     // K nearest grid point indices (1-based)
+	int     reflig_nearest_count;    // actual count found
+	int     reflig_hetatm_fallback;  // 1 = use INPLIG HETATM as fallback (default 1)
+
+	// ── Auto-Flex Binding Residues ──
+	int     autoflex_enabled;        // 1 = auto-flex key binding residues (default 1)
+	int     autoflex_max;            // max residues to auto-flex (default 5)
+
+	// ── Multi-Model / Conformer-Coupled Binding Modes (CCBM) ──
+	bool    multi_model;             // true when MULTIMODEL ON
+	int     n_models;                // number of receptor conformer models (≥1)
+	int     model_gene_index;        // index of the model-selection gene in chromosome
+	std::vector<std::vector<float>> model_coords;  // model_coords[model_idx][atom_idx*3+{0,1,2}]
+	std::vector<double>             model_strain;  // strain energy per model (kcal/mol)
 };
 typedef struct FA_Global_struct FA_Global;
 

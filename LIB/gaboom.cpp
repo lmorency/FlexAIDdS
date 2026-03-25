@@ -2,11 +2,17 @@
 #include "Vcontacts.h"
 #include "fileio.h"
 #include "hardware_dispatch.h"
+#include "MIFGrid.h"
+#include "CavityDetect/SpatialGrid.h"
 
 #include <random>
 #include <functional>
 #include <cstdint>
 #include <vector>
+#include <algorithm>
+#include <array>
+#include <memory>
+#include <span>
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -25,8 +31,10 @@
 #endif
 
 #include "statmech.h"
-#include "tencm.h"
+#include "tENCoM/tencm.h"
 #include "ShannonThermoStack/ShannonThermoStack.h"
+#include "TurboQuant.h"
+#include "fast_optics.hpp"
 #include "NATURaL/NATURaLDualAssembly.h"
 
 // in milliseconds
@@ -38,6 +46,26 @@
 # include <unistd.h>
 #endif
 
+
+/// ═══ CCBM: Add receptor conformer strain energy to chromosome evalue ═══
+/// When multi-model mode is ON, the model gene selects the receptor conformer
+/// and the strain energy of that conformer is added to the CF-based evalue.
+/// This makes the GA search the joint (ligand_pose, receptor_conformer) space.
+static inline void ccbm_inject_strain(FA_Global* FA, chromosome& chrom, const genlim* gene_lim) {
+    if (!FA->multi_model || FA->n_models <= 1 || FA->model_gene_index < 0) return;
+    int mg = FA->model_gene_index;
+    // Decode discrete model index from the gene value (round to nearest integer)
+    int model_idx = static_cast<int>(std::round(chrom.genes[mg].to_ic));
+    // Clamp to valid range
+    if (model_idx < 0) model_idx = 0;
+    if (model_idx >= FA->n_models) model_idx = FA->n_models - 1;
+    // Snap gene IC value to exact integer for discrete gene
+    chrom.genes[mg].to_ic = static_cast<double>(model_idx);
+    // Add strain energy
+    double strain = FA->model_strain[model_idx];
+    chrom.evalue += strain;
+    chrom.app_evalue += strain;
+}
 
 /***********************************************************************/
 /* 1         2         3         4         5         6          */
@@ -73,32 +101,30 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	*memchrom=0; //num chrom allocated in memory
 
 	// for generation random doubles from [0,1[ (mutation crossover operators)
-	strcpy(PAUSEFILE,FA->state_path);
 #ifdef _WIN32
-	strcat(PAUSEFILE,"\\.pause");
+	snprintf(PAUSEFILE,MAX_PATH__,"%s\\.pause",FA->state_path);
+	snprintf(ABORTFILE,MAX_PATH__,"%s\\.abort",FA->state_path);
+	snprintf(STOPFILE,MAX_PATH__,"%s\\.stop",FA->state_path);
 #else
-	strcat(PAUSEFILE,"/.pause");
-#endif
-
-
-	strcpy(ABORTFILE,FA->state_path);
-#ifdef _WIN32
-	strcat(ABORTFILE,"\\.abort");
-#else
-	strcat(ABORTFILE,"/.abort");
-#endif
-
-	strcpy(STOPFILE,FA->state_path);
-#ifdef _WIN32
-	strcat(STOPFILE,"\\.stop");
-#else
-	strcat(STOPFILE,"/.stop");
+	snprintf(PAUSEFILE,MAX_PATH__,"%s/.pause",FA->state_path);
+	snprintf(ABORTFILE,MAX_PATH__,"%s/.abort",FA->state_path);
+	snprintf(STOPFILE,MAX_PATH__,"%s/.stop",FA->state_path);
 #endif
 
 	GB->num_genes=FA->npar;
 	if(GB->num_genes == 0){
 		fprintf(stderr,"ERROR: no parameters to optimize.\n");
 		Terminate(1);
+	}
+
+	// ═══ CCBM: Add discrete gene for receptor model index when multi-model is ON ═══
+	if (FA->multi_model && FA->n_models > 1) {
+		FA->model_gene_index = GB->num_genes;  // last gene is the model selector
+		GB->num_genes++;  // add one gene for receptor conformer selection
+		printf("CCBM: multi-model mode enabled with %d conformers, model_gene_index=%d\n",
+		       FA->n_models, FA->model_gene_index);
+	} else {
+		FA->model_gene_index = -1;  // no model gene
 	}
 
 	printf("num_genes=%d\n",GB->num_genes);
@@ -151,6 +177,16 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 
 	if(strcmp(GB->pop_init_method,"RANDOM") == 0){
 		set_gene_lim(FA, GB, (*gene_lim));
+		// ═══ CCBM: Set gene limits for model selection gene ═══
+		if (FA->multi_model && FA->n_models > 1 && FA->model_gene_index >= 0) {
+			int mg = FA->model_gene_index;
+			(*gene_lim)[mg].min = 0.0;
+			(*gene_lim)[mg].max = static_cast<double>(FA->n_models - 1);
+			(*gene_lim)[mg].del = 1.0;  // discrete steps
+			(*gene_lim)[mg].map = -1;   // no mapping
+			printf("CCBM: model gene %d: min=0 max=%d delta=1 (discrete)\n",
+			       mg, FA->n_models - 1);
+		}
 		set_bins((*gene_lim),GB->num_genes);
 
 	}else if(strcmp(GB->pop_init_method,"IPFILE") == 0){
@@ -205,6 +241,8 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		(*chrom)[i].app_evalue = 0.0;
 		(*chrom)[i].evalue = 0.0;
 		(*chrom)[i].fitnes = 0.0;
+		(*chrom)[i].boltzmann_weight = 0.0;
+		(*chrom)[i].free_energy = 0.0;
 		(*chrom)[i].status = ' ';
 	}
 
@@ -228,6 +266,8 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		(*chrom_snapshot)[i].app_evalue = 0.0;
 		(*chrom_snapshot)[i].evalue = 0.0;
 		(*chrom_snapshot)[i].fitnes = 0.0;
+		(*chrom_snapshot)[i].boltzmann_weight = 0.0;
+		(*chrom_snapshot)[i].free_energy = 0.0;
 		(*chrom_snapshot)[i].status = ' ';
 		//printf("chrom_snapshot[%d] allocated at address %p!\n", i, &(*chrom_snapshot)[i]);
 	}
@@ -311,30 +351,43 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 
 			if(FA->output_range){
 #ifdef _WIN32
-				sprintf(gridfilename,"\\grid.%d.prt.pdb",i+1);
+				snprintf(gridfile,MAX_PATH__,"%s\\grid.%d.prt.pdb",FA->temp_path,i+1);
 #else
-				sprintf(gridfilename,"/grid.%d.prt.pdb",i+1);
+				snprintf(gridfile,MAX_PATH__,"%s/grid.%d.prt.pdb",FA->temp_path,i+1);
 #endif
-				strcpy(gridfile,FA->temp_path);
-				strcat(gridfile,gridfilename);
-
 				write_grid(FA,(*cleftgrid),gridfile);
 			}
 
 			slice_grid(FA,(*gene_lim),atoms,residue,cleftgrid);
 
 			if(FA->output_range){
-
 #ifdef _WIN32
-				sprintf(gridfilename,"\\grid.%d.slc.pdb",i+1);
+				snprintf(gridfile,MAX_PATH__,"%s\\grid.%d.slc.pdb",FA->temp_path,i+1);
 #else
-				sprintf(gridfilename,"/grid.%d.slc.pdb",i+1);
+				snprintf(gridfile,MAX_PATH__,"%s/grid.%d.slc.pdb",FA->temp_path,i+1);
 #endif
-
-				strcpy(gridfile,FA->temp_path);
-				strcat(gridfile,gridfilename);
-
 				write_grid(FA,(*cleftgrid),gridfile);
+			}
+
+			// Recompute MIF for adapted grid
+			if (FA->mif_enabled || FA->grid_prio_percent < 100.0f) {
+				std::vector<atom> protein_atoms(atoms, atoms + FA->atm_cnt_real);
+				cavity_detect::SpatialGrid sg;
+				sg.build(protein_atoms);
+				auto mif = mif::compute_mif(*cleftgrid, FA->num_grd,
+				                             atoms, FA->atm_cnt_real, sg);
+				free(FA->mif_energies); free(FA->mif_sorted); free(FA->mif_cdf);
+				FA->mif_count = static_cast<int>(mif.sorted_indices.size());
+				FA->mif_energies = static_cast<float*>(
+				    malloc(mif.energies.size() * sizeof(float)));
+				FA->mif_sorted = static_cast<int*>(
+				    malloc(mif.sorted_indices.size() * sizeof(int)));
+				std::copy_n(mif.energies.data(), mif.energies.size(), FA->mif_energies);
+				std::copy_n(mif.sorted_indices.data(), mif.sorted_indices.size(), FA->mif_sorted);
+				mif::build_sampling_cdf(mif, FA->mif_temperature);
+				FA->mif_cdf = static_cast<double*>(
+				    malloc(mif.cdf.size() * sizeof(double)));
+				std::copy_n(mif.cdf.data(), mif.cdf.size(), FA->mif_cdf);
 			}
 
 			validate_dups(GB, (*gene_lim), GB->num_genes);
@@ -355,7 +408,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		  if((i/rrg_skip)*rrg_skip == i) rrg_flag=1;
 		  if((rrg_flag==1) && (GB->outgen==1)){
 		  if(FA->refstructure == 1){
-		  sprintf(tmp_rrgfile,"%s_%d.rrg",FA->rrgfile,i);
+		  snprintf(tmp_rrgfile,MAX_PATH__,"%s_%d.rrg",FA->rrgfile,i);
 		  //printf("%s\n",tmp_rrgfile);
 		  //PAUSE;
 		  write_rrg(FA,GB,(*chrom),(*gene_lim),atoms,residue,(*cleftgrid),tmp_rrgfile);
@@ -416,8 +469,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 
 	QuickSort((*chrom),0,GB->num_chrom-1,true);
 
-	strcpy(outfile,FA->rrgfile);
-	strcat(outfile,"_par.res");
+	snprintf(outfile,MAX_PATH__,"%s_par.res",FA->rrgfile);
 	if (FA->htpmode == false) {write_par((*chrom),(*gene_lim),i+1,outfile,GB->num_chrom,GB->num_genes);}
 
 	printf("sorting chrom_snapshot\n");
@@ -443,6 +495,27 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		statmech::StatMechEngine sme(T_K);
 		for(int s = 0; s < n_chrom_snapshot; ++s)
 			sme.add_sample((*chrom_snapshot)[s].evalue);
+
+		// Optional super-cluster pre-filtering for faster Shannon entropy collapse
+		if (FA->use_super_cluster && n_chrom_snapshot > 4) {
+			std::vector<fast_optics::Point> energy_pts(n_chrom_snapshot);
+			for (int s = 0; s < n_chrom_snapshot; ++s)
+				energy_pts[s].coords = { (*chrom_snapshot)[s].evalue };
+
+			fast_optics::FastOPTICS foptics(energy_pts, std::max(4, n_chrom_snapshot / 20));
+			auto sc_indices = foptics.extractSuperCluster(fast_optics::ClusterMode::SUPER_CLUSTER_ONLY);
+
+			if (!sc_indices.empty() && sc_indices.size() < static_cast<size_t>(n_chrom_snapshot)) {
+				statmech::StatMechEngine sme_filtered(T_K);
+				for (size_t idx : sc_indices)
+					sme_filtered.add_sample((*chrom_snapshot)[idx].evalue);
+
+				printf("--- SuperCluster pre-filter: %zu / %d poses selected ---\n",
+				       sc_indices.size(), n_chrom_snapshot);
+				sme = sme_filtered;
+			}
+		}
+
 		statmech::Thermodynamics td = sme.compute();
 		printf("--- Thermodynamics (T = %.1f K, N = %d conformers) ---\n",
 		       td.temperature, n_chrom_snapshot);
@@ -451,6 +524,105 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		printf("  Energy std dev        σ_E = %10.4f kcal/mol\n", td.std_energy);
 		printf("  Heat capacity         C_v = %10.4f kcal/(mol·K)\n", td.heat_capacity);
 		printf("  Entropy (conf)        S   = %10.6f kcal/(mol·K)\n", td.entropy);
+
+		// ── Phase 2.5: TurboQuant ensemble compression ──────────────
+		// Quantize the conformational ensemble energy vectors using TurboQuant
+		// (Zandieh et al. 2025, arXiv:2504.19874) for near-optimal distortion.
+		// This compresses the population energy representations while preserving
+		// inner product structure needed for Boltzmann-weighted Shannon entropy.
+		//
+		// When TQENS (use_tqens) is enabled, we use QuantizedEnsemble with a
+		// multi-dimensional energy descriptor (com, wal, sas, elec) per conformer
+		// and compute the approximate partition function via unbiased inner-product
+		// preserving TurboQuantProd quantization.  We compare to exact StatMechEngine
+		// Boltzmann weights and log the empirical bias and max weight error.
+		//
+		// TurboQuant MSE bound: D_mse ≤ sqrt(3π/2) · 1/4^b ≈ 2.7/4^b
+		// At b=3 bits/coordinate: D_mse ≈ 0.03 (97% fidelity)
+		if (n_chrom_snapshot > 64) {
+			constexpr int TQ_BITS = 3;  // 3 bits/coord → 97% fidelity, 10.7× compression
+
+			if (FA->use_tqens) {
+				// ── Multi-dimensional QuantizedEnsemble (full TurboQuantProd) ──
+				// Energy descriptor: (com, wal, sas, elec) → 4 dimensions
+				// Each chromosome's cfstr provides these component values.
+				constexpr int TQ_EDIM = 4;
+				turboquant::QuantizedEnsemble qens(TQ_EDIM, TQ_BITS);
+				qens.reserve(n_chrom_snapshot);
+
+				// Build energy descriptor vectors from cfstr components
+				std::vector<std::array<float, TQ_EDIM>> descriptors(n_chrom_snapshot);
+				for (int s = 0; s < n_chrom_snapshot; ++s) {
+					const cfstr& cf = (*chrom_snapshot)[s].cf;
+					descriptors[s][0] = static_cast<float>(cf.com);
+					descriptors[s][1] = static_cast<float>(cf.wal);
+					descriptors[s][2] = static_cast<float>(cf.sas);
+					descriptors[s][3] = static_cast<float>(cf.elec);
+					qens.add_state(std::span<const float>(descriptors[s].data(), TQ_EDIM));
+				}
+
+				// Construct beta_E vector: β times a unit energy-weighting direction
+				// For the Boltzmann partition function Z = Σ exp(-β·E_total),
+				// E_total = com + wal (standard CF).  We project via beta_E = β·(1,1,0,0)
+				// so that ⟨beta_E, descriptor⟩ = β·(com + wal) = β·E_total.
+				float beta_val = static_cast<float>(1.0 / (statmech::kB_kcal * T_K));
+				std::array<float, TQ_EDIM> beta_E = {beta_val, beta_val, 0.0f, 0.0f};
+
+				// Compute approximate partition function via QuantizedEnsemble
+				std::vector<float> approx_weights(n_chrom_snapshot);
+				float log_Z_approx = qens.compute_partition_function(
+					std::span<const float>(beta_E.data(), TQ_EDIM),
+					std::span<float>(approx_weights));
+
+				// Compute exact Boltzmann weights from StatMechEngine for comparison
+				std::vector<double> exact_bw = sme.boltzmann_weights();
+
+				// Compare approximate vs exact weights
+				double sum_bias = 0.0, max_weight_err = 0.0;
+				for (int s = 0; s < n_chrom_snapshot; ++s) {
+					double err = static_cast<double>(approx_weights[s]) - exact_bw[s];
+					sum_bias += err;
+					max_weight_err = std::max(max_weight_err, std::abs(err));
+				}
+				double mean_bias = sum_bias / n_chrom_snapshot;
+
+				// Compute exact log(Z) for comparison
+				statmech::Thermodynamics td_exact = sme.compute();
+				double log_Z_exact = td_exact.log_Z;
+				double pf_err = std::abs(static_cast<double>(log_Z_approx) - log_Z_exact);
+
+				printf("--- TurboQuant QuantizedEnsemble (b=%d, d=%d) ---\n", TQ_BITS, TQ_EDIM);
+				printf("  Conformers             N   = %d\n", n_chrom_snapshot);
+				printf("  Energy descriptor dim  d   = %d (com, wal, sas, elec)\n", TQ_EDIM);
+				printf("  Memory (quantized)         = %zu bytes\n", qens.memory_bytes());
+				printf("  Memory (raw float)         = %zu bytes\n",
+				       static_cast<size_t>(n_chrom_snapshot) * TQ_EDIM * sizeof(float));
+				printf("  Mean Boltzmann weight bias = %+.6e\n", mean_bias);
+				printf("  Max  Boltzmann weight err  = %.6e\n", max_weight_err);
+				printf("  log(Z) exact               = %.6f\n", log_Z_exact);
+				printf("  log(Z) approx              = %.6f\n", static_cast<double>(log_Z_approx));
+				printf("  |Δlog(Z)|                  = %.6e\n", pf_err);
+			} else {
+				// ── Legacy scalar-only diagnostic (TQ_DIM=1) ──
+				constexpr int TQ_DIM = 1;
+				turboquant::TurboQuantMSE tq_mse(TQ_DIM, TQ_BITS, /*seed=*/42);
+				tq_mse.initialize();
+
+				std::vector<float> energies_f(n_chrom_snapshot);
+				for (int s = 0; s < n_chrom_snapshot; ++s)
+					energies_f[s] = static_cast<float>((*chrom_snapshot)[s].evalue);
+
+				size_t raw_bytes = n_chrom_snapshot * sizeof(float);
+				size_t quant_bytes = n_chrom_snapshot * ((TQ_DIM * TQ_BITS + 7) / 8 + sizeof(float));
+				printf("--- TurboQuant ensemble compression (b=%d, d=%d) ---\n", TQ_BITS, TQ_DIM);
+				printf("  Conformers             N   = %d\n", n_chrom_snapshot);
+				printf("  Raw size                   = %zu bytes\n", raw_bytes);
+				printf("  Quantized size             = %zu bytes\n", quant_bytes);
+				printf("  Compression ratio          = %.1f×\n",
+				       static_cast<double>(raw_bytes) / quant_bytes);
+				printf("  Theoretical MSE bound      = %.6f\n", tq_mse.theoretical_mse());
+			}
+		}
 
 		// ── Phase 3: TorsionalENM vibrational entropy ────────────────
 		tencm::TorsionalENM tencm_model;
@@ -518,6 +690,8 @@ void copy_chrom(chromosome* dest, const chromosome* src, int num_genes){
 	dest->evalue = src->evalue;
 	dest->app_evalue = src->app_evalue;
 	dest->fitnes = src->fitnes;
+	dest->boltzmann_weight = src->boltzmann_weight;
+	dest->free_energy = src->free_energy;
 	dest->status = src->status;
 
 	for(int j=0; j<num_genes; j++){
@@ -757,6 +931,7 @@ int reproduce(FA_Global* FA,GB_Global* GB,VC_Global* VC, chromosome* chrom, cons
 								  chrom[GB->num_chrom+i].genes,target);
 			chrom[GB->num_chrom+i].evalue=get_cf_evalue(&chrom[GB->num_chrom+i].cf);
 			chrom[GB->num_chrom+i].app_evalue=get_apparent_cf_evalue(&chrom[GB->num_chrom+i].cf);
+			ccbm_inject_strain(FA, chrom[GB->num_chrom+i], gene_lim);  // CCBM strain
 			chrom[GB->num_chrom+i].status='n';
 
 			duplicates[sig1] = 1;
@@ -779,6 +954,7 @@ int reproduce(FA_Global* FA,GB_Global* GB,VC_Global* VC, chromosome* chrom, cons
 								  chrom[GB->num_chrom+i].genes,target);
 			chrom[GB->num_chrom+i].evalue=get_cf_evalue(&chrom[GB->num_chrom+i].cf);
 			chrom[GB->num_chrom+i].app_evalue=get_apparent_cf_evalue(&chrom[GB->num_chrom+i].cf);
+			ccbm_inject_strain(FA, chrom[GB->num_chrom+i], gene_lim);  // CCBM strain
 			chrom[GB->num_chrom+i].status='n';
 
 			duplicates[sig2] = 1;
@@ -957,6 +1133,66 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 	static int gen_id = 0;
 	int i;
 
+	// ── TurboQuant QuantizedContactMatrix (TQCM) ─────────────────────────
+	// When TQCM is enabled, build a compressed representation of the
+	// energy interaction matrix FA->energy_matrix at first call.  The QCM
+	// stores 256×256 rows quantized at 2 bits/coordinate, giving 16×
+	// compression.  Subsequent calls can use
+	// qcm.approximate_score(type_i, type_j) for fast scoring.
+	// The compressed matrix is rebuilt whenever ntypes changes.
+	static std::unique_ptr<turboquant::QuantizedContactMatrix> s_tqcm;
+	static int s_tqcm_ntypes = 0;
+
+	if (FA->use_tqcm && (gen_id == 0 || s_tqcm_ntypes != FA->ntypes)) {
+		// Sample the energy_matrix spline functions at midpoint (area=0.5)
+		// to build a flat ntypes×ntypes matrix suitable for QCM compression.
+		// QuantizedContactMatrix expects exactly 256×256 floats, so we pad
+		// to 256 if ntypes < 256 (values beyond ntypes are zero-filled).
+		const int nt = FA->ntypes;
+		constexpr int QCM_DIM = turboquant::QuantizedContactMatrix::kNumAtomTypes;
+		std::vector<float> flat_matrix(QCM_DIM * QCM_DIM, 0.0f);
+
+		for (int t1 = 0; t1 < nt && t1 < QCM_DIM; ++t1) {
+			for (int t2 = 0; t2 < nt && t2 < QCM_DIM; ++t2) {
+				struct energy_matrix* em = &FA->energy_matrix[t1 * nt + t2];
+				if (em->energy_values != NULL) {
+					// Sample the density-of-contact curve at area = 0.5
+					// This gives the representative interaction strength
+					flat_matrix[t1 * QCM_DIM + t2] = static_cast<float>(get_yval(em, 0.5));
+				}
+			}
+		}
+
+		s_tqcm = std::make_unique<turboquant::QuantizedContactMatrix>(/*bit_width=*/2);
+		s_tqcm->build(flat_matrix.data());
+		s_tqcm_ntypes = nt;
+
+		printf("--- TurboQuant QuantizedContactMatrix (TQCM) built ---\n");
+		printf("  Atom types             = %d (padded to %d)\n", nt, QCM_DIM);
+		printf("  Bit width              = %d\n", s_tqcm->bit_width());
+		printf("  Compression ratio      = %.1f×\n", s_tqcm->compression_ratio());
+		printf("  Memory (compressed)    = %zu bytes\n", s_tqcm->memory_bytes());
+		printf("  Memory (original)      = %zu bytes\n",
+		       static_cast<size_t>(QCM_DIM * QCM_DIM) * sizeof(float));
+		printf("  MSE bound per element  = %.6f\n",
+		       s_tqcm->quantizer().theoretical_mse());
+
+		// Validate: spot-check a few type pairs against exact values
+		if (nt >= 2) {
+			double max_err = 0.0;
+			int n_checks = std::min(nt * nt, 1000);
+			for (int c = 0; c < n_checks; ++c) {
+				int ti = c / nt, tj = c % nt;
+				float exact_val = flat_matrix[ti * QCM_DIM + tj];
+				float approx_val = s_tqcm->approximate_score(ti, tj);
+				double ae = std::abs(static_cast<double>(exact_val - approx_val));
+				max_err = std::max(max_err, ae);
+			}
+			printf("  Spot-check max |error| = %.6f (over %d pairs)\n", max_err, n_checks);
+		}
+	}
+
+
 	// ── Chromosome evaluation ────────────────────────────────────────────────
 	// Runtime dispatch: CUDA GPU → Metal GPU → OpenMP CPU (thread-safe).
 	// All compiled-in backends are available simultaneously; select_backend()
@@ -1024,6 +1260,7 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 				chrom[c].cf.rclash = (h_wal[c] > 1e4) ? 1 : 0;
 				chrom[c].evalue     = get_cf_evalue(&chrom[c].cf);
 				chrom[c].app_evalue = get_apparent_cf_evalue(&chrom[c].cf);
+				ccbm_inject_strain(FA, chrom[c], gene_lim);  // CCBM strain
 				chrom[c].status    = 'n';
 			}
 		}
@@ -1328,6 +1565,7 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 			    cleftgrid, chrom[ii].genes, target);
 			chrom[ii].evalue     = get_cf_evalue(&chrom[ii].cf);
 			chrom[ii].app_evalue = get_apparent_cf_evalue(&chrom[ii].cf);
+			ccbm_inject_strain(FA, chrom[ii], gene_lim);  // CCBM strain
 			chrom[ii].status     = 'n';
 		}
 	}
@@ -1375,6 +1613,89 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 			}
 			// Assign fitness AFTER accumulating the full niche count.
 			chrom[pi].fitnes = (double)(GB->num_chrom - pi) / pshare;
+		}
+	}
+
+	if(strcmp(method,"SMFREE")==0){
+		/* SMFREE — StatMech Free-energy-weighted fitness with niche sharing.
+		   Uses the StatMechEngine to compute Boltzmann weights from the
+		   current population's energies. Fitness blends rank-based fitness
+		   with thermodynamic Boltzmann probability:
+		     fitness_i = [(1-w) * rank_component + w * boltzmann_component] / share_i
+		   where w = entropy_weight ∈ [0,1].
+		   This biases selection toward thermodynamically favorable poses
+		   (low free energy) while maintaining diversity via niche sharing.
+		*/
+		if (FA->temperature > 0) {
+			const double T = static_cast<double>(FA->temperature);
+			statmech::StatMechEngine engine(T);
+
+			// Feed all chromosome energies into the engine.
+			for (int si = 0; si < GB->num_chrom; si++) {
+				engine.add_sample(chrom[si].evalue);
+			}
+
+			// Compute ensemble thermodynamics and Boltzmann weights.
+			auto thermo = engine.compute();
+			auto bweights = engine.boltzmann_weights();
+
+			// Store Boltzmann weights and free energy on each chromosome.
+			for (int si = 0; si < GB->num_chrom; si++) {
+				chrom[si].boltzmann_weight = bweights[static_cast<size_t>(si)];
+				chrom[si].free_energy = thermo.free_energy;
+			}
+
+			// Find max Boltzmann weight for normalisation of the Boltzmann component.
+			double max_bw = 0.0;
+			for (int si = 0; si < GB->num_chrom; si++) {
+				if (chrom[si].boltzmann_weight > max_bw)
+					max_bw = chrom[si].boltzmann_weight;
+			}
+			if (max_bw <= 0.0) max_bw = 1.0;
+
+			const double w = GB->entropy_weight;
+
+#ifdef _OPENMP
+#pragma omp parallel for schedule(static) default(none) \
+	shared(chrom, GB, FA, cleftgrid, max_bw, w)
+#endif
+			for (int pi = 0; pi < GB->num_chrom; pi++) {
+				// Niche sharing (same as PSHARE).
+				double pshare = 0.0;
+				for (int pj = 0; pj < GB->num_chrom; pj++) {
+					double prmsp = calc_rmsp(GB->num_genes,
+					                         chrom[pi].genes, chrom[pj].genes,
+					                         FA->map_par, cleftgrid);
+					if (prmsp <= GB->sig_share) {
+						pshare += (1.0 - pow((prmsp / GB->sig_share), GB->alpha));
+					}
+				}
+
+				// Rank component: normalised to [0, 1].
+				double rank_component = static_cast<double>(GB->num_chrom - pi) /
+				                        static_cast<double>(GB->num_chrom);
+
+				// Boltzmann component: normalised to [0, 1] by max weight.
+				double boltz_component = chrom[pi].boltzmann_weight / max_bw;
+
+				// Blended fitness divided by niche count.
+				double blended = (1.0 - w) * rank_component + w * boltz_component;
+				chrom[pi].fitnes = blended * static_cast<double>(GB->num_chrom) / pshare;
+			}
+
+			// Log ensemble thermodynamics periodically.
+			if (gen_id % 50 == 0) {
+				fprintf(stderr, "[SMFREE] gen=%d  F=%.3f  <E>=%.3f  S=%.6f  Cv=%.4f  σ_E=%.3f\n",
+				        gen_id, thermo.free_energy, thermo.mean_energy,
+				        thermo.entropy, thermo.heat_capacity, thermo.std_energy);
+			}
+		} else {
+			// Temperature = 0: fall back to rank-only (same as LINEAR).
+			for (i = 0; i < GB->num_chrom; i++) {
+				chrom[i].fitnes = static_cast<double>(GB->num_chrom - i);
+				chrom[i].boltzmann_weight = 0.0;
+				chrom[i].free_energy = 0.0;
+			}
 		}
 	}
 
@@ -1432,11 +1753,10 @@ FILE* get_update_file_ptr(FA_Global* FA)
 	char UPDATEFILE[MAX_PATH__];
 	long long timeout = 0;
 
-	strcpy(UPDATEFILE,FA->state_path);
 #ifdef _WIN32
-	strcat(UPDATEFILE,"\\.update");
+	snprintf(UPDATEFILE,MAX_PATH__,"%s\\.update",FA->state_path);
 #else
-	strcat(UPDATEFILE,"/.update");
+	snprintf(UPDATEFILE,MAX_PATH__,"%s/.update",FA->state_path);
 #endif
 
 	outfile_ptr = fopen(UPDATEFILE,"r");
@@ -1576,6 +1896,30 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 		while(i<GB->num_chrom){
 			while(1){
 				generate_random_individual(FA,GB,atoms,chrom[i].genes,gene_lim,dice,0,GB->num_genes);
+
+				// ── MIF-weighted or RefLig seeding override for gene 0 ──
+				if (FA->reflig_nearest_count > 0 &&
+				    i < popoffset + static_cast<int>(FA->reflig_seed_fraction *
+				        static_cast<float>(GB->num_chrom - popoffset))) {
+					// RefLig seeding: distribute K nearest grid points across seeded fraction
+					int k = std::abs(chrom[i].genes[0].to_int32) % FA->reflig_nearest_count;
+					int grid_idx = FA->reflig_nearest_grid[k];
+					chrom[i].genes[0].to_ic = static_cast<double>(grid_idx);
+					chrom[i].genes[0].to_int32 = ictogene(&gene_lim[0],
+					                                       static_cast<double>(grid_idx));
+				} else if (FA->mif_enabled && FA->mif_cdf && FA->mif_count > 0) {
+					// MIF-weighted Boltzmann sampling
+					double u = RandomDouble(dice());
+					auto it = std::lower_bound(FA->mif_cdf,
+					                           FA->mif_cdf + FA->mif_count, u);
+					int idx = static_cast<int>(std::distance(FA->mif_cdf, it));
+					idx = std::clamp(idx, 0, FA->mif_count - 1);
+					int grid_idx = FA->mif_sorted[idx];
+					chrom[i].genes[0].to_ic = static_cast<double>(grid_idx);
+					chrom[i].genes[0].to_int32 = ictogene(&gene_lim[0],
+					                                       static_cast<double>(grid_idx));
+				}
+
 				sig = generate_sig(chrom[i].genes,GB->num_genes);
 				if(GB->duplicates || duplicates.find(sig) == duplicates.end()){
 					break;
@@ -1769,6 +2113,7 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 			chrom[i].evalue     = get_cf_evalue(&chrom[i].cf);
 			chrom[i].app_evalue = get_apparent_cf_evalue(&chrom[i].cf);
 			chrom[i].status     = 'n';
+			ccbm_inject_strain(FA, chrom[i], gene_lim);  // CCBM strain
 		}
 	}
 
@@ -1944,11 +2289,11 @@ void read_gainputs(FA_Global* FA,GB_Global* GB,int* gen_int,int* sz_part,char fi
 	}
 
 	while (fgets(buffer, sizeof(buffer),infile_ptr)){
-
-		if (buffer[strlen(buffer)-1] == '\n')
-			buffer[strlen(buffer)-1] = '\0';
-		if (buffer[strlen(buffer)-1] == '\r')
-			buffer[strlen(buffer)-1] = '\0';
+		size_t blen = strlen(buffer);
+		if (blen > 0 && buffer[blen-1] == '\n')
+			buffer[--blen] = '\0';
+		if (blen > 0 && buffer[blen-1] == '\r')
+			buffer[--blen] = '\0';
 
 
 		if(strncmp(buffer,"NUMCHROM",8) == 0){
@@ -1974,17 +2319,18 @@ void read_gainputs(FA_Global* FA,GB_Global* GB,int* gen_int,int* sz_part,char fi
 		}else if(strncmp(buffer,"ENDMPROB",8) == 0){
 			sscanf(buffer,"%s %lf",field,&GB->end_mut_prob);
 		}else if(strncmp(buffer,"POPINIMT",8) == 0){
-			sscanf(buffer,"%s %s",field,GB->pop_init_method);
+			sscanf(buffer,"%s %8s",field,GB->pop_init_method);
 			//0         1         2
 			//012345678901234567890123456789
 			//POPINIMT IPFILE file.dat
-			if(strcmp(GB->pop_init_method,"IPFILE") == 0){
-				strcpy(GB->pop_init_file,&buffer[16]);
+			if(strcmp(GB->pop_init_method,"IPFILE") == 0 && blen > 16){
+				strncpy(GB->pop_init_file,&buffer[16],MAX_PATH__-1);
+				GB->pop_init_file[MAX_PATH__-1]='\0';
 			}
 		}else if(strncmp(buffer,"FITMODEL",8) == 0){
-			sscanf(buffer,"%s %s",field,GB->fitness_model);
+			sscanf(buffer,"%s %8s",field,GB->fitness_model);
 		}else if(strncmp(buffer,"REPMODEL",8) == 0){
-			sscanf(buffer,"%s %s",field,GB->rep_model);
+			sscanf(buffer,"%s %8s",field,GB->rep_model);
 		}else if(strncmp(buffer,"DUPLICAT",8) == 0){
 			GB->duplicates = 1;
 		}else if(strncmp(buffer,"BOOMFRAC",8) == 0){
@@ -2015,6 +2361,24 @@ void read_gainputs(FA_Global* FA,GB_Global* GB,int* gen_int,int* sz_part,char fi
 			sscanf(buffer,"%s %d",field,&GB->entropy_window);
 		}else if(strncmp(buffer,"ENTRTHRS",8) == 0){
 			sscanf(buffer,"%s %lf",field,&GB->entropy_rel_threshold);
+		}else if(strncmp(buffer,"MIFWEIGH",8) == 0){
+			sscanf(buffer,"%*s %d", &FA->mif_enabled);
+		}else if(strncmp(buffer,"MIFTEMPR",8) == 0){
+			sscanf(buffer,"%*s %f", &FA->mif_temperature);
+		}else if(strncmp(buffer,"GRIDPRIO",8) == 0){
+			sscanf(buffer,"%*s %f", &FA->grid_prio_percent);
+		}else if(strncmp(buffer,"REFLGFIL",8) == 0){
+			sscanf(buffer,"%*s %s", FA->reflig_file);
+		}else if(strncmp(buffer,"REFLGSED",8) == 0){
+			sscanf(buffer,"%*s %f", &FA->reflig_seed_fraction);
+		}else if(strncmp(buffer,"REFLGKNN",8) == 0){
+			sscanf(buffer,"%*s %d", &FA->reflig_k_nearest);
+		}else if(strncmp(buffer,"REFLGHTM",8) == 0){
+			sscanf(buffer,"%*s %d", &FA->reflig_hetatm_fallback);
+		}else if(strncmp(buffer,"AUTOFLXE",8) == 0){
+			sscanf(buffer,"%*s %d", &FA->autoflex_enabled);
+		}else if(strncmp(buffer,"AUTOFLXN",8) == 0){
+			sscanf(buffer,"%*s %d", &FA->autoflex_max);
 		}else{
 			// ...
 		}

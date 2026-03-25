@@ -119,6 +119,7 @@ void ShannonEnergyMatrix::initialise_from_data(const float* data, int count) {
     initialised_ = true;
 }
 
+
 // ─── entropy from bin counts (Eigen-vectorised) ───────────────────────────────
 static double entropy_from_counts(const int* counts, int num_bins, int total) {
     if (total == 0) return 0.0;

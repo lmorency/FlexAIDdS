@@ -204,6 +204,7 @@ struct MetalEvalCtx {
     int n_atoms;
     int n_types;
     int max_pop;
+    int max_genes;
     int lig_first;
     int lig_last;
     float perm;
@@ -275,7 +276,9 @@ MetalEvalCtx* metal_eval_init(int   n_atoms,
                                   (size_t)n_types * n_types * n_emat_samples * sizeof(float));
 
     // Mutable per-batch buffers.
-    ctx->buf_genes_f = [ctx->device newBufferWithLength:(size_t)max_pop * 256 * sizeof(float)
+    // Use max 256 genes as upper bound; actual n_genes validated in batch call.
+    ctx->max_genes = 256;
+    ctx->buf_genes_f = [ctx->device newBufferWithLength:(size_t)max_pop * ctx->max_genes * sizeof(float)
                                                 options:MTLResourceStorageModeShared];
     ctx->buf_com_out = [ctx->device newBufferWithLength:(size_t)max_pop * sizeof(float)
                                                 options:MTLResourceStorageModeShared];
@@ -295,7 +298,18 @@ void metal_eval_batch(MetalEvalCtx* ctx,
                       double*       h_wal_out,
                       double*       h_sas_out)
 {
+    // Validate against allocated buffer sizes.
+    if (pop_size > ctx->max_pop) {
+        fprintf(stderr, "metal_eval: pop_size %d exceeds max_pop %d\n", pop_size, ctx->max_pop);
+        return;
+    }
+    if (n_genes > ctx->max_genes) {
+        fprintf(stderr, "metal_eval: n_genes %d exceeds max_genes %d\n", n_genes, ctx->max_genes);
+        return;
+    }
+
     // Convert double genes to float for the GPU.
+    // Pack with n_genes stride to match kernel indexing (genes_f[chrom_id * n_genes + g]).
     float* genes_f = (float*)[ctx->buf_genes_f contents];
     for (int c = 0; c < pop_size; ++c)
         for (int g = 0; g < n_genes; ++g)

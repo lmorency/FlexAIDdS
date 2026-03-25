@@ -20,7 +20,7 @@
 #include "tencom_diff.h"
 #include "tencom_output.h"
 #include "tencm.h"
-#include "encom.h"
+#include "../encom.h"
 
 #include <iostream>
 #include <fstream>

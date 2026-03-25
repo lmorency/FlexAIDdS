@@ -12,6 +12,26 @@ from .tencm import (
 )
 from .__version__ import __version__ as __version__
 from .updater import check_for_updates, UpdateInfo
+from .boltz2 import (
+    Boltz2Client,
+    Boltz2PredictionResult,
+    Boltz2AffinityResult,
+    Boltz2Polymer,
+    Boltz2Ligand,
+    PocketConstraint,
+    PocketContact,
+    Boltz2Error,
+)
+from .benchmark import (
+    BenchmarkSystem,
+    MethodResult,
+    SystemBenchmarkResult,
+    BenchmarkResult,
+    BenchmarkSummary,
+    run_benchmark,
+    load_benchmark_dataset,
+    save_benchmark_dataset,
+)
 
 # Pure-Python thermodynamics (always available)
 from .thermodynamics import StatMechEngine, Thermodynamics, kB_kcal, kB_SI
@@ -41,6 +61,7 @@ except ImportError:
     kB_SI = 1.380649e-23    # J K⁻¹
     HAS_CORE_BINDINGS = False
 
+from .supercluster import SuperCluster
 from .tencom_results import FlexModeResult, FlexPopulationResult, parse_tencom_pdb, parse_tencom_json
 from .energy_matrix import (
     EnergyMatrix,
@@ -126,58 +147,14 @@ def dock(
 
     docking = Docking(str(cfg_path))
     return docking.run(binary=binary, timeout=timeout)
-
-__all__ = [
-    # High-level API
-    "dock",
-    "Docking",
-    "BindingMode",
-    "BindingPopulation",
-    "Pose",
-    # Result I/O (always available)
-    "PoseResult",
-    "BindingModeResult",
-    "DockingResult",
-    "load_results",
-    # Thermodynamics (always available — pure Python or C++)
-    "StatMechEngine",
-    "Thermodynamics",
-    # ENCoM (always available — pure Python or C++)
-    "ENCoMEngine",
-    "NormalMode",
-    "VibrationalEntropy",
-    # tENCoM results (always available, pure Python)
-    "FlexModeResult",
-    "FlexPopulationResult",
-    "parse_tencom_pdb",
-    "parse_tencom_json",
-    # TorsionalENM / ShannonThermoStack (always available — pure Python or C++)
-    "TorsionalENM",
-    "TorsionalNormalMode",
-    "Conformer",
-    "FullThermoResult",
-    "compute_shannon_entropy",
-    "compute_torsional_vibrational_entropy",
-    "run_shannon_thermo_stack",
-    # Physical constants
-    "kB_kcal",
-    "kB_SI",
-    # Updater
-    "check_for_updates",
-    "UpdateInfo",
     # Availability flag
     "HAS_CORE_BINDINGS",
     # Core types (C++ when available, pure-Python fallback otherwise)
-    "StatMechEngine",
-    "Thermodynamics",
     "State",
     "BoltzmannLUT",
     "Replica",
     "WHAMBin",
     "TIPoint",
-    "ENCoMEngine",
-    "NormalMode",
-    "VibrationalEntropy",
     # Energy matrix I/O and 256-type encoding (always available — pure Python)
     "EnergyMatrix",
     "MatrixEntry",

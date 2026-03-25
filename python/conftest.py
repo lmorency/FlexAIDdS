@@ -134,6 +134,42 @@ def flexaid_config_file(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
+def scalar_energy_matrix_file(tmp_path: Path) -> Path:
+    """8-type scalar energy matrix .dat file."""
+    roman = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII"]
+    lines = []
+    val = -0.72
+    for i in range(8):
+        for j in range(i, 8):
+            label = f"{roman[i]}-{roman[j]}".rjust(10)
+            lines.append(f"{label} = {val:10.4f}\n")
+            val += 0.33
+    path = tmp_path / "scalar_8type.dat"
+    path.write_text("".join(lines))
+    return path
+
+
+@pytest.fixture
+def small_contact_table():
+    """Pre-built ContactTable with 4 types for testing."""
+    import numpy as np
+    from flexaidds.energy_matrix import ContactTable
+
+    return ContactTable(
+        ntypes=4,
+        counts=np.array([
+            [20, 15, 5, 2],
+            [15, 10, 8, 3],
+            [5, 8, 12, 6],
+            [2, 3, 6, 4],
+        ], dtype=np.int64),
+        type_totals=np.array([200, 150, 100, 50], dtype=np.int64),
+        n_structures=10,
+        distance_cutoff=6.0,
+    )
+
+
+@pytest.fixture
 def encom_files(tmp_path: Path):
     """Pair of ENCoM eigenvalue/eigenvector files (6 modes, 2 atoms → 6 components each)."""
     eigenvalues = "0.0\n0.0\n0.0\n0.0\n0.0\n0.0\n1.23\n4.56\n9.10\n"

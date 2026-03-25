@@ -273,6 +273,16 @@ void cuda_eval_batch(CudaEvalCtx*  ctx,
                      double*       h_wal_out,
                      double*       h_sas_out)
 {
+    // Validate against allocated buffer sizes.
+    if (pop_size > ctx->max_pop) {
+        fprintf(stderr, "cuda_eval: pop_size %d exceeds max_pop %d\n", pop_size, ctx->max_pop);
+        return;
+    }
+    if (n_genes > ctx->max_genes) {
+        fprintf(stderr, "cuda_eval: n_genes %d exceeds max_genes %d\n", n_genes, ctx->max_genes);
+        return;
+    }
+
     const size_t gene_bytes = (size_t)pop_size * n_genes * sizeof(double);
     const size_t cf_bytes   = (size_t)pop_size            * sizeof(double);
 

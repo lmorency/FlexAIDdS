@@ -1,9 +1,12 @@
 #include "BindingMode.h"
+#include "fast_optics.hpp"
 
 #include <algorithm>
 #include <cfloat>
 #include <cmath>
 #include <cstring>
+#include <limits>
+#include <map>
 #include <stdexcept>
 #include <string>
 
@@ -55,8 +58,34 @@ void BindingPopulation::Entropize()
 
 int BindingPopulation::get_Population_size() { return this->BindingModes.size(); }
 
-const BindingMode& BindingPopulation::get_binding_mode(int index) const { return this->BindingModes.at(index); }
-BindingMode& BindingPopulation::get_binding_mode(int index) { return this->BindingModes.at(index); }
+
+
+const BindingMode& BindingPopulation::get_binding_mode(int index) const
+{
+	if (index < 0 || index >= static_cast<int>(this->BindingModes.size()))
+	{
+		throw std::out_of_range(
+			"BindingPopulation::get_binding_mode: index " +
+			std::to_string(index) + " out of range [0, " +
+			std::to_string(this->BindingModes.size()) + ")"
+		);
+	}
+	return this->BindingModes[index];
+}
+
+
+BindingMode& BindingPopulation::get_binding_mode(int index)
+{
+	if (index < 0 || index >= static_cast<int>(this->BindingModes.size()))
+	{
+		throw std::out_of_range(
+			"BindingPopulation::get_binding_mode: index " +
+			std::to_string(index) + " out of range [0, " +
+			std::to_string(this->BindingModes.size()) + ")"
+		);
+	}
+	return this->BindingModes[index];
+}
 
 
 // output BindingMode up to nResults results
@@ -122,7 +151,38 @@ statmech::StatMechEngine BindingPopulation::get_global_ensemble() const
 }
 
 
-/// === Population-level Shannon entropy ===
+statmech::StatMechEngine BindingPopulation::get_super_cluster_ensemble() const
+{
+	// Collect all pose energies across all binding modes
+	std::vector<double> all_energies;
+	for (const auto& mode : this->BindingModes)
+		for (const auto& pose : mode.Poses)
+			all_energies.push_back(pose.CF);
+
+	if (all_energies.size() <= 4)
+		return get_global_ensemble();  // too few poses for meaningful filtering
+
+	// Build 1D energy points for lightweight FastOPTICS
+	std::vector<fast_optics::Point> energy_pts(all_energies.size());
+	for (size_t i = 0; i < all_energies.size(); ++i)
+		energy_pts[i].coords = { all_energies[i] };
+
+	fast_optics::FastOPTICS sc_optics(energy_pts,
+		std::max(4, static_cast<int>(all_energies.size()) / 20));
+	auto sc_indices = sc_optics.extractSuperCluster(
+		fast_optics::ClusterMode::SUPER_CLUSTER_ONLY);
+
+	if (sc_indices.empty())
+		return get_global_ensemble();  // fallback if extraction yields nothing
+
+	statmech::StatMechEngine sc_engine(static_cast<double>(this->Temperature));
+	for (size_t idx : sc_indices)
+		sc_engine.add_sample(all_energies[idx], 1.0);
+
+	return sc_engine;
+}
+
+
 double BindingPopulation::get_shannon_entropy() const
 {
 	if (shannon_cache_valid_)
@@ -147,6 +207,36 @@ double BindingPopulation::get_shannon_entropy() const
 		return 0.0;
 	}
 
+	// Collect free energies per mode and compute Boltzmann weights
+	const double beta = 1.0 / (statmech::kB_kcal * static_cast<double>(Temperature));
+	std::vector<double> log_weights;
+	log_weights.reserve(BindingModes.size());
+	for (const auto& mode : BindingModes)
+		log_weights.push_back(-beta * mode.get_free_energy());
+
+	// Log-sum-exp for numerical stability
+	double log_Z = log_weights[0];
+	for (std::size_t i = 1; i < log_weights.size(); ++i)
+		log_Z = std::max(log_Z, log_weights[i]) +
+		        std::log1p(std::exp(std::min(log_weights[i], log_weights[0]) -
+		                            std::max(log_weights[i], log_weights[0])));
+
+	// Recompute properly with log-sum-exp
+	double lse = *std::max_element(log_weights.begin(), log_weights.end());
+	double sum_exp = 0.0;
+	for (double lw : log_weights)
+		sum_exp += std::exp(lw - lse);
+	double log_sum = lse + std::log(sum_exp);
+
+	double S = 0.0;
+	for (double lw : log_weights)
+	{
+		double p = std::exp(lw - log_sum);
+		if (p > 0.0)
+			S -= p * std::log(p);
+	}
+	// Convert to kcal/mol/K units (multiply by kB)
+	shannonS_population_ = statmech::kB_kcal * S;
 	// Compute Shannon entropy via ShannonThermoStack (energy histogram binning)
 	double shannon_bits = shannon_thermo::compute_shannon_entropy(all_energies);
 
@@ -157,7 +247,6 @@ double BindingPopulation::get_shannon_entropy() const
 }
 
 
-/// === ΔG matrix between all pairs of binding modes ===
 std::vector<std::vector<double>> BindingPopulation::get_deltaG_matrix() const
 {
 	int n = static_cast<int>(this->BindingModes.size());
@@ -202,7 +291,9 @@ void BindingMode::add_Pose(Pose& pose)
 }
 
 
-/// === NEW: Cache rebuild infrastructure (Phase 1) ===
+/// === Cache rebuild infrastructure (Phase 1 + CCBM) ===
+/// Uses pose.total_energy() (= CF + receptor_strain) for the true
+/// multi-conformer free energy: F = -kT ln Σ_{r,i} exp(-β(E_CF(r,i) + E_strain(r)))
 void BindingMode::rebuild_engine() const
 {
 	if (thermo_cache_valid_)
@@ -213,7 +304,7 @@ void BindingMode::rebuild_engine() const
 	engine_.clear();
 	for (const auto& pose : Poses)
 	{
-		engine_.add_sample(pose.CF, 1.0);
+		engine_.add_sample(pose.total_energy(), 1.0);
 	}
 	thermo_cache_valid_ = true;
 }
@@ -319,7 +410,20 @@ std::vector<statmech::WHAMBin> BindingMode::free_energy_profile(
 
 int BindingMode::get_BindingMode_size() const { return this->Poses.size(); }
 
-const Pose& BindingMode::get_pose(int index) const { return this->Poses.at(index); }
+
+
+const Pose& BindingMode::get_pose(int index) const
+{
+	if (index < 0 || index >= static_cast<int>(this->Poses.size()))
+	{
+		throw std::out_of_range(
+			"BindingMode::get_pose: index " +
+			std::to_string(index) + " out of range [0, " +
+			std::to_string(this->Poses.size()) + ")"
+		);
+	}
+	return this->Poses[index];
+}
 
 
 void BindingMode::clear_Poses()
@@ -354,68 +458,69 @@ void BindingMode::output_BindingMode(int num_result, char* end_strfile, char* tm
 
 	CF = ic2cf(this->Population->FA, this->Population->VC, this->Population->atoms, this->Population->residue, this->Population->cleftgrid, this->Population->GB->num_genes, this->Population->FA->opt_par);
 
-	strcpy(remark, "REMARK optimized structure\n");
+	size_t remark_len = 0;
+	remark[0] = '\0';
+	safe_remark_cat(remark, "REMARK optimized structure\n", &remark_len);
 
-	sprintf(tmpremark, "REMARK Fast OPTICS clustering algorithm used to output the lowest CF as Binding Mode representative\n");
-	strcat(remark, tmpremark);
+	snprintf(tmpremark, MAX_REMARK, "REMARK Fast OPTICS clustering algorithm used to output the lowest CF as Binding Mode representative\n");
+	safe_remark_cat(remark, tmpremark, &remark_len);
 
-	sprintf(tmpremark, "REMARK CF=%8.5f\n", get_cf_evalue(&CF));
-	strcat(remark, tmpremark);
-	sprintf(tmpremark, "REMARK CF.app=%8.5f\n", get_apparent_cf_evalue(&CF));
-	strcat(remark, tmpremark);
+	snprintf(tmpremark, MAX_REMARK, "REMARK CF=%8.5f\n", get_cf_evalue(&CF));
+	safe_remark_cat(remark, tmpremark, &remark_len);
+	snprintf(tmpremark, MAX_REMARK, "REMARK CF.app=%8.5f\n", get_apparent_cf_evalue(&CF));
+	safe_remark_cat(remark, tmpremark, &remark_len);
 
 	for (int j = 0; j < this->Population->FA->num_optres; ++j)
 	{
 		pRes = &this->Population->residue[this->Population->FA->optres[j].rnum];
 		pCF = &this->Population->FA->optres[j].cf;
 
-		sprintf(tmpremark, "REMARK optimizable residue %s %c %d\n", pRes->name, pRes->chn, pRes->number);
-		strcat(remark, tmpremark);
+		snprintf(tmpremark, MAX_REMARK, "REMARK optimizable residue %s %c %d\n", pRes->name, pRes->chn, pRes->number);
+		safe_remark_cat(remark, tmpremark, &remark_len);
 
-		sprintf(tmpremark, "REMARK CF.com=%8.5f\n", pCF->com);
-		strcat(remark, tmpremark);
-		sprintf(tmpremark, "REMARK CF.sas=%8.5f\n", pCF->sas);
-		strcat(remark, tmpremark);
-		sprintf(tmpremark, "REMARK CF.wal=%8.5f\n", pCF->wal);
-		strcat(remark, tmpremark);
-		sprintf(tmpremark, "REMARK CF.con=%8.5f\n", pCF->con);
-		strcat(remark, tmpremark);
-		sprintf(tmpremark, "REMARK Residue has an overall SAS of %.3f\n", pCF->totsas);
-		strcat(remark, tmpremark);
+		snprintf(tmpremark, MAX_REMARK, "REMARK CF.com=%8.5f\n", pCF->com);
+		safe_remark_cat(remark, tmpremark, &remark_len);
+		snprintf(tmpremark, MAX_REMARK, "REMARK CF.sas=%8.5f\n", pCF->sas);
+		safe_remark_cat(remark, tmpremark, &remark_len);
+		snprintf(tmpremark, MAX_REMARK, "REMARK CF.wal=%8.5f\n", pCF->wal);
+		safe_remark_cat(remark, tmpremark, &remark_len);
+		snprintf(tmpremark, MAX_REMARK, "REMARK CF.con=%8.5f\n", pCF->con);
+		safe_remark_cat(remark, tmpremark, &remark_len);
+		snprintf(tmpremark, MAX_REMARK, "REMARK Residue has an overall SAS of %.3f\n", pCF->totsas);
+		safe_remark_cat(remark, tmpremark, &remark_len);
 	}
 
-	sprintf(tmpremark, "REMARK Binding Mode:%d Best CF in Binding Mode:%8.5f OPTICS Center (CF):%8.5f Binding Mode Total CF:%8.5f Binding Mode Frequency:%d\n",
+	snprintf(tmpremark, MAX_REMARK, "REMARK Binding Mode:%d Best CF in Binding Mode:%8.5f OPTICS Center (CF):%8.5f Binding Mode Total CF:%8.5f Binding Mode Frequency:%d\n",
 		num_result, Rep_lowCF->CF, Rep_lowOPTICS->CF, this->compute_energy(), this->get_BindingMode_size());
-	strcat(remark, tmpremark);
+	safe_remark_cat(remark, tmpremark, &remark_len);
 	{
 		double vib_corr = this->compute_vibrational_correction();
 		if (std::abs(vib_corr) > 1e-12) {
-			sprintf(tmpremark, "REMARK Vibrational correction (ENCoM): %10.4f kcal/mol\n", vib_corr);
-			strcat(remark, tmpremark);
+			snprintf(tmpremark, MAX_REMARK, "REMARK Vibrational correction (ENCoM): %10.4f kcal/mol\n", vib_corr);
+			safe_remark_cat(remark, tmpremark, &remark_len);
 		}
 	}
 	for (int j = 0; j < this->Population->FA->npar; ++j)
 	{
-		sprintf(tmpremark, "REMARK [%8.3f]\n", this->Population->FA->opt_par[j]);
-		strcat(remark, tmpremark);
+		snprintf(tmpremark, MAX_REMARK, "REMARK [%8.3f]\n", this->Population->FA->opt_par[j]);
+		safe_remark_cat(remark, tmpremark, &remark_len);
 	}
 
 	if (this->Population->FA->refstructure == 1)
 	{
 		bool Hungarian = false;
-		sprintf(tmpremark, "REMARK %8.5f RMSD to ref. structure (no symmetry correction)\n",
+		snprintf(tmpremark, MAX_REMARK, "REMARK %8.5f RMSD to ref. structure (no symmetry correction)\n",
 			calc_rmsd(this->Population->FA, this->Population->atoms, this->Population->residue, this->Population->cleftgrid, this->Population->FA->npar, this->Population->FA->opt_par, Hungarian));
-		strcat(remark, tmpremark);
+		safe_remark_cat(remark, tmpremark, &remark_len);
 		Hungarian = true;
-		sprintf(tmpremark, "REMARK %8.5f RMSD to ref. structure     (symmetry corrected)\n",
+		snprintf(tmpremark, MAX_REMARK, "REMARK %8.5f RMSD to ref. structure     (symmetry corrected)\n",
 			calc_rmsd(this->Population->FA, this->Population->atoms, this->Population->residue, this->Population->cleftgrid, this->Population->FA->npar, this->Population->FA->opt_par, Hungarian));
-		strcat(remark, tmpremark);
+		safe_remark_cat(remark, tmpremark, &remark_len);
 	}
-	sprintf(tmpremark, "REMARK inputs: %s & %s\n", dockinp, gainp);
-	strcat(remark, tmpremark);
-	sprintf(sufix, "_%d_%d.pdb", minPoints, num_result);
-	strcpy(tmp_end_strfile, end_strfile);
-	strcat(tmp_end_strfile, sufix);
+	snprintf(tmpremark, MAX_REMARK, "REMARK inputs: %s & %s\n", dockinp, gainp);
+	safe_remark_cat(remark, tmpremark, &remark_len);
+	snprintf(sufix, sizeof(sufix), "_%d_%d.pdb", minPoints, num_result);
+	snprintf(tmp_end_strfile, MAX_PATH__, "%s%s", end_strfile, sufix);
 	write_pdb(this->Population->FA, this->Population->atoms, this->Population->residue, tmp_end_strfile, remark);
 }
 
@@ -436,58 +541,59 @@ void BindingMode::output_dynamic_BindingMode(int num_result, char* end_strfile, 
 
 		CF = ic2cf(this->Population->FA, this->Population->VC, this->Population->atoms, this->Population->residue, this->Population->cleftgrid, this->Population->GB->num_genes, this->Population->FA->opt_par);
 
-		strcpy(remark, "REMARK optimized structure\n");
-		sprintf(tmpremark, "REMARK Fast OPTICS clustering algorithm used to output the lowest OPTICS ordering as Binding Mode representative\n");
-		strcat(remark, tmpremark);
+		size_t remark_len = 0;
+		remark[0] = '\0';
+		safe_remark_cat(remark, "REMARK optimized structure\n", &remark_len);
+		snprintf(tmpremark, MAX_REMARK, "REMARK Fast OPTICS clustering algorithm used to output the lowest OPTICS ordering as Binding Mode representative\n");
+		safe_remark_cat(remark, tmpremark, &remark_len);
 
-		sprintf(tmpremark, "REMARK CF=%8.5f\n", get_cf_evalue(&CF));
-		strcat(remark, tmpremark);
-		sprintf(tmpremark, "REMARK CF.app=%8.5f\n", get_apparent_cf_evalue(&CF));
-		strcat(remark, tmpremark);
+		snprintf(tmpremark, MAX_REMARK, "REMARK CF=%8.5f\n", get_cf_evalue(&CF));
+		safe_remark_cat(remark, tmpremark, &remark_len);
+		snprintf(tmpremark, MAX_REMARK, "REMARK CF.app=%8.5f\n", get_apparent_cf_evalue(&CF));
+		safe_remark_cat(remark, tmpremark, &remark_len);
 
 		for (int j = 0; j < this->Population->FA->num_optres; ++j)
 		{
 			pRes = &this->Population->residue[this->Population->FA->optres[j].rnum];
 			pCF = &this->Population->FA->optres[j].cf;
 
-			sprintf(tmpremark, "REMARK optimizable residue %s %c %d\n", pRes->name, pRes->chn, pRes->number);
-			strcat(remark, tmpremark);
+			snprintf(tmpremark, MAX_REMARK, "REMARK optimizable residue %s %c %d\n", pRes->name, pRes->chn, pRes->number);
+			safe_remark_cat(remark, tmpremark, &remark_len);
 
-			sprintf(tmpremark, "REMARK CF.com=%8.5f\n", pCF->com);
-			strcat(remark, tmpremark);
-			sprintf(tmpremark, "REMARK CF.sas=%8.5f\n", pCF->sas);
-			strcat(remark, tmpremark);
-			sprintf(tmpremark, "REMARK CF.wal=%8.5f\n", pCF->wal);
-			strcat(remark, tmpremark);
-			sprintf(tmpremark, "REMARK CF.con=%8.5f\n", pCF->con);
-			strcat(remark, tmpremark);
-			sprintf(tmpremark, "REMARK Residue has an overall SAS of %.3f\n", pCF->totsas);
-			strcat(remark, tmpremark);
+			snprintf(tmpremark, MAX_REMARK, "REMARK CF.com=%8.5f\n", pCF->com);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK CF.sas=%8.5f\n", pCF->sas);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK CF.wal=%8.5f\n", pCF->wal);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK CF.con=%8.5f\n", pCF->con);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK Residue has an overall SAS of %.3f\n", pCF->totsas);
+			safe_remark_cat(remark, tmpremark, &remark_len);
 		}
 
 		for (int j = 0; j < this->Population->FA->npar; ++j)
 		{
-			sprintf(tmpremark, "REMARK [%8.3f]\n", this->Population->FA->opt_par[j]);
-			strcat(remark, tmpremark);
+			snprintf(tmpremark, MAX_REMARK, "REMARK [%8.3f]\n", this->Population->FA->opt_par[j]);
+			safe_remark_cat(remark, tmpremark, &remark_len);
 		}
 
 		if (this->Population->FA->refstructure == 1)
 		{
 			bool Hungarian = false;
-			sprintf(tmpremark, "REMARK %8.5f RMSD to ref. structure (no symmetry correction)\n",
+			snprintf(tmpremark, MAX_REMARK, "REMARK %8.5f RMSD to ref. structure (no symmetry correction)\n",
 				calc_rmsd(this->Population->FA, this->Population->atoms, this->Population->residue, this->Population->cleftgrid, this->Population->FA->npar, this->Population->FA->opt_par, Hungarian));
-			strcat(remark, tmpremark);
+			safe_remark_cat(remark, tmpremark, &remark_len);
 			Hungarian = true;
-			sprintf(tmpremark, "REMARK %8.5f RMSD to ref. structure     (symmetry corrected)\n",
+			snprintf(tmpremark, MAX_REMARK, "REMARK %8.5f RMSD to ref. structure     (symmetry corrected)\n",
 				calc_rmsd(this->Population->FA, this->Population->atoms, this->Population->residue, this->Population->cleftgrid, this->Population->FA->npar, this->Population->FA->opt_par, Hungarian));
-			strcat(remark, tmpremark);
+			safe_remark_cat(remark, tmpremark, &remark_len);
 		}
-		sprintf(tmpremark, "REMARK inputs: %s & %s\n", dockinp, gainp);
-		strcat(remark, tmpremark);
+		snprintf(tmpremark, MAX_REMARK, "REMARK inputs: %s & %s\n", dockinp, gainp);
+		safe_remark_cat(remark, tmpremark, &remark_len);
 
-		sprintf(sufix, "_%d_MODEL_%d.pdb", minPoints, num_result);
-		strcpy(tmp_end_strfile, end_strfile);
-		strcat(tmp_end_strfile, sufix);
+		snprintf(sufix, sizeof(sufix), "_%d_MODEL_%d.pdb", minPoints, num_result);
+		snprintf(tmp_end_strfile, MAX_PATH__, "%s%s", end_strfile, sufix);
 		if (Pose == this->Poses.begin() && Pose + 1 == this->Poses.end())
 		{
 			write_MODEL_pdb(true, true, nModel, this->Population->FA, this->Population->atoms, this->Population->residue, tmp_end_strfile, remark);
@@ -533,7 +639,10 @@ Pose::Pose(chromosome* chrom, int index, int iorder, float dist, uint temperatur
 	  chrom(chrom),
 	  CF(chrom->app_evalue),
 	  boltzmann_weight(0.0),
-	  vPose(vec)
+	  vPose(vec),
+	  model_index(0),
+	  model_coords(nullptr),
+	  receptor_strain(0.0)
 {
 	this->boltzmann_weight = pow(E, ((-1.0) * (1 / static_cast<double>(temperature)) * chrom->app_evalue));
 }
@@ -560,6 +669,219 @@ inline bool const Pose::operator<(const Pose& rhs)
 /*****************************************\\
      ENCoM vibrational correction (Phase 3)
 \\*****************************************/
+
+/*****************************************\\
+     CCBM: Conformer-Coupled Binding Modes
+\\*****************************************/
+
+/// Helper: compute log-sum-exp of a vector of log-weights for numerical stability.
+static double ccbm_log_sum_exp(const std::vector<double>& x) {
+	if (x.empty()) return -std::numeric_limits<double>::infinity();
+	double mx = *std::max_element(x.begin(), x.end());
+	if (mx == -std::numeric_limits<double>::infinity()) return mx;
+	double s = 0.0;
+	for (double v : x)
+		s += std::exp(v - mx);
+	return mx + std::log(s);
+}
+
+/// Compute the maximum model_index across all poses in this binding mode.
+static int ccbm_max_model_index(const std::vector<Pose>& poses) {
+	int mx = 0;
+	for (const auto& p : poses)
+		if (p.model_index > mx) mx = p.model_index;
+	return mx;
+}
+
+std::vector<double> BindingMode::conformer_populations() const
+{
+	if (Poses.empty()) return {};
+
+	const double beta = 1.0 / (statmech::kB_kcal * static_cast<double>(Population->Temperature));
+	const int n_models = ccbm_max_model_index(Poses) + 1;
+
+	// Compute log-weights per model: ln w(r) = ln Σ_i exp(-β E_total(r,i))
+	std::vector<std::vector<double>> model_log_weights(n_models);
+	for (const auto& pose : Poses) {
+		int r = pose.model_index;
+		if (r >= 0 && r < n_models)
+			model_log_weights[r].push_back(-beta * pose.total_energy());
+	}
+
+	// log Z_r = log-sum-exp of all pose weights for model r
+	std::vector<double> log_Z_r(n_models, -std::numeric_limits<double>::infinity());
+	for (int r = 0; r < n_models; ++r) {
+		if (!model_log_weights[r].empty())
+			log_Z_r[r] = ccbm_log_sum_exp(model_log_weights[r]);
+	}
+
+	// log Z_total = log-sum-exp over all models
+	double log_Z_total = ccbm_log_sum_exp(log_Z_r);
+
+	// p(r) = exp(log_Z_r - log_Z_total)
+	std::vector<double> populations(n_models, 0.0);
+	for (int r = 0; r < n_models; ++r) {
+		if (log_Z_r[r] > -std::numeric_limits<double>::infinity())
+			populations[r] = std::exp(log_Z_r[r] - log_Z_total);
+	}
+
+	return populations;
+}
+
+
+double BindingMode::receptor_conformational_entropy() const
+{
+	auto pops = conformer_populations();
+	if (pops.empty()) return 0.0;
+
+	// S_receptor = -kB Σ_r p(r) ln p(r)
+	double S = 0.0;
+	for (double p : pops) {
+		if (p > 0.0)
+			S -= p * std::log(p);
+	}
+	return statmech::kB_kcal * S;
+}
+
+
+double BindingMode::ligand_receptor_mutual_information() const
+{
+	if (Poses.empty()) return 0.0;
+
+	const double beta = 1.0 / (statmech::kB_kcal * static_cast<double>(Population->Temperature));
+	const int n_models = ccbm_max_model_index(Poses) + 1;
+	const int n_poses = static_cast<int>(Poses.size());
+
+	// Compute joint Boltzmann weights: w_{r,i} = exp(-β E_total(r,i))
+	std::vector<double> log_w(n_poses);
+	for (int i = 0; i < n_poses; ++i)
+		log_w[i] = -beta * Poses[i].total_energy();
+
+	double log_Z = ccbm_log_sum_exp(log_w);
+
+	// Joint probabilities: p(r,i) = exp(log_w_i - log_Z)
+	std::vector<double> p_joint(n_poses);
+	for (int i = 0; i < n_poses; ++i)
+		p_joint[i] = std::exp(log_w[i] - log_Z);
+
+	// Joint entropy: S_joint = -kB Σ_{r,i} p(r,i) ln p(r,i)
+	double S_joint = 0.0;
+	for (int i = 0; i < n_poses; ++i) {
+		if (p_joint[i] > 0.0)
+			S_joint -= p_joint[i] * std::log(p_joint[i]);
+	}
+	S_joint *= statmech::kB_kcal;
+
+	// Marginal receptor entropy (already computed)
+	double S_receptor = receptor_conformational_entropy();
+
+	// Marginal ligand entropy: S_ligand = -kB Σ_i p(i) ln p(i)
+	// where p(i) = Σ_r p(r,i_in_cluster) — for individual poses, each is unique
+	// so p_ligand(i) = p_joint(i) summed over models that share the same pose index.
+	// In practice, each (r,i) pair is a unique microstate, so ligand marginals
+	// are: p_L(i) = sum over all models r of p(r, pose_i)
+	// For CCBM, each pose IS a unique (r,i) tuple. The "ligand identity" is
+	// the vPose coordinates. To compute marginal ligand entropy properly we
+	// need to group poses by their ligand coordinates. However since each
+	// GA chromosome produces a unique pose, the simplest correct approach is:
+	//
+	// For the mutual information decomposition, we use:
+	//   I(L;R) = S_L + S_R - S_joint
+	//
+	// where S_L = -kB Σ_l p_L(l) ln p_L(l), with p_L(l) = Σ_r p(r,l)
+	// Since poses are indexed per-conformer, the "ligand pose" marginal
+	// groups all (r,*) that have the same ligand coordinates. But in the
+	// GA each chromosome generates a unique ligand pose, so we identify
+	// poses by their chrom_index (ligand identity).
+
+	// Build marginal ligand distribution by chrom_index
+	std::map<int, double> ligand_marginals;
+	for (int i = 0; i < n_poses; ++i) {
+		ligand_marginals[Poses[i].chrom_index] += p_joint[i];
+	}
+
+	double S_ligand = 0.0;
+	for (const auto& [_, p_l] : ligand_marginals) {
+		if (p_l > 0.0)
+			S_ligand -= p_l * std::log(p_l);
+	}
+	S_ligand *= statmech::kB_kcal;
+
+	// I(L;R) = S_L + S_R - S_joint
+	double MI = S_ligand + S_receptor - S_joint;
+	// Mutual information should be non-negative; clamp numerical errors
+	if (MI < 0.0) MI = 0.0;
+
+	return MI;
+}
+
+
+BindingMode::EntropyDecomposition BindingMode::decompose_entropy() const
+{
+	EntropyDecomposition ed;
+	ed.S_vibrational = 0.0;
+
+	if (Poses.empty()) {
+		ed.S_total = 0.0;
+		ed.S_ligand = 0.0;
+		ed.S_receptor = 0.0;
+		ed.I_mutual = 0.0;
+		return ed;
+	}
+
+	const double beta = 1.0 / (statmech::kB_kcal * static_cast<double>(Population->Temperature));
+	const int n_poses = static_cast<int>(Poses.size());
+
+	// Joint Boltzmann distribution
+	std::vector<double> log_w(n_poses);
+	for (int i = 0; i < n_poses; ++i)
+		log_w[i] = -beta * Poses[i].total_energy();
+
+	double log_Z = ccbm_log_sum_exp(log_w);
+
+	std::vector<double> p_joint(n_poses);
+	for (int i = 0; i < n_poses; ++i)
+		p_joint[i] = std::exp(log_w[i] - log_Z);
+
+	// S_total (joint entropy) = -kB Σ p ln p
+	double H_joint = 0.0;
+	for (int i = 0; i < n_poses; ++i) {
+		if (p_joint[i] > 0.0)
+			H_joint -= p_joint[i] * std::log(p_joint[i]);
+	}
+	ed.S_total = statmech::kB_kcal * H_joint;
+
+	// S_receptor
+	ed.S_receptor = receptor_conformational_entropy();
+
+	// S_ligand marginal
+	std::map<int, double> ligand_marginals;
+	for (int i = 0; i < n_poses; ++i)
+		ligand_marginals[Poses[i].chrom_index] += p_joint[i];
+
+	double H_ligand = 0.0;
+	for (const auto& [_, p_l] : ligand_marginals) {
+		if (p_l > 0.0)
+			H_ligand -= p_l * std::log(p_l);
+	}
+	ed.S_ligand = statmech::kB_kcal * H_ligand;
+
+	// I(L;R) = S_L + S_R - S_joint
+	ed.I_mutual = ed.S_ligand + ed.S_receptor - ed.S_total;
+	if (ed.I_mutual < 0.0) ed.I_mutual = 0.0;
+
+	// Vibrational correction from ENCoM modes (if available)
+	ed.S_vibrational = 0.0;
+	if (Population && Population->FA && Population->FA->normal_modes) {
+		double T = static_cast<double>(Population->Temperature);
+		double vib_corr = compute_vibrational_correction();
+		if (T > 0.0 && std::abs(vib_corr) > 1e-12)
+			ed.S_vibrational = -vib_corr / T;  // correction = -T*S_vib, so S_vib = -correction/T
+	}
+
+	return ed;
+}
+
 
 double BindingMode::compute_vibrational_correction() const
 {

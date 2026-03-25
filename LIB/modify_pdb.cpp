@@ -34,7 +34,8 @@ void modify_pdb(char* infile, char* outfile, int exclude_het, int remove_water, 
 	char bufnul[10];
 	char buffer[100];   // pdb line
 
-	char lines[50][100]; // store residue lines
+	#define MAX_RESIDUE_LINES 50
+	char lines[MAX_RESIDUE_LINES][100]; // store residue lines
 	int  nlines=0;
 
 	int prev_resnum = -1;
@@ -91,7 +92,11 @@ void modify_pdb(char* infile, char* outfile, int exclude_het, int remove_water, 
 			if(resnum == prev_resnum && insert == prev_insert){
 				if(is_protein && is_natural_amino(res)){
 					// store line
-					strcpy(lines[nlines++],buffer);
+					if(nlines < MAX_RESIDUE_LINES){
+						strncpy(lines[nlines], buffer, sizeof(lines[0]) - 1);
+						lines[nlines][sizeof(lines[0]) - 1] = '\0';
+						nlines++;
+					}
 				}else if(!is_protein && is_natural_nucleic(res)){
 					fprintf(outfile_ptr,"%s",buffer);
 				}else{
@@ -107,17 +112,25 @@ void modify_pdb(char* infile, char* outfile, int exclude_het, int remove_water, 
 				}
 				
 				if(is_protein && is_natural_amino(res)){
-					strcpy(lines[nlines++],buffer);
+					if(nlines < MAX_RESIDUE_LINES){
+						strncpy(lines[nlines], buffer, sizeof(lines[0]) - 1);
+						lines[nlines][sizeof(lines[0]) - 1] = '\0';
+						nlines++;
+					}
 				}else if(!is_protein && is_natural_nucleic(res)){
-					fprintf(outfile_ptr,"%s",buffer);					
+					fprintf(outfile_ptr,"%s",buffer);
 				}else{
 					// ligands/mod. amino acids are marked as HETATM by default
 					fprintf(outfile_ptr,"HETATM%s",&buffer[6]);
 				}
-				
+
 			}else{
 				if(is_protein && is_natural_amino(res)){
-					strcpy(lines[nlines++],buffer);
+					if(nlines < MAX_RESIDUE_LINES){
+						strncpy(lines[nlines], buffer, sizeof(lines[0]) - 1);
+						lines[nlines][sizeof(lines[0]) - 1] = '\0';
+						nlines++;
+					}
 				}else if(is_natural_nucleic(res)){
 					fprintf(outfile_ptr,"%s",buffer);
 				}else{
@@ -206,9 +219,14 @@ void rewrite_residue2(char lines[][100], int nlines, int* wrote, FILE* outfile_p
 	
 	while((i=get_NextLine(lines,nlines)) != -1){
 		char newline[100];
-		strncpy(newline,lines[i],6);
-		sprintf(&newline[6],"%5d",++(*wrote));
-		strcat(&newline[11],&lines[i][11]);
+		memset(newline, 0, sizeof(newline));
+		memcpy(newline, lines[i], 6);
+		snprintf(&newline[6], 6, "%5d", ++(*wrote));
+		newline[11] = '\0'; // snprintf null-terminates at [11]
+		size_t tail_len = strlen(&lines[i][11]);
+		if(tail_len > sizeof(newline) - 12) tail_len = sizeof(newline) - 12;
+		memcpy(&newline[11], &lines[i][11], tail_len);
+		newline[11 + tail_len] = '\0';
 		fprintf(outfile_ptr,"%s",newline);
 		strcpy(lines[i],"                    ");
 	}

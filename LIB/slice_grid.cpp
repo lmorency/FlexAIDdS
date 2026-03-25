@@ -11,83 +11,117 @@
 
 void slice_grid(FA_Global* FA,genlim* gene_lim,atom* atoms,resid* residue,gridpoint** cleftgrid) {
 
-    std::map<std::string,int> cleftgrid_map;
-    std::map<std::string,int>::iterator it,it2;
-    std::map<std::string,int>::iterator begin,end;
-    
-    float sqrspa = pow(FA->spacer_length, 2.0f);
-    float sqrhyp = pow(FA->spacer_length / sin(45.0f), 2.0f);
+    std::map<GridKey,int> cleftgrid_map;
 
-    //printf("slicing grid...\n");
-    
+    // Build lookup of existing grid points
     for(int i=1; i<FA->num_grd; i++){
-        std::string key = get_key((*cleftgrid)[i].coor);
-        cleftgrid_map.insert(std::pair<std::string,int>(key, i));
+        GridKey key((*cleftgrid)[i].coor);
+        cleftgrid_map.insert(std::pair<GridKey,int>(key, i));
     }
-    
-    begin = cleftgrid_map.begin();
-    end = cleftgrid_map.end();
-    
-    for(it=begin; it!=end; ++it){
-        for(it2=it; it2!=end; ++it2){
-            
-            if(it2 == it) continue;
 
-            float sqrdis = sqrdist((*cleftgrid)[it->second].coor,(*cleftgrid)[it2->second].coor);
-            if((fabs(sqrdis-sqrspa) < 0.001) ||
-               (fabs(sqrdis-sqrhyp) < 0.001)){
-                
-                float coor[3];
-                coor[0] = ((*cleftgrid)[it->second].coor[0] + (*cleftgrid)[it2->second].coor[0]) / 2.0f;
-                coor[1] = ((*cleftgrid)[it->second].coor[1] + (*cleftgrid)[it2->second].coor[1]) / 2.0f;
-                coor[2] = ((*cleftgrid)[it->second].coor[2] + (*cleftgrid)[it2->second].coor[2]) / 2.0f;
-                
-                //string key1 = get_key((*cleftgrid)[it->second].coor);
-                //string key2 = get_key((*cleftgrid)[it2->second].coor);
-                std::string key = get_key(coor);
+    // Neighbor offsets: 3 axis-aligned + 6 face-diagonals = 9 directions.
+    // Only "positive half" to avoid inserting midpoints twice (A->B and B->A).
+    // Axis-aligned neighbors at distance spacer_length:
+    static const int axis_offsets[][3] = {
+        {1,0,0}, {0,1,0}, {0,0,1}
+    };
+    // Face-diagonal neighbors at distance spacer_length*sqrt(2):
+    static const int diag_offsets[][3] = {
+        {1,1,0}, {1,-1,0}, {1,0,1}, {1,0,-1},
+        {0,1,1}, {0,1,-1}
+    };
 
-                /*
-                printf("key1: %s\nkey2: %s\nkey: %s\n",
-                       key1.c_str(), key2.c_str(), key.c_str());
-                getchar();
-                */
+    // Snap spacer to integer milliangstroms for exact neighbor probing
+    int ispacer = static_cast<int>(std::round(FA->spacer_length * 1000.0f));
 
-                if(cleftgrid_map.find(key) == cleftgrid_map.end()){
-                    
-                    if (FA->num_grd==FA->MIN_CLEFTGRID_POINTS){
-                        FA->MIN_CLEFTGRID_POINTS *= 2;
-                        
-                        (*cleftgrid) = (gridpoint*)realloc((*cleftgrid),FA->MIN_CLEFTGRID_POINTS*sizeof(gridpoint));
-                        if ((*cleftgrid) == NULL){
-                            fprintf(stderr,"ERROR: memory reallocation error for cleftgrid (partition)\n");
-                            Terminate(2);
-                        }
-                    }        
+    // Collect new midpoints to add
+    std::vector<GridKey> new_points;
 
-                    (*cleftgrid)[FA->num_grd].coor[0] = coor[0];
-                    (*cleftgrid)[FA->num_grd].coor[1] = coor[1];
-                    (*cleftgrid)[FA->num_grd].coor[2] = coor[2];
+    // For each existing point, probe known neighbor offsets
+    for(auto& kv : cleftgrid_map){
+        const GridKey& gk = kv.first;
 
-                    cleftgrid_map.insert(std::pair<std::string,int>(key, FA->num_grd));
+        // Check axis-aligned neighbors (distance = spacer_length)
+        for(int d = 0; d < 3; d++){
+            GridKey neighbor;
+            neighbor.ix = gk.ix + axis_offsets[d][0] * ispacer;
+            neighbor.iy = gk.iy + axis_offsets[d][1] * ispacer;
+            neighbor.iz = gk.iz + axis_offsets[d][2] * ispacer;
 
-                    FA->num_grd++;
+            if(cleftgrid_map.find(neighbor) != cleftgrid_map.end()){
+                // Midpoint in integer coords
+                GridKey mid;
+                mid.ix = (gk.ix + neighbor.ix) / 2;
+                mid.iy = (gk.iy + neighbor.iy) / 2;
+                mid.iz = (gk.iz + neighbor.iz) / 2;
+                if(cleftgrid_map.find(mid) == cleftgrid_map.end()){
+                    new_points.push_back(mid);
+                }
+            }
+        }
+
+        // Check face-diagonal neighbors (distance = spacer_length*sqrt(2))
+        for(int d = 0; d < 6; d++){
+            GridKey neighbor;
+            neighbor.ix = gk.ix + diag_offsets[d][0] * ispacer;
+            neighbor.iy = gk.iy + diag_offsets[d][1] * ispacer;
+            neighbor.iz = gk.iz + diag_offsets[d][2] * ispacer;
+
+            if(cleftgrid_map.find(neighbor) != cleftgrid_map.end()){
+                GridKey mid;
+                mid.ix = (gk.ix + neighbor.ix) / 2;
+                mid.iy = (gk.iy + neighbor.iy) / 2;
+                mid.iz = (gk.iz + neighbor.iz) / 2;
+                if(cleftgrid_map.find(mid) == cleftgrid_map.end()){
+                    new_points.push_back(mid);
                 }
             }
         }
     }
 
+    // Deduplicate and insert new midpoints
+    std::map<GridKey,int> new_map;
+    for(size_t i = 0; i < new_points.size(); i++){
+        if(new_map.find(new_points[i]) == new_map.end() &&
+           cleftgrid_map.find(new_points[i]) == cleftgrid_map.end()){
+            new_map.insert(std::pair<GridKey,int>(new_points[i], 0));
+        }
+    }
+
+    // Add new points to cleftgrid
+    for(auto& kv : new_map){
+        if (FA->num_grd==FA->MIN_CLEFTGRID_POINTS){
+            FA->MIN_CLEFTGRID_POINTS *= 2;
+
+            (*cleftgrid) = (gridpoint*)realloc((*cleftgrid),FA->MIN_CLEFTGRID_POINTS*sizeof(gridpoint));
+            if ((*cleftgrid) == NULL){
+                fprintf(stderr,"ERROR: memory reallocation error for cleftgrid (slice)\n");
+                Terminate(2);
+            }
+        }
+
+        memset(&(*cleftgrid)[FA->num_grd], 0, sizeof(gridpoint));
+        float coor[3];
+        kv.first.to_coor(coor);
+        (*cleftgrid)[FA->num_grd].coor[0] = coor[0];
+        (*cleftgrid)[FA->num_grd].coor[1] = coor[1];
+        (*cleftgrid)[FA->num_grd].coor[2] = coor[2];
+
+        FA->num_grd++;
+    }
+
 
     ic_bounds(FA,FA->rngopt);
-    
+
     //Reset gene limit and gene length
     //Minimum is always 1.0 (not affected)
     FA->max_opt_par[0] = FA->index_max;
-    
+
     gene_lim->max = FA->max_opt_par[0];
     set_bins(gene_lim);
-    
+
     calc_cleftic(FA,(*cleftgrid));
-    
+
     // Set new spacer_length
     FA->spacer_length /= 2.0f;
 

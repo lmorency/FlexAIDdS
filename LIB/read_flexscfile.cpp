@@ -40,7 +40,7 @@ void read_flexscfile(FA_Global* FA,resid* residue,rot** rotamer,char flexsclines
 	  char reschn,field[7],resname[4];
 	  int resnum;
 	  
-	  sscanf(flexsclines[k], "%s %d %c %s", field, &resnum, &reschn, resname);
+	  sscanf(flexsclines[k], "%6s %d %c %3s", field, &resnum, &reschn, resname);
 	  if(strcmp(field,"FLEXSC") == 0){
 		  
 		  
@@ -61,7 +61,8 @@ void read_flexscfile(FA_Global* FA,resid* residue,rot** rotamer,char flexsclines
 			  memset(&FA->flex_res[FA->MIN_FLEX_RESIDUE-5],0,5*sizeof(flxsc));
 		  }
 		  
-		  strcpy(FA->flex_res[FA->nflxsc].name,resname);
+		  strncpy(FA->flex_res[FA->nflxsc].name,resname,sizeof(FA->flex_res[FA->nflxsc].name)-1);
+		  FA->flex_res[FA->nflxsc].name[sizeof(FA->flex_res[FA->nflxsc].name)-1]='\0';
       
 		  FA->flex_res[FA->nflxsc].chn = reschn;
 		  FA->flex_res[FA->nflxsc].chn = reschn == '-' ? ' ' : reschn;

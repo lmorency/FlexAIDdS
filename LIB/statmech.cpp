@@ -381,26 +381,20 @@ std::vector<WHAMBin> StatMechEngine::wham(
         }
 #endif
 
+#ifndef FLEXAIDS_HAS_EIGEN
         // Shift so minimum = 0
         double fmin = *std::min_element(f_new.begin(), f_new.end());
         for (auto& f : f_new) f -= fmin;
 
         // Check convergence
         double maxdiff = 0.0;
-#ifdef FLEXAIDS_HAS_EIGEN
-        {
-            Eigen::Map<const Eigen::ArrayXd> fn(f_new.data(), n_bins);
-            Eigen::Map<const Eigen::ArrayXd> fo(f_old.data(), n_bins);
-            maxdiff = (fn - fo).abs().maxCoeff();
-        }
-#else
         for (int b = 0; b < n_bins; ++b)
             maxdiff = std::max(maxdiff,
                 std::abs(f_new[static_cast<std::size_t>(b)] -
                          f_old[static_cast<std::size_t>(b)]));
-#endif
         f_old = f_new;
         if (maxdiff < tolerance) break;
+#endif
     }
 
     // Build output
@@ -460,6 +454,37 @@ double BoltzmannLUT::operator()(double energy) const noexcept {
     if (idx < 0) idx = 0;
     if (idx >= n_bins_) idx = n_bins_ - 1;
     return table_[static_cast<std::size_t>(idx)];
+}
+
+// ─── ensemble merging (parallel grid-decomposed docking) ─────────────────────
+
+void StatMechEngine::merge(const StatMechEngine& other) {
+    if (std::fabs(other.T_ - T_) > 1e-6)
+        throw std::invalid_argument("Cannot merge engines at different temperatures");
+    ensemble_.insert(ensemble_.end(),
+                     other.ensemble_.begin(), other.ensemble_.end());
+}
+
+void StatMechEngine::merge_samples(std::span<const double> energies,
+                                    std::span<const int> multiplicities) {
+    if (energies.size() != multiplicities.size())
+        throw std::invalid_argument("energies and multiplicities must have same size");
+    for (size_t i = 0; i < energies.size(); ++i)
+        ensemble_.push_back({energies[i], multiplicities[i]});
+}
+
+std::vector<double> StatMechEngine::serialize_energies() const {
+    std::vector<double> out(ensemble_.size());
+    for (size_t i = 0; i < ensemble_.size(); ++i)
+        out[i] = ensemble_[i].energy;
+    return out;
+}
+
+std::vector<int> StatMechEngine::serialize_multiplicities() const {
+    std::vector<int> out(ensemble_.size());
+    for (size_t i = 0; i < ensemble_.size(); ++i)
+        out[i] = ensemble_[i].count;
+    return out;
 }
 
 }  // namespace statmech

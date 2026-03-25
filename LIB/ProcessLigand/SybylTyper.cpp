@@ -1,0 +1,316 @@
+// SybylTyper.cpp — SYBYL atom-type assignment and 256-type encoding
+//
+// Copyright 2026 Le Bonhomme Pharma
+// SPDX-License-Identifier: Apache-2.0
+//
+// SYBYL type → FlexAID numeric type mapping mirrors Mol2Reader.cpp.
+// 256-type encoding mirrors atom_typing_256.h encode_from_sybyl().
+
+#include "SybylTyper.h"
+
+#include <cmath>
+#include <algorithm>
+
+namespace bonmol {
+namespace sybyl {
+
+// ---------------------------------------------------------------------------
+// SYBYL type names (for display)
+// ---------------------------------------------------------------------------
+
+const char* sybyl_type_name(int sybyl_type) {
+    switch (sybyl_type) {
+        case  0: return "C.1";
+        case  1: return "C.3";
+        case  2: return "C.2";
+        case  3: return "C.ar";
+        case  4: return "N.3";
+        case  5: return "N.2";
+        case  6: return "N.ar";
+        case  7: return "N.am";
+        case  8: return "N.pl3";
+        case  9: return "N.4";
+        case 10: return "O.3";
+        case 11: return "O.2";
+        case 12: return "O.co2";
+        case 13: return "F";
+        case 14: return "Cl";
+        case 15: return "Br";
+        case 16: return "S.3";
+        case 17: return "S.2";
+        case 18: return "S.O";
+        case 19: return "S.O2";
+        case 20: return "P.3";
+        case 21: return "I";
+        case 22: return "H";
+        case 30: return "Fe";
+        default: return "X";
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Helper: check if atom is in an aromatic ring
+// ---------------------------------------------------------------------------
+
+static bool in_aromatic_ring(const BonMol& mol, int atom_idx) {
+    for (const Ring& r : mol.rings) {
+        if (!r.is_aromatic) continue;
+        for (int ai : r.atom_indices)
+            if (ai == atom_idx) return true;
+    }
+    return false;
+}
+
+// ---------------------------------------------------------------------------
+// Helper: count double bonds to O (carbonyl/sulfonyl checks)
+// ---------------------------------------------------------------------------
+
+static int count_double_bonds_to(const BonMol& mol, int atom_idx, Element target) {
+    int cnt = 0;
+    for (int bidx : mol.bond_adj[atom_idx]) {
+        const Bond& b = mol.bonds[bidx];
+        if (b.order == BondOrder::DOUBLE) {
+            int nb = (b.atom_i == atom_idx) ? b.atom_j : b.atom_i;
+            if (mol.atoms[nb].element == target) ++cnt;
+        }
+    }
+    return cnt;
+}
+
+// ---------------------------------------------------------------------------
+// Helper: check if atom is part of a carboxylate/carboxamide group
+// ---------------------------------------------------------------------------
+
+static bool is_carboxylate_oxygen(const BonMol& mol, int atom_idx) {
+    // O.co2: oxygen in –COO– (carboxylate, ester, or carbamate)
+    if (mol.atoms[atom_idx].element != Element::O) return false;
+    // The O should be connected to a C that also has a =O or another O
+    for (int nb : mol.adjacency[atom_idx]) {
+        if (mol.atoms[nb].element != Element::C) continue;
+        // Count oxygens attached to this C
+        int o_count = 0;
+        bool has_double_o = false;
+        for (int nb2 : mol.adjacency[nb]) {
+            if (mol.atoms[nb2].element == Element::O) {
+                ++o_count;
+                int bidx = mol.find_bond(nb, nb2);
+                if (bidx >= 0 && mol.bonds[bidx].order == BondOrder::DOUBLE)
+                    has_double_o = true;
+            }
+        }
+        if (o_count >= 2 && has_double_o) return true;
+    }
+    return false;
+}
+
+// ---------------------------------------------------------------------------
+// H-bond donor detection
+// ---------------------------------------------------------------------------
+
+bool is_hbond_donor(const BonMol& mol, int atom_idx) {
+    const Atom& a = mol.atoms[atom_idx];
+    // N or O with implicit or explicit H
+    if (a.element == Element::N || a.element == Element::O) {
+        if (a.implicit_h_count > 0) return true;
+        // Check for explicit H neighbours
+        for (int nb : mol.adjacency[atom_idx]) {
+            if (mol.atoms[nb].element == Element::H) return true;
+        }
+    }
+    return false;
+}
+
+// ---------------------------------------------------------------------------
+// H-bond acceptor detection
+// ---------------------------------------------------------------------------
+
+bool is_hbond_acceptor(const BonMol& mol, int atom_idx) {
+    const Atom& a = mol.atoms[atom_idx];
+    // N or O with lone pair (not quaternary N)
+    if (a.element == Element::O) return true;
+    if (a.element == Element::N) {
+        // Quaternary N has no lone pair available
+        if (a.sybyl_type == 9) return false; // N.4
+        return true;
+    }
+    if (a.element == Element::F) return true;
+    return false;
+}
+
+// ---------------------------------------------------------------------------
+// 256-type encoding (mirrors atom_typing_256.h encode_from_sybyl)
+// Bits 0-4: base type (5 bits, 32 classes)
+// Bits 5-6: AM1-BCC charge bin (4 levels: <-0.3, -0.3–0, 0–0.3, >0.3)
+// Bit    7: H-bond donor/acceptor flag
+// ---------------------------------------------------------------------------
+
+// Internal: SYBYL type → base type (5-bit, 0-31)
+static uint8_t sybyl_to_base(int sybyl_type) {
+    // Mapping mirrors atom_typing_256.h sybyl_to_base()
+    switch (sybyl_type) {
+        case  1: return 1;  // C.3
+        case  2: return 2;  // C.2
+        case  3: return 3;  // C.ar
+        case  0: return 4;  // C.1
+        case  4: return 5;  // N.3
+        case  5: return 6;  // N.2
+        case  6: return 7;  // N.ar
+        case  7: return 8;  // N.am
+        case  8: return 9;  // N.pl3
+        case  9: return 10; // N.4
+        case 10: return 11; // O.3
+        case 11: return 12; // O.2
+        case 12: return 13; // O.co2
+        case 13: return 14; // F
+        case 14: return 15; // Cl
+        case 15: return 16; // Br
+        case 16: return 17; // S.3
+        case 17: return 18; // S.2
+        case 18: return 19; // S.O
+        case 19: return 20; // S.O2
+        case 20: return 21; // P.3
+        case 21: return 22; // I
+        case 22: return 23; // H
+        case 30: return 24; // Fe
+        default: return 0;
+    }
+}
+
+uint8_t encode_256(int sybyl_type, float partial_charge, bool is_hbond) {
+    uint8_t base = sybyl_to_base(sybyl_type) & 0x1F; // bits 0-4
+
+    // Charge bin (bits 5-6)
+    uint8_t charge_bin;
+    if      (partial_charge < -0.3f) charge_bin = 0;
+    else if (partial_charge < 0.0f)  charge_bin = 1;
+    else if (partial_charge < 0.3f)  charge_bin = 2;
+    else                              charge_bin = 3;
+
+    uint8_t hbond_bit = is_hbond ? 1u : 0u;
+
+    return static_cast<uint8_t>(
+        base | (charge_bin << 5) | (hbond_bit << 7)
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Single-atom SYBYL type assignment
+// ---------------------------------------------------------------------------
+
+int assign_sybyl_type_single(const BonMol& mol, int atom_idx) {
+    const Atom& a = mol.atoms[atom_idx];
+
+    switch (a.element) {
+
+        // ---- Hydrogen ----
+        case Element::H:
+            return 22;
+
+        // ---- Iron ----
+        case Element::Fe:
+            return 30;
+
+        // ---- Halogens ----
+        case Element::F:  return 13;
+        case Element::Cl: return 14;
+        case Element::Br: return 15;
+        case Element::I:  return 21;
+
+        // ---- Carbon ----
+        case Element::C: {
+            if (in_aromatic_ring(mol, atom_idx) || a.is_aromatic) return 3; // C.ar
+            switch (a.hybrid) {
+                case Hybridization::SP:  return 0;  // C.1
+                case Hybridization::SP2: return 2;  // C.2
+                case Hybridization::SP3: return 1;  // C.3
+                default:                 return 1;  // default C.3
+            }
+        }
+
+        // ---- Nitrogen ----
+        case Element::N: {
+            if (in_aromatic_ring(mol, atom_idx) || a.is_aromatic) return 6; // N.ar
+
+            // N.4: quaternary N (total bond order == 4)
+            float bos = mol.bond_order_sum(atom_idx) + a.implicit_h_count;
+            if (bos >= 3.9f && a.formal_charge >= 1) return 9; // N.4
+
+            // N.am: amide N — bonded to C=O
+            for (int nb : mol.adjacency[atom_idx]) {
+                if (mol.atoms[nb].element == Element::C) {
+                    if (count_double_bonds_to(mol, nb, Element::O) >= 1) return 7; // N.am
+                }
+            }
+
+            // N.pl3: planar N not in ring, not amide (e.g. guanidinium, urea)
+            // Detected by sp2 hybridisation with no double bonds in molecule
+            if (a.hybrid == Hybridization::SP2) {
+                // Check for double bond to N itself
+                for (int bidx : mol.bond_adj[atom_idx]) {
+                    if (mol.bonds[bidx].order == BondOrder::DOUBLE) return 5; // N.2
+                }
+                return 8; // N.pl3
+            }
+
+            // N.2: sp2 N with double bond
+            if (a.hybrid == Hybridization::SP) return 5; // treat sp N as N.2
+
+            return 4; // N.3 (default sp3 N)
+        }
+
+        // ---- Oxygen ----
+        case Element::O: {
+            if (is_carboxylate_oxygen(mol, atom_idx)) return 12; // O.co2
+            if (a.hybrid == Hybridization::SP2 ||
+                count_double_bonds_to(mol, atom_idx, Element::C) >= 1 ||
+                count_double_bonds_to(mol, atom_idx, Element::S) >= 1 ||
+                count_double_bonds_to(mol, atom_idx, Element::P) >= 1 ||
+                count_double_bonds_to(mol, atom_idx, Element::N) >= 1) {
+                return 11; // O.2
+            }
+            return 10; // O.3
+        }
+
+        // ---- Sulphur ----
+        case Element::S: {
+            if (in_aromatic_ring(mol, atom_idx) || a.is_aromatic) return 16; // S.3 (thiophene S)
+            int dbo = count_double_bonds_to(mol, atom_idx, Element::O);
+            if (dbo >= 2) return 19; // S.O2
+            if (dbo == 1) return 18; // S.O
+            if (a.hybrid == Hybridization::SP2) return 17; // S.2
+            return 16; // S.3
+        }
+
+        // ---- Phosphorus ----
+        case Element::P:
+            return 20; // P.3
+
+        default:
+            return 1; // fallback C.3
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Main entry point: assign types for all atoms
+// ---------------------------------------------------------------------------
+
+void assign_sybyl_types(BonMol& mol) {
+    for (int i = 0; i < mol.num_atoms(); ++i) {
+        Atom& a = mol.atoms[i];
+
+        // Assign SYBYL type
+        a.sybyl_type = assign_sybyl_type_single(mol, i);
+
+        // Assign H-bond flags
+        a.is_hbond_donor    = is_hbond_donor(mol, i);
+        a.is_hbond_acceptor = is_hbond_acceptor(mol, i);
+
+        bool hbond = a.is_hbond_donor || a.is_hbond_acceptor;
+
+        // Encode 256-type
+        a.type_256 = encode_256(a.sybyl_type, a.partial_charge, hbond);
+    }
+}
+
+} // namespace sybyl
+} // namespace bonmol

@@ -13,13 +13,11 @@
 
 void partition_grid(FA_Global* FA,chromosome* chrom,genlim* gene_lim,atom* atoms,resid* residue,gridpoint** cleftgrid,int pop_selection,int expfac){
 
-	std::map<std::string, std::vector<int> > cleftgrid_map;
-	std::map<std::string, std::vector<int> >::iterator it;
-	std::map<std::string, int > cleftgrid_struct_map;
-	std::map<std::string, int >::iterator it2;
+	std::map<GridKey, std::vector<int> > cleftgrid_map;
+	std::map<GridKey, std::vector<int> >::iterator it;
+	std::map<GridKey, int > cleftgrid_struct_map;
+	std::map<GridKey, int >::iterator it2;
 	std::vector<int>::iterator itv;
-
-	//printf("partitionning grid\n");
 
 	//Add grid intersection indexes for the <pop_selection> first chromosomes (based on evalue)
 	//Store the indexes of selected chromosomes (key is the coordinate of the grid point)
@@ -28,48 +26,55 @@ void partition_grid(FA_Global* FA,chromosome* chrom,genlim* gene_lim,atom* atoms
 		//Find the integer value from 1 to num_grd
 		int grd_idx = (int)chrom[i].genes->to_ic;
 
-		std::string key = get_key((*cleftgrid)[grd_idx].coor);
-		
+		GridKey key((*cleftgrid)[grd_idx].coor);
+
 		it = cleftgrid_map.find(key);
 		if(it == cleftgrid_map.end()){
 			std::vector<int> newvec;
 			newvec.push_back(i);
 
 			// key(coor) -> index individuals (ranked according to evalue)
-			cleftgrid_map.insert(std::pair<std::string, std::vector<int> >(key, newvec));
+			cleftgrid_map.insert(std::pair<GridKey, std::vector<int> >(key, newvec));
 		}else{
 			it->second.push_back(i);
 		}
 	}
 
-	//printf("partitionning grid: population inserted in map\n");
-
-	int x,y,z;
+	// Collect expansion keys into a separate container first to avoid
+	// inserting into cleftgrid_map while iterating over it.
+	std::vector<GridKey> expansion_keys;
 	for(it=cleftgrid_map.begin(); it!=cleftgrid_map.end(); ++it){
-		
+
 		if(it->second.size() == 0) continue;
 
-		for(x=-expfac;x<=expfac;x++){
-			for(y=-expfac;y<=expfac;y++){
-				for(z=-expfac;z<=expfac;z++){
-					
-					float coor[3];
-					parse_key(it->first, coor);
-					coor[0] += FA->spacer_length * (float)x;
-					coor[1] += FA->spacer_length * (float)y;
-					coor[2] += FA->spacer_length * (float)z;
-					
-					std::string key = get_key(coor);
-					if(cleftgrid_map.find(key) == cleftgrid_map.end()){
-						std::vector<int> emptyvec;
-					        cleftgrid_map.insert(std::pair<std::string, std::vector<int> >(key, emptyvec));
+		float coor[3];
+		it->first.to_coor(coor);
+
+		for(int x=-expfac;x<=expfac;x++){
+			for(int y=-expfac;y<=expfac;y++){
+				for(int z=-expfac;z<=expfac;z++){
+
+					float nc[3];
+					nc[0] = coor[0] + FA->spacer_length * (float)x;
+					nc[1] = coor[1] + FA->spacer_length * (float)y;
+					nc[2] = coor[2] + FA->spacer_length * (float)z;
+
+					GridKey nkey(nc);
+					if(cleftgrid_map.find(nkey) == cleftgrid_map.end()){
+						expansion_keys.push_back(nkey);
 					}
 				}
 			}
 		}
 	}
-	
-	//printf("partitionning grid: expanded partition\n");
+
+	// Now insert expansion keys
+	for(size_t i = 0; i < expansion_keys.size(); i++){
+		if(cleftgrid_map.find(expansion_keys[i]) == cleftgrid_map.end()){
+			std::vector<int> emptyvec;
+			cleftgrid_map.insert(std::pair<GridKey, std::vector<int> >(expansion_keys[i], emptyvec));
+		}
+	}
 
 	FA->num_grd = 1;
 
@@ -78,32 +83,31 @@ void partition_grid(FA_Global* FA,chromosome* chrom,genlim* gene_lim,atom* atoms
 	// increase size of cleftgrid structure if necessary
 	for(it=cleftgrid_map.begin(); it!=cleftgrid_map.end(); ++it){
 		float coor[3];
-		parse_key(it->first,coor);
-		
+		it->first.to_coor(coor);
+
 		if (FA->num_grd==FA->MIN_CLEFTGRID_POINTS){
 			FA->MIN_CLEFTGRID_POINTS *= 2;
-								
+
 			(*cleftgrid) = (gridpoint*)realloc((*cleftgrid),FA->MIN_CLEFTGRID_POINTS*sizeof(gridpoint));
 			if ((*cleftgrid) == NULL){
 				fprintf(stderr,"ERROR: memory reallocation error for cleftgrid (partition)\n");
 				Terminate(2);
 			}
-		}		
+		}
 
+		memset(&(*cleftgrid)[FA->num_grd], 0, sizeof(gridpoint));
 		(*cleftgrid)[FA->num_grd].coor[0] = coor[0];
 		(*cleftgrid)[FA->num_grd].coor[1] = coor[1];
 		(*cleftgrid)[FA->num_grd].coor[2] = coor[2];
-		
+
 		// key(coor) -> grid index in structure
-		cleftgrid_struct_map.insert(std::pair<std::string,int>(it->first, FA->num_grd));
-		
+		cleftgrid_struct_map.insert(std::pair<GridKey,int>(it->first, FA->num_grd));
+
 		FA->num_grd++;
 	}
-  
-	//printf("partitionning grid: insert into structure done\n");
 
 	ic_bounds(FA,FA->rngopt);
-  
+
 	//Reset gene limit and gene length
 	//Minimum is always 1.0 (not affected)
 	FA->max_opt_par[0] = FA->index_max;
@@ -118,7 +122,7 @@ void partition_grid(FA_Global* FA,chromosome* chrom,genlim* gene_lim,atom* atoms
 		for(itv=it->second.begin(); itv!=it->second.end(); itv++){
 			// what is the index of the given grid point in the new cleftgrid structure
 			if((it2 = cleftgrid_struct_map.find(it->first)) != cleftgrid_struct_map.end()){
-				
+
 				chrom[*itv].genes->to_ic = (double)it2->second;
 				chrom[*itv].genes->to_int32 = ictogene(gene_lim,it2->second);
 
@@ -128,7 +132,9 @@ void partition_grid(FA_Global* FA,chromosome* chrom,genlim* gene_lim,atom* atoms
 			}
 		}
 	}
-  
-	calc_cleftic(FA,(*cleftgrid));
+
+	// Note: calc_cleftic is NOT called here because partition_grid is always
+	// followed by slice_grid (gaboom.cpp), which recalculates all internal
+	// coordinates after adding midpoints.
 
 }

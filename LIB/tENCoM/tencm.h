@@ -34,7 +34,7 @@
 #include <stdexcept>
 #include <cstring>
 
-#include "flexaid.h"
+#include "../flexaid.h"
 
 namespace tencm {
 

@@ -52,7 +52,7 @@ let package = Package(
         // Layer 3: Feature modules
         .target(
             name: "FleetScheduler",
-            dependencies: ["FlexAIDdS"],
+            dependencies: ["FlexAIDdS", "Intelligence"],
             path: "Sources/FleetScheduler"
         ),
         .target(
@@ -62,19 +62,19 @@ let package = Package(
         ),
         .target(
             name: "MediaIntegration",
-            dependencies: ["FlexAIDdS"],
+            dependencies: ["FlexAIDdS", "HealthIntegration"],
             path: "Sources/MediaIntegration"
         ),
         .target(
             name: "Intelligence",
-            dependencies: ["FlexAIDdS"],
+            dependencies: ["FlexAIDdS", "HealthIntegration"],
             path: "Sources/Intelligence"
         ),
 
         // Tests
         .testTarget(
             name: "FlexAIDdSTests",
-            dependencies: ["FlexAIDdS"],
+            dependencies: ["FlexAIDdS", "Intelligence", "FleetScheduler"],
             path: "Tests/FlexAIDdSTests"
         ),
     ]

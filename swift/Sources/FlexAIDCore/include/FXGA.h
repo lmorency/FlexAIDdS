@@ -76,6 +76,24 @@ FXWHAMBin* fx_mode_free_energy_profile(FXBindingModeRef mode,
                                         const double* coordinates, int coord_count,
                                         int n_bins, int* out_count);
 
+// ─── ShannonThermoStack access ──────────────────────────────────────────────
+
+// Get ShannonThermoStack decomposed result from the GA context.
+// Fills the result struct and returns 1 on success, 0 if unavailable.
+int fx_ga_get_shannon_thermo(FXGAContextRef context, FXShannonThermoResult* result);
+
+// Recompute Shannon entropy at a different temperature (what-if analysis).
+// Returns the modified FullThermoResult. Does not mutate the GA context.
+int fx_ga_recompute_shannon_at_temperature(FXGAContextRef context,
+                                           double temperature_K,
+                                           FXShannonThermoResult* result);
+
+// Get per-mode Shannon entropy decomposition.
+// Fills out_entropies[mode_count] with per-mode configurational entropy (nats).
+// Returns number of modes, or 0 on failure.
+int fx_ga_per_mode_shannon(FXGAContextRef context,
+                           double* out_entropies, int max_modes);
+
 #ifdef __cplusplus
 }
 #endif

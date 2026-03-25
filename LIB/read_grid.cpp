@@ -9,7 +9,6 @@ void read_grid(FA_Global* FA,gridpoint** cleftgrid,char filename[]){
 	char number[6];  // stores atom number
 	char coor[9];    // stores coordinates
 	int i,j,k;       // counters
-	int flag;        // min flag
 	float dis,mindis;    // minimal distance between intersections (spacer length)
 
 	//printf("allocating memory for cleftgrid\n");
@@ -20,7 +19,7 @@ void read_grid(FA_Global* FA,gridpoint** cleftgrid,char filename[]){
 		Terminate(2);
 	}
   
-	//memset((*cleftgrid),0,FA->MIN_CLEFTGRID_POINTS*sizeof(gridpoint));
+	memset((*cleftgrid),0,FA->MIN_CLEFTGRID_POINTS*sizeof(gridpoint));
 
 	file_ptr=NULL;
 	if (!OpenFile_B(filename,"r",&file_ptr))
@@ -40,7 +39,7 @@ void read_grid(FA_Global* FA,gridpoint** cleftgrid,char filename[]){
 				Terminate(2);
 			}
 
-			//memset(&(*cleftgrid)[FA->MIN_CLEFTGRID_POINTS/2],0,FA->MIN_CLEFTGRID_POINTS/2*sizeof(gridpoint));
+			memset(&(*cleftgrid)[FA->MIN_CLEFTGRID_POINTS/2],0,FA->MIN_CLEFTGRID_POINTS/2*sizeof(gridpoint));
 		}
       
 
@@ -77,16 +76,15 @@ void read_grid(FA_Global* FA,gridpoint** cleftgrid,char filename[]){
 	CloseFile_B(&file_ptr,"r");
 
   
-	flag=1;
-	mindis=1000.0f;
-	//Calculate spacer length
-	for(i=2;i<FA->num_grd;i++){
-		dis=distance((*cleftgrid)[1].coor,(*cleftgrid)[i].coor);
-		if (flag) {
-			mindis=dis;
-			flag=0;
-		}else{
-			if (dis < mindis) mindis=dis;
+	// Calculate spacer_length as minimum pairwise distance over a sample
+	// of grid points. Sampling avoids O(n^2) for large grids while being
+	// more robust than comparing only to point 1.
+	int sample_end = FA->num_grd < 50 ? FA->num_grd : 50;
+	mindis=1e30f;
+	for(i=1; i<sample_end; i++){
+		for(j=i+1; j<sample_end; j++){
+			dis=distance((*cleftgrid)[i].coor,(*cleftgrid)[j].coor);
+			if(dis > 0.001f && dis < mindis) mindis=dis;
 		}
 	}
 

@@ -11,7 +11,7 @@
 //
 // Or via CMake with -DENABLE_TENCOM_BENCHMARK=ON (see CMakeLists.txt).
 #include "tencm.h"
-#include "statmech.h"
+#include "../statmech.h"
 
 #include <algorithm>
 #include <array>

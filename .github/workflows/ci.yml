@@ -14,8 +14,8 @@ jobs:
     name: Pure Python results tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.11'
       - name: Install test dependencies
@@ -33,13 +33,17 @@ jobs:
             python/tests/test_py_statmech.py \
             python/tests/test_thermodynamics_dataclass.py \
             python/tests/test_models.py \
+            python/tests/test_models_deserialization.py \
             python/tests/test_version.py \
             python/tests/test_io.py \
             python/tests/test_cli.py \
             python/tests/test_docking.py \
             python/tests/test_results.py \
             python/tests/test_energy_matrix.py \
-            python/tests/test_train_256x256.py
+            python/tests/test_train_256x256.py \
+            python/tests/test_tencm.py \
+            python/tests/test_tencom_results.py \
+            python/tests/test_visualization.py
 
   cxx_core_build:
     name: C++ core (${{ matrix.name }})
@@ -65,7 +69,7 @@ jobs:
             cc: cl
             cxx: cl
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |
@@ -130,8 +134,8 @@ jobs:
     name: Python bindings smoke test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.11'
       - name: Install build dependencies

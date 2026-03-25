@@ -10,7 +10,7 @@
 #pragma once
 
 #include "../statmech.h"
-#include "../tencm.h"
+#include "../tENCoM/tencm.h"
 #include <vector>
 #include <string>
 #include <cmath>

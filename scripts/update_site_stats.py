@@ -11,6 +11,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import os
 import re
@@ -49,7 +50,13 @@ def get_commit_count() -> int:
 
 def fetch_languages(repo: str) -> dict[str, int]:
     """Fetch language byte counts from GitHub API."""
-    url = f"https://api.github.com/repos/{repo}/languages"
+    data = _github_api_get(f"/repos/{repo}/languages")
+    return data if isinstance(data, dict) else {}
+
+
+def _github_api_get(path: str) -> dict | list | None:
+    """Fetch a GitHub API endpoint. Returns parsed JSON or None on failure."""
+    url = f"https://api.github.com{path}"
     req = urllib.request.Request(url)
     req.add_header("Accept", "application/vnd.github+json")
     req.add_header("User-Agent", "FlexAIDdS-site-updater")
@@ -62,8 +69,24 @@ def fetch_languages(repo: str) -> dict[str, int]:
         with urllib.request.urlopen(req, timeout=15) as resp:
             return json.loads(resp.read().decode())
     except (urllib.error.URLError, urllib.error.HTTPError) as e:
-        print(f"Warning: Could not fetch languages from GitHub API: {e}", file=sys.stderr)
-        return {}
+        print(f"Warning: GitHub API request failed ({path}): {e}", file=sys.stderr)
+        return None
+
+
+def fetch_stars(repo: str) -> int | None:
+    """Fetch the current stargazers count."""
+    data = _github_api_get(f"/repos/{repo}")
+    if data and isinstance(data, dict):
+        return data.get("stargazers_count")
+    return None
+
+
+def fetch_latest_release(repo: str) -> str | None:
+    """Fetch the latest release tag name (e.g. 'v2.0.0')."""
+    data = _github_api_get(f"/repos/{repo}/releases/latest")
+    if data and isinstance(data, dict):
+        return data.get("tag_name")
+    return None
 
 
 def compute_percentages(languages: dict[str, int]) -> list[tuple[str, str, float]]:
@@ -119,7 +142,14 @@ def build_lang_legend(entries: list[tuple[str, str, float]]) -> str:
     return "\n".join(lines)
 
 
-def update_html(html_path: str, commit_count: int, lang_entries: list[tuple[str, str, float]]) -> bool:
+def update_html(
+    html_path: str,
+    commit_count: int,
+    lang_entries: list[tuple[str, str, float]],
+    *,
+    stars: int | None = None,
+    release: str | None = None,
+) -> bool:
     """Patch the HTML file in-place. Returns True if changes were made."""
     with open(html_path, "r", encoding="utf-8") as f:
         content = f.read()
@@ -137,7 +167,6 @@ def update_html(html_path: str, commit_count: int, lang_entries: list[tuple[str,
     # 2. Update language count stat card
     if lang_entries:
         n_langs = len(lang_entries)
-        # Match: <span class="stat-value">N</span>\n            <span class="stat-label">Languages</span>
         content = re.sub(
             r'(<span class="stat-value">)\d+(</span>\s*<span class="stat-label">Languages</span>)',
             rf"\g<1>{n_langs}\g<2>",
@@ -165,6 +194,33 @@ def update_html(html_path: str, commit_count: int, lang_entries: list[tuple[str,
             content,
             count=1,
             flags=re.DOTALL,
+        )
+
+    # 5. Update stars count (server-side default so it shows before JS loads)
+    if stars is not None:
+        content = re.sub(
+            r'(<span class="stat-value" id="stat-stars">)\d+(</span>)',
+            rf"\g<1>{stars}\g<2>",
+            content,
+            count=1,
+        )
+
+    # 6. Update "last updated" date in footer
+    today = datetime.date.today().isoformat()
+    content = re.sub(
+        r'(<span id="last-updated">Last updated: )\d{4}-\d{2}-\d{2}(</span>)',
+        rf"\g<1>{today}\g<2>",
+        content,
+        count=1,
+    )
+
+    # 7. Update latest release version if present
+    if release:
+        content = re.sub(
+            r'(<span id="latest-release">)[^<]*(</span>)',
+            rf"\g<1>{release}\g<2>",
+            content,
+            count=1,
         )
 
     changed = content != original
@@ -200,12 +256,25 @@ def main() -> int:
     else:
         print("Skipping language update (API unavailable)")
 
+    # Get stars
+    stars = fetch_stars(args.repo)
+    if stars is not None:
+        print(f"Stars: {stars}")
+
+    # Get latest release
+    release = fetch_latest_release(args.repo)
+    if release:
+        print(f"Latest release: {release}")
+
     # Update HTML
     if not os.path.isfile(args.html):
         print(f"Error: {args.html} not found", file=sys.stderr)
         return 1
 
-    changed = update_html(args.html, commit_count, lang_entries)
+    changed = update_html(
+        args.html, commit_count, lang_entries,
+        stars=stars, release=release,
+    )
     if changed:
         print(f"Updated {args.html}")
     else:

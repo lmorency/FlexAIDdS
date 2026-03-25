@@ -9,7 +9,7 @@
 //   6. Perturbation produces non-zero differential
 
 #include <gtest/gtest.h>
-#include "tencm.h"
+#include "tENCoM/tencm.h"
 #include "encom.h"
 #include "statmech.h"
 

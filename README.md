@@ -7,12 +7,16 @@
 *Combining genetic algorithms with statistical mechanics thermodynamics*
 *for accurate binding free energy prediction*
 
+[![CI](https://github.com/lmorency/FlexAIDdS/actions/workflows/ci.yml/badge.svg)](https://github.com/lmorency/FlexAIDdS/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![C++20](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](https://en.cppreference.com/w/cpp/20)
 [![Python](https://img.shields.io/badge/python-%E2%89%A5%203.9-3776AB.svg)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg)](#)
+[![DOI](https://img.shields.io/badge/DOI-10.1021%2Facs.jcim.5b00078-blue)](https://doi.org/10.1021/acs.jcim.5b00078)
 
 </div>
+
+**[Installation](docs/INSTALLATION.md)** · **[User Guide](docs/USERGUIDE.md)** · **[Benchmarks](docs/BENCHMARKS.md)** · **[Website](https://lmorency.github.io/FlexAIDdS/)**
 
 ---
 
@@ -24,7 +28,7 @@ FlexAID∆S extends the [FlexAID](https://doi.org/10.1021/acs.jcim.5b00078) dock
 - Torsional elastic network model (tENCoM) for backbone vibrational entropy
 - Full ligand flexibility: torsions, ring conformers, chiral center discrimination
 - Co-translational / co-transcriptional assembly (NATURaL module)
-- Unified hardware dispatch with automatic backend selection (CUDA, Metal, AVX-512, AVX2, OpenMP)
+- Unified hardware dispatch with automatic backend selection (CUDA, ROCm/HIP, Metal, AVX-512, AVX2, OpenMP)
 - Distributed docking across Apple devices (Bonhomme Fleet) with iCloud coordination
 - Python package with docking API, result analysis, and PyMOL visualization
 - Swift (macOS/iOS) and TypeScript (PWA) packages for cross-platform access
@@ -42,6 +46,15 @@ cmake .. -DCMAKE_BUILD_TYPE=Release && cmake --build . -j $(nproc)
 ```bash
 # Dock with full flexibility and entropy at 300 K (default)
 ./FlexAIDdS receptor.pdb ligand.mol2
+
+# Argument order doesn't matter — inputs are auto-detected from file content
+./FlexAIDdS ligand.mol2 receptor.pdb
+
+# Dock directly from a SMILES string (3D coordinates built automatically)
+./FlexAIDdS receptor.pdb "CC(=O)Oc1ccccc1C(=O)O"
+
+# Use CIF/mmCIF files (mandatory PDB format since 2019)
+./FlexAIDdS receptor.cif ligand.sdf
 
 # Override parameters via JSON
 ./FlexAIDdS receptor.pdb ligand.mol2 -c config.json
@@ -67,21 +80,23 @@ for mode in results.rank_by_free_energy():
 ## Architecture
 
 ```
-┌─────────────┐    ┌──────────────┐    ┌───────────────────┐    ┌─────────────────┐
-│   Input      │    │   Genetic    │    │     Scoring       │    │ Thermodynamics  │
-│              │───▶│  Algorithm   │───▶│                   │───▶│                 │
-│ PDB + MOL2   │    │  (gaboom)    │    │ Voronoi CF + DEE  │    │ StatMech + S    │
-└─────────────┘    └──────┬───────┘    └───────────────────┘    └────────┬────────┘
-                          │                                              │
-                          ▼                                              ▼
-                   ┌──────────────┐                              ┌─────────────────┐
-                   │  Flexibility │                              │  Binding Modes  │
-                   │              │                              │                 │
-                   │ Torsions     │                              │ Clustering +    │
-                   │ Rings        │                              │ ΔG, ΔH, −TΔS   │
-                   │ Chirality    │                              │ Cv, Boltzmann   │
-                   │ tENCoM       │                              └─────────────────┘
-                   └──────────────┘
+┌─────────────┐    ┌────────────────┐    ┌──────────────┐    ┌───────────────────┐    ┌─────────────────┐
+│   Input      │    │ ProcessLigand  │    │   Genetic    │    │     Scoring       │    │ Thermodynamics  │
+│              │───▶│                │───▶│  Algorithm   │───▶│                   │───▶│                 │
+│ PDB/CIF +    │    │ SMILES parse,  │    │  (gaboom)    │    │ Voronoi CF + DEE  │    │ StatMech + S    │
+│ MOL2/SDF/    │    │ 3D build,      │    └──────┬───────┘    └───────────────────┘    └────────┬────────┘
+│ SMILES       │    │ atom typing    │           │                                              │
+└─────────────┘    └────────────────┘           ▼                                              ▼
+                                         ┌──────────────┐                              ┌─────────────────┐
+                                         │  Flexibility │                              │  Binding Modes  │
+                                         │              │                              │                 │
+                                         │ Torsions     │                              │ Clustering +    │
+                                         │ Rings        │                              │ ΔG, ΔH, −TΔS   │
+                                         │ Chirality    │                              │ Cv, Boltzmann   │
+                                         │ tENCoM       │                              └─────────────────┘
+                                         └──────────────┘
+
+Hardware: CUDA > ROCm/HIP > Metal > AVX-512 > AVX2 > OpenMP > scalar
 ```
 
 **Scoring** uses two complementary layers: a **Voronoi contact function** (CF) for geometry-based shape complementarity, weighted by a **2-term LJ+Coulomb potential** parameterised over 40 SYBYL atom types. The CF computes contact surface area; the interaction matrix determines how favourable each contact is. The StatMechEngine then converts the GA ensemble into thermodynamic quantities via the canonical partition function with log-sum-exp numerical stability.
@@ -109,21 +124,25 @@ for mode in results.rank_by_free_energy():
 - **Full flexibility by default** — ligand torsions, ring conformers, chirality, intramolecular scoring at 300 K
 - **Non-aromatic ring sampling** — chair/boat/twist for 6-membered, envelope/twist for 5-membered rings, sugar pucker
 - **Chiral center discrimination** — explicit R/S sampling with stereochemical energy penalty
-- **Multi-format input** — MOL2, SDF/MOL V2000, and legacy INP
+- **Multi-format input** — PDB, CIF/mmCIF, MOL2, SDF/MOL V2000, SMILES (with automatic 3D coordinate generation), and legacy INP
 
 #### Hardware Acceleration
-- **Unified hardware dispatch** — automatic backend selection at runtime (CUDA > Metal > AVX-512 > AVX2 > OpenMP > scalar)
+- **Unified hardware dispatch** — automatic backend selection at runtime (CUDA > ROCm/HIP > Metal > AVX-512 > AVX2 > OpenMP > scalar)
 - **CUDA** — batch CF evaluation and Shannon entropy histograms (Volta through Hopper)
+- **ROCm/HIP** — AMD GPU acceleration for MI100 (gfx908), MI200 (gfx90a), and MI300 (gfx942)
 - **Metal** — Apple Silicon GPU for Shannon entropy, cavity detection, and evaluation
 - **SIMD** — AVX-512 and AVX2 vectorised geometric primitives
 - **OpenMP + Eigen3** — thread parallelism and vectorised linear algebra
 - **LTO binaries** — link-time optimized `FlexAIDdS` and `tENCoM` executables
 
+#### Vector Quantization
+- **TurboQuant** — near-optimal vector quantization (Zandieh et al. 2025, arXiv:2504.19874) for compressing 256-dim contact vectors and GA ensemble energy vectors, achieving distortion within 2.7x of the Shannon bound
+
 #### Analysis & Integration
 - **Python package** (`flexaidds`) — docking API, result I/O, thermodynamics, CLI inspector, PyMOL plugin
 - **Co-translational assembly** (NATURaL) — ribosome-speed chain growth with Sec translocon TM insertion; RNA receptors use differentiated secondary (k ~ 10⁴ s⁻¹) vs. Mg²⁺-dependent tertiary folding rates (Hill equation, K_d = 1 mM, n = 2) with corrected elongation rate of 25 nt/s (mRNA in vivo)
 - **Automatic cavity detection** — SURFNET gap-sphere algorithm with Metal GPU support
-- **[FreeNRG](https://github.com/lmorency/FreeNRG) integration** — unified free energy framework bridging FlexAID∆S and NRGRank
+- **Single JSON config** — all parameters in one file, sensible defaults for everything
 
 #### Distributed Docking (Bonhomme Fleet)
 - **Fleet scheduler** — distribute docking across Apple devices via iCloud Drive with automatic work-stealing
@@ -141,7 +160,8 @@ for mode in results.rank_by_free_energy():
 ### Requirements
 
 - **Required**: C++20 compiler (GCC >= 10, Clang >= 10, MSVC), CMake >= 3.18
-- **Optional**: Eigen3 (`libeigen3-dev`), OpenMP, CUDA Toolkit, Metal framework (macOS), pybind11
+- **Optional**: Eigen3 (`libeigen3-dev`), OpenMP, CUDA Toolkit, ROCm/HIP (AMD GPUs), Metal framework (macOS), pybind11
+- **Not required**: RDKit, Boost — ProcessLigand is pure C++20 + Eigen
 
 ### Output Binaries
 
@@ -150,6 +170,7 @@ for mode in results.rank_by_free_energy():
 | `FlexAID` | Standard docking executable |
 | `FlexAIDdS` | Optimized docking (LTO + `-march=native`) |
 | `tENCoM` | Vibrational entropy differential tool |
+| `flexaidds_process_ligand` | Standalone ligand preprocessing (SMILES → 3D, atom typing, .inp/.ga generation) |
 
 ### Build Variants
 
@@ -182,6 +203,7 @@ For cluster / HPC nodes, build once on the target architecture:
 | `BUILD_FLEXAIDDS_FAST`    | **ON**  | LTO-optimized FlexAIDdS binary           |
 | `ENABLE_TENCOM_TOOL`      | **ON**  | tENCoM vibrational entropy tool          |
 | `FLEXAIDS_USE_CUDA`       | OFF     | CUDA GPU acceleration                    |
+| `FLEXAIDS_USE_ROCM`       | OFF     | ROCm/HIP GPU acceleration (AMD MI100/MI200/MI300) |
 | `FLEXAIDS_USE_METAL`      | OFF     | Metal GPU acceleration (macOS)           |
 | `FLEXAIDS_USE_AVX2`       | ON      | AVX2 SIMD acceleration                   |
 | `FLEXAIDS_USE_AVX512`     | OFF     | AVX-512 SIMD acceleration                |
@@ -204,6 +226,15 @@ For cluster / HPC nodes, build once on the target architecture:
 ```bash
 # Full flexibility dock (all defaults, entropy at 300 K)
 ./FlexAIDdS receptor.pdb ligand.mol2
+
+# Argument order doesn't matter — auto-detected from file content
+./FlexAIDdS ligand.sdf receptor.cif
+
+# Dock from SMILES — 3D coordinates built automatically
+./FlexAIDdS receptor.pdb "c1ccc(NC(=O)C)cc1"
+
+# CIF/mmCIF receptor input
+./FlexAIDdS receptor.cif ligand.mol2
 
 # JSON config override
 ./FlexAIDdS receptor.pdb ligand.mol2 -c config.json
@@ -790,24 +821,15 @@ FlexAIDdS/
 
 ---
 
-## FreeNRG Integration
+## Documentation
 
-The [FreeNRG](https://github.com/lmorency/FreeNRG) package bridges FlexAID∆S with NRGRank in a unified free energy framework:
 
-```python
-from freenrg.pipeline import FreeNRGPipeline, FreeNRGConfig, DockingMode
-
-config = FreeNRGConfig(
-    mode=DockingMode.FLEXAID,
-    flexaid_binary="/path/to/FlexAID",
-    receptor_pdb="receptor.pdb",
-    ligand_inp="ligand.inp",
-    binding_site="cleft.pdb",
-)
-result = FreeNRGPipeline().run(config)
-```
-
-See [FREENRG_INTEGRATION.md](FREENRG_INTEGRATION.md) for details.
+| Document | Description |
+|:---------|:------------|
+| [Installation Guide](docs/INSTALLATION.md) | Prerequisites, build instructions, platform-specific notes, troubleshooting |
+| [User Guide](docs/USERGUIDE.md) | Full parameter reference, zero-config docking, Python API, PyMOL plugin, Fleet |
+| [Benchmarks](docs/BENCHMARKS.md) | Accuracy (ITC-187, CASF-2016, DUD-E) and hardware acceleration performance |
+| [Contributing](CONTRIBUTING.md) | Development setup, license policy, PR guidelines |
 
 ---
 
@@ -828,6 +850,59 @@ If you use FlexAID∆S in your research, please cite:
   *Proteins* 83(11):2073-82. [DOI:10.1002/prot.24922](https://doi.org/10.1002/prot.24922)
 
 - Morency LP & Najmanovich RJ (2026). FlexAID∆S: Information-Theoretic Entropy Improves Molecular Docking Accuracy and Binding Mode Prediction. *Manuscript in preparation.*
+
+---
+
+Full list: [Google Scholar](https://scholar.google.ca/citations?user=amFCT0oAAAAJ&hl=en)
+
+> **Primary citation** — if you use FlexAID∆S, please cite:
+>
+> Gaudreault F & Najmanovich RJ (2015). *J. Chem. Inf. Model.* 55(7):1323-36.
+> [DOI:10.1021/acs.jcim.5b00078](https://doi.org/10.1021/acs.jcim.5b00078)
+
+### FlexAID & Computational Biophysics
+
+1. **FlexAID∆S: Entropy-driven molecular docking** *(in preparation)*:
+   > Morency LP & Najmanovich RJ (2026). "FlexAID∆S: Information-Theoretic Entropy Improves Molecular Docking Accuracy and Binding Mode Prediction." *Manuscript in preparation.*
+
+2. **FlexAID in Drug Discovery** (first author):
+   > Morency LP, Gaudreault F & Najmanovich R (2018). *Methods Mol. Biol.* 1762:367-388. [DOI:10.1007/978-1-4939-7756-7_18](https://doi.org/10.1007/978-1-4939-7756-7_18)
+
+3. **Drug off-target detection**:
+   > Chartier M, Morency LP, Zylber MI & Najmanovich RJ (2017). *BMC Pharmacol. Toxicol.* 18(1):18. [DOI:10.1186/s40360-017-0128-7](https://doi.org/10.1186/s40360-017-0128-7)
+
+4. **NRGsuite PyMOL plugin**:
+   > Gaudreault F, Morency LP & Najmanovich RJ (2015). *Bioinformatics* 31(23):3856-8. [DOI:10.1093/bioinformatics/btv458](https://doi.org/10.1093/bioinformatics/btv458)
+
+5. **FlexAID docking engine**:
+   > Gaudreault F & Najmanovich RJ (2015). *J. Chem. Inf. Model.* 55(7):1323-36. [DOI:10.1021/acs.jcim.5b00078](https://doi.org/10.1021/acs.jcim.5b00078)
+
+6. **ENCoM** (Elastic Network Contact Model):
+   > Frappier V et al. (2015). *Proteins* 83(11):2073-82. [DOI:10.1002/prot.24922](https://doi.org/10.1002/prot.24922)
+
+### Biochemistry & Molecular Biology
+
+7. **GST tag alternative translation**:
+   > Bernier SC, Morency LP, Najmanovich R & Salesse C (2018). *J. Biotechnol.* 286:14-16. [DOI:10.1016/j.jbiotec.2018.09.003](https://doi.org/10.1016/j.jbiotec.2018.09.003)
+
+8. **TMPRSS6 isoform diversity**:
+   > Dion SP, Béliveau F, Morency LP, Désilets A, Najmanovich R & Leduc R (2018). *Sci. Rep.* 8(1):12562. [DOI:10.1038/s41598-018-30618-z](https://doi.org/10.1038/s41598-018-30618-z)
+
+### Medicinal Chemistry — HIV Antivirals (Boehringer Ingelheim)
+
+9. **NcRTI optimization**:
+   > Sturino CF, Bousquet Y, James CA, … Morency L, … Simoneau B (2013). *Bioorg. Med. Chem. Lett.* 23:3967-3975. [DOI:10.1016/j.bmcl.2013.04.043](https://doi.org/10.1016/j.bmcl.2013.04.043)
+
+10. **Non-basic NcRTI discovery**:
+    > James CA, DeRoy P, Duplessis M, … Morency L, … Sturino CF (2013). *Bioorg. Med. Chem. Lett.* 23(9):2781-6. [DOI:10.1016/j.bmcl.2013.02.021](https://doi.org/10.1016/j.bmcl.2013.02.021)
+
+11. **Benzofuranopyrimidinone NcRTI series**:
+    > Tremblay M, Bethell RC, Cordingley MG, … Morency L, … Sturino CF (2013). *Bioorg. Med. Chem. Lett.* 23(9):2775-80. [DOI:10.1016/j.bmcl.2013.01.058](https://doi.org/10.1016/j.bmcl.2013.01.058)
+
+**Related Work** (Inspiration Only):
+- **NRGRank** (GPL-3.0, *not a dependency*):
+  > Gaudreault et al. (2024). bioRxiv preprint.
+  > *Note*: FlexAID∆S reimplements cube screening from first principles (Apache-2.0). No GPL code included. See [clean-room policy](docs/licensing/clean-room-policy.md).
 
 ---
 

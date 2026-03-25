@@ -19,15 +19,12 @@ FlexAIDdS/
 │   ├── statmech.cpp/h       # StatMechEngine: partition function, free energy, entropy
 │   ├── BindingMode.cpp/h    # Pose clustering & thermodynamic integration
 │   ├── encom.cpp/h          # Elastic network contact model (vibrational entropy)
-│   ├── tencm.cpp/h          # Torsional ENCoM backbone flexibility
-│   ├── tencom_diff.cpp/h    # tENCoM differential engine
-│   ├── tencom_output.cpp/h  # tENCoM output formatter
-│   ├── tencom_main.cpp      # tENCoM command-line entry point
 │   ├── Mol2Reader.cpp/h     # MOL2 file reader
 │   ├── SdfReader.cpp/h      # SDF file reader
 │   ├── CleftDetector.cpp/h  # Binding-site cleft detection
 │   ├── VoronoiCFBatch.h     # Batch Voronoi CF evaluation (header-only, std::span)
 │   ├── fileio.cpp/h         # File I/O utilities
+│   ├── tENCoM/              # Torsional ENCoM backbone flexibility module
 │   ├── ShannonThermoStack/  # Shannon configurational entropy + HW acceleration
 │   ├── LigandRingFlex/      # Non-aromatic ring & sugar pucker sampling
 │   ├── ChiralCenter/        # R/S stereocenter discrimination
@@ -67,6 +64,17 @@ FlexAIDdS/
 
 ### LIB/ Subdirectory Modules
 
+**tENCoM/** — Torsional ENCoM backbone flexibility:
+- `tencm.cpp/h` — TorsionalENM class (Hessian assembly, Jacobi diagonalization, sampling)
+- `tencom_diff.cpp/h` — Differential engine (eigenvalue/eigenvector overlaps, ΔS_vib)
+- `tencom_output.cpp/h` — Output formatter (PDB/JSON/CSV with REMARK metadata)
+- `tencom_main.cpp` — Standalone CLI entry point
+- `tencom_entropy_diff.cpp` — Entropy differential standalone tool
+- `pdb_calpha.cpp/h` — Lightweight Cα/C4' PDB backbone reader
+- `benchmark_tencom.cpp` — Performance benchmark
+- `tencm_cuda.cu/cuh` — CUDA GPU contact discovery + Hessian assembly
+- `tencm_metal.h/mm` — Metal GPU bridge
+
 **ShannonThermoStack/** — Shannon configurational entropy with hardware acceleration:
 - `ShannonThermoStack.cpp/h` — Hardware dispatch layer (CPU/CUDA/Metal)
 - `shannon_cuda.cu/cuh` — CUDA kernel for histogram binning
@@ -94,7 +102,7 @@ FlexAIDdS/
 ### LIB/ Additional Source Files (by category)
 
 **Coordinate & structure management:**
-`ic2cf.cpp`, `ic_bounds.cpp`, `read_coor.cpp`, `calc_rmsd.cpp`, `calc_rmsd_chrom.cpp`, `calc_rmsp.cpp`, `pdb_calpha.cpp/h`, `geometry.cpp`, `modify_pdb.cpp`, `write_pdb.cpp`, `read_pdb.cpp`, `read_conect.cpp`, `residue_conect.cpp`, `shortest_path.cpp`
+`ic2cf.cpp`, `ic_bounds.cpp`, `read_coor.cpp`, `calc_rmsd.cpp`, `calc_rmsd_chrom.cpp`, `calc_rmsp.cpp`, `geometry.cpp`, `modify_pdb.cpp`, `write_pdb.cpp`, `read_pdb.cpp`, `read_conect.cpp`, `residue_conect.cpp`, `shortest_path.cpp`
 
 **Ligand & rotamer handling:**
 `read_lig.cpp`, `build_rotamers.cpp`, `read_rotlib.cpp`, `read_rotobs.cpp`, `buildcc.cpp`, `buildcc_point.cpp`, `buildic.cpp`, `buildic_point.cpp`, `build_close.cpp`, `bondedlist.cpp`, `update_bonded.cpp`
@@ -118,7 +126,7 @@ FlexAIDdS/
 `read_input.cpp`, `read_emat.cpp`, `read_flexscfile.cpp`, `read_constraints.cpp`, `read_rmsdst.cpp`, `top.cpp`
 
 **Benchmarks:**
-`benchmark_tencom.cpp`, `benchmark_vcfbatch.cpp`
+`benchmark_vcfbatch.cpp`
 
 **Legacy/internal:**
 `python_bindings.cpp` (legacy pybind11 stub), `add2_optimiz_vec.cpp`, `alter_mode.cpp`, `buildlist.cpp`, `create_rebuild_list.cpp`, `print_surfmat.cpp`, `read_eigen.cpp`, `update_optres.cpp`, `wif083.cpp`
@@ -354,8 +362,8 @@ Plugin files: `gui.py` (FlexAIDSPanel widget), `visualization.py` (rendering), `
 | `LIB/Vcontacts.cpp` | Voronoi contact scoring |
 | `LIB/BindingMode.cpp` | Pose clustering + thermodynamics |
 | `LIB/encom.cpp` | ENCoM vibrational entropy |
-| `LIB/tencm.cpp` | Torsional ENCoM backbone flexibility |
-| `LIB/tencom_diff.cpp` | tENCoM differential engine |
+| `LIB/tENCoM/tencm.cpp` | Torsional ENCoM backbone flexibility |
+| `LIB/tENCoM/tencom_diff.cpp` | tENCoM differential engine |
 | `LIB/Mol2Reader.cpp` | MOL2 molecular file reader |
 | `LIB/SdfReader.cpp` | SDF molecular file reader |
 | `LIB/CleftDetector.cpp` | Binding-site cleft detection |

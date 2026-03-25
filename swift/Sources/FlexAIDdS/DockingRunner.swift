@@ -96,6 +96,105 @@ public actor DockingRunner {
         return ThermodynamicResult(from: fx_statmech_compute(engineRef))
     }
 
+    // MARK: - Shannon Entropy Decomposition
+
+    /// Extract the ShannonThermoStack decomposition from the GA context.
+    ///
+    /// Returns a `ShannonEntropyDecomposition` with configurational/vibrational
+    /// split, convergence diagnostics, and histogram summary for the oracle referee.
+    public func extractShannonDecomposition() -> ShannonEntropyDecomposition? {
+        guard let ctx = contextRef else { return nil }
+
+        // Query the ShannonThermoStack result from the C bridge
+        var thermoResult = FXShannonThermoResult()
+        guard fx_ga_get_shannon_thermo(ctx, &thermoResult) != 0 else { return nil }
+
+        // Extract per-mode entropy if available
+        var perModeEntropy: [Double] = []
+        if let pop = population {
+            let modeCount = Int(fx_population_size(pop))
+            for i in 0..<modeCount {
+                if let modeRef = fx_population_get_mode(pop, Int32(i)) {
+                    let modeThermo = fx_mode_thermodynamics(modeRef)
+                    perModeEntropy.append(modeThermo.entropy)
+                }
+            }
+        }
+
+        // Extract dominant histogram bins (top 5 most populated)
+        var dominantBins: [(center: Double, probability: Double)] = []
+        let binCount = Int(thermoResult.num_histogram_bins)
+        if binCount > 0 {
+            var binPairs: [(center: Double, probability: Double)] = []
+            // Access fixed-size C arrays via withUnsafePointer
+            withUnsafePointer(to: thermoResult.histogram_centers) { centersPtr in
+                withUnsafePointer(to: thermoResult.histogram_probs) { probsPtr in
+                    centersPtr.withMemoryRebound(to: Double.self, capacity: binCount) { centers in
+                        probsPtr.withMemoryRebound(to: Double.self, capacity: binCount) { probs in
+                            for i in 0..<binCount {
+                                let prob = probs[i]
+                                if prob > 0 {
+                                    binPairs.append((center: centers[i], probability: prob))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            // Sort by probability descending, take top 5
+            binPairs.sort { $0.probability > $1.probability }
+            dominantBins = Array(binPairs.prefix(5))
+        }
+
+        // Detect convergence from entropy history
+        let isConverged = thermoResult.is_converged != 0
+        let convergenceRate = thermoResult.convergence_rate
+
+        // Determine hardware backend string
+        let backend = withUnsafePointer(to: thermoResult.hardware_backend) { ptr in
+            ptr.withMemoryRebound(to: CChar.self, capacity: 32) { cstr in
+                String(cString: cstr)
+            }
+        }
+
+        let occupiedBins = Int(thermoResult.occupied_bins)
+        let totalBins = Int(thermoResult.total_bins)
+
+        return ShannonEntropyDecomposition(
+            configurational: thermoResult.shannon_entropy,
+            vibrational: thermoResult.torsional_vib_entropy,
+            entropyContribution: thermoResult.entropy_contribution,
+            isConverged: isConverged,
+            convergenceRate: convergenceRate,
+            hardwareBackend: backend,
+            occupiedBins: occupiedBins,
+            totalBins: totalBins,
+            perModeEntropy: perModeEntropy,
+            dominantBins: dominantBins
+        )
+    }
+
+    // MARK: - Convenience: Run + Extract Decomposition
+
+    /// Run the GA and extract the Shannon entropy decomposition in one call.
+    ///
+    /// Chains: run() → extractShannonDecomposition().
+    /// The caller can then build a `BindingEntropyScore` and pass it to
+    /// `RuleBasedReferee` or `ThermoReferee`.
+    ///
+    /// - Returns: Tuple of the docking result and optional Shannon decomposition
+    public func runWithDecomposition() async throws -> (DockingResult, ShannonEntropyDecomposition?) {
+        let result = try await run()
+        let decomposition = extractShannonDecomposition()
+        return (result, decomposition)
+    }
+
+    /// Access the raw GA context ref for Tool callbacks (ThermoReferee).
+    /// Only valid while this actor is alive and run() has completed.
+    public var gaContextRef: FXGAContextRef? {
+        contextRef
+    }
+
     // MARK: - Private Helpers
 
     private func extractResults() -> DockingResult {

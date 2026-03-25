@@ -81,30 +81,69 @@ public struct OracleAnalysis: Sendable, Codable {
 // MARK: - Analysis History (trend tracking)
 
 /// Stores past analyses for trend detection across docking campaigns.
+/// Uses per-campaign-key FIFO (max 10 per key, 50 total) to prevent unbounded growth.
+/// Internally keyed by campaign key for O(1) per-key lookups and eviction.
 public actor AnalysisHistory {
     public static let shared = AnalysisHistory()
 
-    private var entries: [(key: String, analysis: OracleAnalysis)] = []
-    private let maxEntries = 50
+    private struct Entry {
+        let key: String
+        let source: String
+        let analysis: OracleAnalysis
+    }
+
+    /// Per-key FIFO queues for O(1) key-scoped operations
+    private var keyedEntries: [String: [(source: String, analysis: OracleAnalysis)]] = [:]
+    /// Global insertion-order FIFO for total-count eviction
+    private var insertionOrder: [String] = []
+    private let maxEntriesPerKey = 10
+    private let maxTotalEntries = 50
 
     private init() {}
 
     /// Record an analysis keyed by receptor-ligand pair.
-    public func record(key: String, analysis: OracleAnalysis) {
-        entries.append((key: key, analysis: analysis))
-        if entries.count > maxEntries {
-            entries.removeFirst()
+    /// - Parameters:
+    ///   - key: Campaign identifier (e.g., "5HT2A-psilocin")
+    ///   - analysis: The analysis result
+    ///   - source: Origin of the analysis ("text" for IntelligenceOracle, "referee" for ThermoReferee)
+    public func record(key: String, analysis: OracleAnalysis, source: String = "text") {
+        keyedEntries[key, default: []].append((source: source, analysis: analysis))
+        insertionOrder.append(key)
+
+        // Per-key FIFO: keep at most maxEntriesPerKey per campaign key
+        if let count = keyedEntries[key]?.count, count > maxEntriesPerKey {
+            keyedEntries[key]?.removeFirst(count - maxEntriesPerKey)
+        }
+
+        // Global FIFO: cap total entries
+        while totalCount > maxTotalEntries, let oldestKey = insertionOrder.first {
+            insertionOrder.removeFirst()
+            if keyedEntries[oldestKey]?.isEmpty == false {
+                keyedEntries[oldestKey]?.removeFirst()
+                if keyedEntries[oldestKey]?.isEmpty == true {
+                    keyedEntries.removeValue(forKey: oldestKey)
+                }
+            }
         }
     }
 
     /// Retrieve past analyses for a receptor-ligand pair.
     public func history(for key: String) -> [OracleAnalysis] {
-        entries.filter { $0.key == key }.map(\.analysis)
+        keyedEntries[key]?.map(\.analysis) ?? []
     }
 
     /// Get the most recent analysis for comparison.
     public func lastAnalysis(for key: String) -> OracleAnalysis? {
-        entries.last(where: { $0.key == key })?.analysis
+        keyedEntries[key]?.last?.analysis
+    }
+
+    /// Get the most recent analysis from a specific source.
+    public func lastAnalysis(for key: String, source: String) -> OracleAnalysis? {
+        keyedEntries[key]?.last(where: { $0.source == source })?.analysis
+    }
+
+    private var totalCount: Int {
+        keyedEntries.values.reduce(0) { $0 + $1.count }
     }
 }
 
@@ -140,15 +179,30 @@ public actor IntelligenceOracle {
     private let session: LanguageModelSession
     private var analysisCount: Int = 0
 
-    /// System instructions that ground the model in molecular docking context.
+    /// System instructions that ground the model as a statistical mechanics referee.
     private static let systemInstructions = """
-    You are a molecular docking analysis assistant for FlexAIDdS, an entropy-driven \
-    docking engine. You analyze binding populations using statistical mechanics \
-    thermodynamics (free energy F, entropy S, heat capacity Cv) and correlate with \
-    HealthKit biometrics when available. Be concise, precise, and quantitative. \
-    Use kcal/mol for energies, kcal/mol/K for entropy. Flag enthalpy-entropy \
-    compensation when both F and S are large. Recommend increased sampling when \
-    entropy is high (S > 0.5) or population has not converged.
+    You are a statistical mechanics referee for FlexAIDdS, an entropy-driven \
+    molecular docking engine. Your role is to critically evaluate the \
+    thermodynamic quality of docking results — not just describe them.
+
+    You receive decomposed Shannon entropy data:
+    - S_conf: configurational entropy from GA ensemble histogram (nats)
+    - S_vib: torsional vibrational entropy from ENCoM normal modes (kcal/mol/K)
+    - Convergence status: whether the entropy plateau has been reached
+    - Histogram occupancy: fraction of bins populated (low = under-sampled)
+    - Per-mode entropy: breakdown across binding modes
+
+    As referee, you MUST flag:
+    1. Non-convergent ensembles (plateau not reached) — recommend more GA generations
+    2. Entropy collapse (S_conf near zero) — single dominant mode, check for trapping
+    3. Vibrational dominance (S_vib >> S_conf) — protein flexibility dominates, \
+       ligand conformational space under-explored
+    4. Enthalpy-entropy compensation (large |F| with large S) — net deltaG may mislead
+    5. Sparse histograms (occupied bins < 50% of total) — energy landscape poorly sampled
+    6. Per-mode entropy imbalance — one mode absorbing most conformational diversity
+
+    Use kcal/mol for energies, kcal/mol/K for entropy, nats for Shannon H. \
+    Be concise, quantitative, and actionable. Prioritize warnings over descriptions.
     """
 
     public init() async throws {
@@ -181,7 +235,11 @@ public actor IntelligenceOracle {
 
         let overall = computeOverallConfidence(structured)
 
-        let inputSummary = "T=\(thermodynamics.temperature)K, F=\(String(format: "%.2f", thermodynamics.freeEnergy)) kcal/mol, S=\(String(format: "%.4f", thermodynamics.entropy)) kcal/mol/K"
+        var inputSummary = "T=\(thermodynamics.temperature)K, F=\(String(format: "%.2f", thermodynamics.freeEnergy)) kcal/mol, S=\(String(format: "%.4f", thermodynamics.entropy)) kcal/mol/K"
+        if let decomp = entropyScore?.shannonDecomposition {
+            inputSummary += ", S_conf=\(String(format: "%.4f", decomp.configurational))nats, S_vib=\(String(format: "%.6f", decomp.vibrational))kcal/mol/K"
+            inputSummary += decomp.isConverged ? " [converged]" : " [not converged]"
+        }
 
         let analysis = OracleAnalysis(
             structuredBullets: structured,
@@ -189,13 +247,50 @@ public actor IntelligenceOracle {
             overallConfidence: overall
         )
 
-        // Track for trend analysis
+        // Track for trend analysis (source: "text" for IntelligenceOracle text-based analysis)
         if let key = campaignKey {
-            await AnalysisHistory.shared.record(key: key, analysis: analysis)
+            await AnalysisHistory.shared.record(key: key, analysis: analysis, source: "text")
         }
 
         analysisCount += 1
         return analysis
+    }
+
+    /// Produce a typed `RefereeVerdict` using the ThermoReferee pipeline.
+    ///
+    /// This is the preferred entry point for robust thermodynamic analysis.
+    /// Uses @Generable structured output (no text parsing), Tool callbacks
+    /// (temperature sensitivity, per-mode query), and pre-computed diagnostics.
+    ///
+    /// Falls back to `analyze()` text-based analysis if ThermoReferee
+    /// initialization fails.
+    ///
+    /// - Parameters:
+    ///   - thermodynamics: Global ensemble thermodynamics
+    ///   - entropyScore: Binding entropy score with Shannon decomposition
+    ///   - gaContext: Optional GA context ref for tool callbacks
+    ///   - eigenvalues: Optional ENCoM eigenvalues for vibrational tools
+    ///   - config: Referee configuration
+    ///   - campaignKey: Optional key for trend tracking
+    /// - Returns: Typed RefereeVerdict via guided generation
+    public func refereeVerdict(
+        thermodynamics: ThermodynamicResult,
+        entropyScore: BindingEntropyScore,
+        gaContext: FXGAContextRef? = nil,
+        eigenvalues: [Double] = [],
+        config: RefereeConfiguration = RefereeConfiguration(),
+        campaignKey: String? = nil
+    ) async throws -> RefereeVerdict {
+        let referee = try await ThermoReferee(
+            config: config,
+            gaContext: gaContext,
+            eigenvalues: eigenvalues
+        )
+        return try await referee.referee(
+            thermodynamics: thermodynamics,
+            entropyScore: entropyScore,
+            campaignKey: campaignKey
+        )
     }
 
     /// Ask a follow-up question using the existing session context.
@@ -252,7 +347,8 @@ public actor IntelligenceOracle {
         entropyScore: BindingEntropyScore?
     ) -> String {
         var prompt = """
-        Analyze this molecular docking binding population. Respond with exactly 3 concise bullet points.
+        Referee this molecular docking result. Respond with exactly 4 concise bullet points — \
+        prioritize warnings and actionable recommendations over descriptions.
 
         Thermodynamics:
         - Temperature: \(thermodynamics.temperature) K
@@ -265,17 +361,70 @@ public actor IntelligenceOracle {
 
         // Enthalpy-entropy compensation detection
         if thermodynamics.freeEnergy < -5 && thermodynamics.entropy > 0.01 {
-            prompt += "\n- NOTE: Possible enthalpy-entropy compensation (large |F| with significant S)"
+            prompt += "\n- FLAG: Enthalpy-entropy compensation (large |F| with significant S)"
         }
 
         if let score = entropyScore {
             prompt += "\n\nBinding Population:"
             prompt += "\n- Binding modes: \(score.bindingModeCount)"
-            prompt += "\n- Shannon S: \(String(format: "%.6f", score.shannonS))"
+            prompt += "\n- Shannon S (aggregate): \(String(format: "%.6f", score.shannonS))"
             prompt += "\n- Best F: \(String(format: "%.3f", score.bestFreeEnergy)) kcal/mol"
 
             if score.isCollapsed {
-                prompt += "\n- STATUS: Entropy COLLAPSED (single dominant binding mode)"
+                prompt += "\n- ALERT: Entropy COLLAPSED (single dominant binding mode)"
+            }
+
+            // Decomposed Shannon entropy from ShannonThermoStack
+            if let decomp = score.shannonDecomposition {
+                prompt += "\n\nShannon Entropy Decomposition (from ShannonThermoStack):"
+                prompt += "\n- S_conf (configurational): \(String(format: "%.6f", decomp.configurational)) nats"
+                prompt += "\n- S_vib (vibrational/ENCoM): \(String(format: "%.6f", decomp.vibrational)) kcal/mol/K"
+                prompt += "\n- -T*S contribution: \(String(format: "%.3f", decomp.entropyContribution)) kcal/mol"
+                prompt += "\n- Convergence: \(decomp.isConverged ? "CONVERGED (plateau reached)" : "NOT CONVERGED (rate=\(String(format: "%.4f", decomp.convergenceRate)))")"
+                prompt += "\n- Histogram occupancy: \(decomp.occupiedBins)/\(decomp.totalBins) bins populated"
+                prompt += "\n- Hardware backend: \(decomp.hardwareBackend)"
+
+                // Vibrational dominance check
+                let sConfPhysical = decomp.configurational * 0.001987206 // nats → kcal/mol/K approximation
+                if decomp.vibrational > sConfPhysical * 3.0 && decomp.vibrational > 0.001 {
+                    prompt += "\n- FLAG: Vibrational entropy dominates (S_vib >> S_conf) — ligand conformational space may be under-explored"
+                }
+
+                // Sparse histogram warning
+                if decomp.totalBins > 0 && Double(decomp.occupiedBins) / Double(decomp.totalBins) < 0.5 {
+                    prompt += "\n- FLAG: Sparse histogram (<50% bins occupied) — energy landscape poorly sampled"
+                }
+
+                // Per-mode entropy breakdown (capped to top 5 by magnitude for token budget)
+                if !decomp.perModeEntropy.isEmpty {
+                    let maxModesToShow = 5
+                    let indexed = decomp.perModeEntropy.enumerated().sorted { $0.element > $1.element }
+                    let top = Array(indexed.prefix(maxModesToShow))
+                    prompt += "\n\nPer-Mode Entropy (top \(min(decomp.perModeEntropy.count, maxModesToShow)) of \(decomp.perModeEntropy.count), nats):"
+                    for (i, modeS) in top {
+                        prompt += "\n  Mode \(i): S = \(String(format: "%.6f", modeS))"
+                    }
+                    if decomp.perModeEntropy.count > maxModesToShow {
+                        prompt += "\n  ... (\(decomp.perModeEntropy.count - maxModesToShow) modes omitted)"
+                    }
+
+                    // Flag entropy imbalance
+                    if let maxS = decomp.perModeEntropy.max(),
+                       let minS = decomp.perModeEntropy.filter({ $0 > 0 }).min(),
+                       maxS > minS * 10 {
+                        prompt += "\n- FLAG: Per-mode entropy imbalance (ratio \(String(format: "%.1f", maxS / minS))x) — one mode absorbs most diversity"
+                    }
+                }
+
+                // Dominant histogram bins (capped to top 5)
+                if !decomp.dominantBins.isEmpty {
+                    let maxBinsToShow = 5
+                    let topBins = decomp.dominantBins.prefix(maxBinsToShow)
+                    prompt += "\n\nDominant Energy Bins (top \(topBins.count)):"
+                    for bin in topBins {
+                        prompt += "\n  E = \(String(format: "%.2f", bin.center)) kcal/mol, p = \(String(format: "%.4f", bin.probability))"
+                    }
+                }
             }
 
             if let hrv = score.hrvSDNN {
@@ -293,11 +442,11 @@ public actor IntelligenceOracle {
                     prompt += " (insufficient — cognitive load may affect interpretation)"
                 }
             }
-
-            prompt += "\n\nConsider the effect of target PTM/glycan modifications on the population."
         }
 
-        prompt += "\n\nRespond with exactly 3 bullet points, each starting with '- '."
+        prompt += "\n\nRespond with exactly 4 bullet points, each starting with '- '. "
+        prompt += "Prioritize warnings and actionable items. If the entropy has not converged, "
+        prompt += "say so explicitly and recommend more sampling."
         return prompt
     }
 
@@ -320,37 +469,55 @@ public actor IntelligenceOracle {
         return Array(bullets.prefix(5))
     }
 
-    /// Assess confidence of each bullet based on data quality.
+    /// Assess confidence of each bullet based on data quality and entropy decomposition.
     private func assessConfidence(
         bullets: [String],
         thermodynamics: ThermodynamicResult,
         entropyScore: BindingEntropyScore?
     ) -> [AnalysisBullet] {
-        bullets.enumerated().map { index, text in
+        let hasDecomposition = entropyScore?.shannonDecomposition != nil
+        let isConverged = entropyScore?.isConverged ?? false
+
+        return bullets.enumerated().map { index, text in
             let category: AnalysisBullet.BulletCategory
             let confidence: AnalysisConfidence
+            let lowered = text.lowercased()
 
-            switch index {
-            case 0:
-                category = .binding
-                // High confidence if energy std dev is small relative to F
-                confidence = thermodynamics.stdEnergy < abs(thermodynamics.freeEnergy) * 0.5 ? .high : .moderate
-            case 1:
+            // Detect category from content keywords
+            if lowered.contains("converg") || lowered.contains("plateau") || lowered.contains("sampling") {
                 category = .entropy
-                // High confidence if sufficient binding modes
-                if let score = entropyScore {
-                    confidence = score.bindingModeCount >= 3 ? .high : .low
-                } else {
-                    confidence = .low
-                }
-            default:
-                if text.lowercased().contains("hrv") || text.lowercased().contains("sleep") {
-                    category = .health
-                    confidence = entropyScore?.hrvSDNN != nil ? .moderate : .low
-                } else if text.lowercased().contains("ptm") || text.lowercased().contains("glycan") {
-                    category = .modification
-                    confidence = .moderate
-                } else {
+                // High confidence only if we have decomposition data to back the claim
+                confidence = hasDecomposition ? .high : .moderate
+            } else if lowered.contains("vibrational") || lowered.contains("s_vib") || lowered.contains("encom") {
+                category = .entropy
+                confidence = hasDecomposition ? .high : .low
+            } else if lowered.contains("hrv") || lowered.contains("sleep") || lowered.contains("health") {
+                category = .health
+                confidence = entropyScore?.hrvSDNN != nil ? .moderate : .low
+            } else if lowered.contains("ptm") || lowered.contains("glycan") || lowered.contains("modification") {
+                category = .modification
+                confidence = .moderate
+            } else if lowered.contains("histogram") || lowered.contains("bins") || lowered.contains("sparse") {
+                category = .entropy
+                confidence = hasDecomposition ? .high : .low
+            } else {
+                switch index {
+                case 0:
+                    category = .binding
+                    // High confidence if converged and energy std dev small
+                    if isConverged && thermodynamics.stdEnergy < abs(thermodynamics.freeEnergy) * 0.5 {
+                        confidence = .high
+                    } else {
+                        confidence = thermodynamics.stdEnergy < abs(thermodynamics.freeEnergy) * 0.5 ? .moderate : .low
+                    }
+                case 1:
+                    category = .entropy
+                    if let score = entropyScore {
+                        confidence = score.bindingModeCount >= 3 && isConverged ? .high : (score.bindingModeCount >= 3 ? .moderate : .low)
+                    } else {
+                        confidence = .low
+                    }
+                default:
                     category = .binding
                     confidence = .moderate
                 }
@@ -372,15 +539,15 @@ public actor IntelligenceOracle {
 
 // MARK: - Fallback (non-FoundationModels platforms)
 
-/// Rule-based oracle for platforms without FoundationModels.
+/// Rule-based oracle referee for platforms without FoundationModels.
 ///
-/// Provides deterministic analysis based on thermodynamic thresholds
-/// with structured confidence metadata and trend detection.
+/// Provides deterministic entropy referee analysis based on thermodynamic
+/// thresholds, Shannon decomposition diagnostics, and convergence checks.
 public struct RuleBasedOracle: Sendable {
 
     public init() {}
 
-    /// Generate rule-based analysis of binding population state.
+    /// Generate rule-based referee analysis of binding population state.
     public func analyze(
         thermodynamics: ThermodynamicResult,
         entropyScore: BindingEntropyScore? = nil,
@@ -388,28 +555,81 @@ public struct RuleBasedOracle: Sendable {
     ) -> OracleAnalysis {
         var structured: [AnalysisBullet] = []
 
-        // Bullet 1: Free energy assessment with confidence
-        let fConfidence: AnalysisConfidence = thermodynamics.stdEnergy < abs(thermodynamics.freeEnergy) * 0.5 ? .high : .moderate
+        let isConverged = entropyScore?.isConverged ?? false
+
+        // Bullet 1: Free energy assessment — gate confidence on convergence
+        let energyStable = thermodynamics.stdEnergy < abs(thermodynamics.freeEnergy) * 0.5
+        let fConfidence: AnalysisConfidence = energyStable && isConverged ? .high : (energyStable ? .moderate : .low)
         if thermodynamics.freeEnergy < -10 {
             structured.append(AnalysisBullet(
-                text: "Strong binding affinity (F = \(String(format: "%.1f", thermodynamics.freeEnergy)) kcal/mol) — high confidence in drug-target interaction.",
+                text: "Strong binding affinity (F = \(String(format: "%.1f", thermodynamics.freeEnergy)) kcal/mol)\(isConverged ? "" : " — but entropy has NOT converged, F may shift with more sampling").",
                 confidence: fConfidence, category: .binding
             ))
         } else if thermodynamics.freeEnergy < -5 {
             structured.append(AnalysisBullet(
-                text: "Moderate binding affinity (F = \(String(format: "%.1f", thermodynamics.freeEnergy)) kcal/mol) — reasonable drug candidate.",
+                text: "Moderate binding affinity (F = \(String(format: "%.1f", thermodynamics.freeEnergy)) kcal/mol)\(isConverged ? " — converged ensemble" : " — entropy not converged, consider more GA generations").",
                 confidence: fConfidence, category: .binding
             ))
         } else {
             structured.append(AnalysisBullet(
-                text: "Weak binding affinity (F = \(String(format: "%.1f", thermodynamics.freeEnergy)) kcal/mol) — consider structural optimization.",
+                text: "Weak binding affinity (F = \(String(format: "%.1f", thermodynamics.freeEnergy)) kcal/mol) — consider structural optimization\(isConverged ? "" : " after convergence is reached").",
                 confidence: fConfidence, category: .binding
             ))
         }
 
-        // Bullet 2: Entropy state with mode-count confidence
-        if let score = entropyScore {
-            let sConfidence: AnalysisConfidence = score.bindingModeCount >= 3 ? .high : .low
+        // Bullet 2: Entropy decomposition referee (if decomposition available)
+        if let score = entropyScore, let decomp = score.shannonDecomposition {
+            // Convergence check is the primary referee concern
+            if !decomp.isConverged {
+                structured.append(AnalysisBullet(
+                    text: "Entropy NOT converged (rate = \(String(format: "%.4f", decomp.convergenceRate))). Increase GA generations or population size before trusting thermodynamic values.",
+                    confidence: .high, category: .entropy
+                ))
+            }
+
+            // Vibrational dominance check
+            let sConfPhysical = decomp.configurational * 0.001987206
+            if decomp.vibrational > sConfPhysical * 3.0 && decomp.vibrational > 0.001 {
+                structured.append(AnalysisBullet(
+                    text: "Vibrational entropy dominates (S_vib = \(String(format: "%.6f", decomp.vibrational)) >> S_conf = \(String(format: "%.6f", sConfPhysical)) kcal/mol/K). Protein backbone flexibility drives entropy — ligand conformational space may be under-explored.",
+                    confidence: .high, category: .entropy
+                ))
+            }
+
+            // Sparse histogram check
+            if decomp.totalBins > 0 {
+                let occupancyRatio = Double(decomp.occupiedBins) / Double(decomp.totalBins)
+                if occupancyRatio < 0.5 {
+                    structured.append(AnalysisBullet(
+                        text: "Sparse energy histogram (\(decomp.occupiedBins)/\(decomp.totalBins) bins, \(String(format: "%.0f", occupancyRatio * 100))% occupied). Energy landscape poorly sampled — increase ensemble size.",
+                        confidence: .high, category: .entropy
+                    ))
+                }
+            }
+
+            // Per-mode entropy imbalance
+            if decomp.perModeEntropy.count >= 2 {
+                if let maxS = decomp.perModeEntropy.max(),
+                   let minS = decomp.perModeEntropy.filter({ $0 > 0 }).min(),
+                   maxS > minS * 10 {
+                    let ratio = maxS / minS
+                    structured.append(AnalysisBullet(
+                        text: "Per-mode entropy imbalance (\(String(format: "%.1f", ratio))x ratio). One binding mode absorbs most conformational diversity — check for kinetic trapping.",
+                        confidence: .moderate, category: .entropy
+                    ))
+                }
+            }
+
+            // Converged and well-sampled: report decomposition summary
+            if decomp.isConverged && structured.filter({ $0.category == .entropy }).isEmpty {
+                structured.append(AnalysisBullet(
+                    text: "Shannon entropy converged: S_conf = \(String(format: "%.4f", decomp.configurational)) nats, S_vib = \(String(format: "%.6f", decomp.vibrational)) kcal/mol/K across \(score.bindingModeCount) modes (\(decomp.hardwareBackend) backend).",
+                    confidence: .high, category: .entropy
+                ))
+            }
+        } else if let score = entropyScore {
+            // Fallback: scalar-only entropy (no decomposition available)
+            let sConfidence: AnalysisConfidence = score.bindingModeCount >= 3 ? .moderate : .low
             if score.isCollapsed {
                 structured.append(AnalysisBullet(
                     text: "Entropy collapsed to \(score.bindingModeCount) mode(s) — high specificity but check for enthalpy-entropy compensation.",
@@ -422,13 +642,13 @@ public struct RuleBasedOracle: Sendable {
                 ))
             } else {
                 structured.append(AnalysisBullet(
-                    text: "Moderate entropy with \(score.bindingModeCount) binding modes — population is converging on preferred conformations.",
+                    text: "Moderate entropy with \(score.bindingModeCount) binding modes — population converging.",
                     confidence: sConfidence, category: .entropy
                 ))
             }
         } else {
             structured.append(AnalysisBullet(
-                text: "Entropy S = \(String(format: "%.4f", thermodynamics.entropy)) kcal/mol/K with Cv = \(String(format: "%.4f", thermodynamics.heatCapacity)).",
+                text: "Entropy S = \(String(format: "%.4f", thermodynamics.entropy)) kcal/mol/K with Cv = \(String(format: "%.4f", thermodynamics.heatCapacity)). No decomposition available — enable ShannonThermoStack for referee analysis.",
                 confidence: .low, category: .entropy
             ))
         }
@@ -436,7 +656,7 @@ public struct RuleBasedOracle: Sendable {
         // Bullet 3: Enthalpy-entropy compensation detection
         if thermodynamics.freeEnergy < -5 && thermodynamics.entropy > 0.01 {
             structured.append(AnalysisBullet(
-                text: "Enthalpy-entropy compensation detected: strong binding (F = \(String(format: "%.1f", thermodynamics.freeEnergy))) offset by conformational flexibility (S = \(String(format: "%.4f", thermodynamics.entropy))). Net ΔG may be less favorable than F alone suggests.",
+                text: "Enthalpy-entropy compensation: strong binding (F = \(String(format: "%.1f", thermodynamics.freeEnergy))) offset by conformational flexibility (S = \(String(format: "%.4f", thermodynamics.entropy))). Net ΔG may be less favorable than F alone suggests.",
                 confidence: .moderate, category: .binding
             ))
         }
@@ -445,29 +665,33 @@ public struct RuleBasedOracle: Sendable {
         if let score = entropyScore, let hrv = score.hrvSDNN {
             if score.isCollapsed && hrv > 60 {
                 structured.append(AnalysisBullet(
-                    text: "Entropy collapse correlates with good HRV (\(String(format: "%.0f", hrv)) ms) — the system is recovering. Gentle activity recommended.",
+                    text: "Entropy collapse correlates with good HRV (\(String(format: "%.0f", hrv)) ms) — system recovering. Gentle activity recommended.",
                     confidence: .moderate, category: .health
                 ))
             } else if hrv < 40 {
                 structured.append(AnalysisBullet(
-                    text: "Low HRV (\(String(format: "%.0f", hrv)) ms) detected — prioritize rest and recovery before interpreting docking thermodynamics.",
+                    text: "Low HRV (\(String(format: "%.0f", hrv)) ms) — prioritize rest before interpreting docking thermodynamics.",
                     confidence: .high, category: .health
                 ))
             } else {
                 structured.append(AnalysisBullet(
-                    text: "HRV at \(String(format: "%.0f", hrv)) ms — physiological state is stable for computational analysis.",
+                    text: "HRV at \(String(format: "%.0f", hrv)) ms — physiological state stable for analysis.",
                     confidence: .moderate, category: .health
                 ))
             }
         } else {
             structured.append(AnalysisBullet(
-                text: "Connect HealthKit for entropy-health correlation insights. Run with fleet mode for distributed compute.",
+                text: "Connect HealthKit for entropy-health correlation. Enable fleet mode for distributed compute.",
                 confidence: .low, category: .fleet
             ))
         }
 
         let overall = computeOverallConfidence(structured)
-        let inputSummary = "T=\(thermodynamics.temperature)K, F=\(String(format: "%.2f", thermodynamics.freeEnergy)) kcal/mol"
+        var inputSummary = "T=\(thermodynamics.temperature)K, F=\(String(format: "%.2f", thermodynamics.freeEnergy)) kcal/mol"
+        if let decomp = entropyScore?.shannonDecomposition {
+            inputSummary += ", S_conf=\(String(format: "%.4f", decomp.configurational))nats, S_vib=\(String(format: "%.6f", decomp.vibrational))kcal/mol/K"
+            inputSummary += decomp.isConverged ? " [converged]" : " [not converged]"
+        }
         return OracleAnalysis(structuredBullets: structured, inputSummary: inputSummary, overallConfidence: overall)
     }
 

@@ -248,15 +248,13 @@ inline void distance2_1x8(const float* FLEXAIDS_RESTRICT ax,
 inline float sum_sq_distances(const float* FLEXAIDS_RESTRICT a_xyz,
                                const float* FLEXAIDS_RESTRICT b_xyz,
                                int N) noexcept {
+#if FLEXAIDS_HAS_AVX512
+    return sum_sq_distances_avx512(a_xyz, b_xyz, N);
+#else
     __m256 acc = _mm256_setzero_ps();
     int i = 0;
     for (; i <= N - 8; i += 8) {
-        // Load 8 xyz triplets for a and b in AOS layout (24 floats each)
-        // We handle 1 component at a time: x, y, z separately
-        // Gather with stride-3 – use scalar here for correctness; the inner
-        // loop is over atoms so the hot path is the per-component subtraction.
         for (int c = 0; c < 3; ++c) {
-            // Gather 8 values at stride 3
             float a8[8], b8[8];
             for (int k = 0; k < 8; ++k) {
                 a8[k] = a_xyz[(i+k)*3 + c];
@@ -272,6 +270,7 @@ inline float sum_sq_distances(const float* FLEXAIDS_RESTRICT a_xyz,
             sum += sq(a_xyz[i*3+c] - b_xyz[i*3+c]);
     }
     return sum;
+#endif
 }
 
 // Lennard-Jones r^-12 wall energy for 8 distances simultaneously.
@@ -300,12 +299,13 @@ inline void lj_wall_8x(const float* FLEXAIDS_RESTRICT r2,
 }
 
 // Batched dot products: result[i] = dot(a[i], b[i]) for i in [0,N)
-// a, b are Nx3 in interleaved layout. N must be multiple of 8 or padded.
+// a, b are Nx3 in interleaved layout.
 inline void dot3_batch(const float* FLEXAIDS_RESTRICT a,
                        const float* FLEXAIDS_RESTRICT b,
                        float* FLEXAIDS_RESTRICT out, int N) noexcept {
-    __m256 acc = _mm256_setzero_ps();
-    // Separate into SOA on-the-fly (each component processed independently)
+#if FLEXAIDS_HAS_AVX512
+    dot3_batch_avx512(a, b, out, N);
+#else
     int i = 0;
     for (; i <= N - 8; i += 8) {
         __m256 s = _mm256_setzero_ps();
@@ -320,10 +320,9 @@ inline void dot3_batch(const float* FLEXAIDS_RESTRICT a,
         }
         _mm256_storeu_ps(out + i, s);
     }
-    for (; i < N; ++i) {
+    for (; i < N; ++i)
         out[i] = a[i*3]*b[i*3] + a[i*3+1]*b[i*3+1] + a[i*3+2]*b[i*3+2];
-    }
-    (void)acc;
+#endif
 }
 
 // ─── AVX-512 implementations (16-wide float, 8-wide double) ─────────────────

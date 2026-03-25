@@ -15,12 +15,9 @@
 #include "../../LIB/BindingMode.h"
 #endif
 #include "../../LIB/encom.h"
-#include "../../LIB/ShannonThermoStack/ShannonThermoStack.h"
-
-#ifdef FLEXAIDS_USE_256_MATRIX
-// Defined in bindings_matrix.cpp, linked when 256-matrix is enabled
-void register_matrix_bindings(py::module_& m);
-#endif
+#include "../../LIB/fast_optics.hpp"
+#include "../../LIB/Spectrophore.h"
+#include "../../LIB/BindingResidues.h"
 
 namespace py = pybind11;
 using namespace statmech;
@@ -233,6 +230,8 @@ PYBIND11_MODULE(_core, m) {
             "ΔG between two binding modes (kcal/mol); positive = mode1 less favoured")
         .def("get_global_ensemble", &BindingPopulation::get_global_ensemble,
             "StatMechEngine aggregating all poses across all binding modes")
+        .def("get_super_cluster_ensemble", &BindingPopulation::get_super_cluster_ensemble,
+            "StatMechEngine with super-cluster filtered poses (dominant energy basin only)")
         .def("get_shannon_entropy", &BindingPopulation::get_shannon_entropy,
             "Population-level Shannon configurational entropy S = -kB * sum(p_i * ln(p_i)) (kcal/mol/K)")
         .def("get_deltaG_matrix", &BindingPopulation::get_deltaG_matrix,
@@ -358,55 +357,120 @@ PYBIND11_MODULE(_core, m) {
             "F_total = F_elec − T·S_vib  (kcal/mol)");
 
     // ═══════════════════════════════════════════════════════════════════════
-    // ShannonEnergyMatrix: 256×256 precomputed lookup with file loading
+    // FastOPTICS: lightweight super-cluster extraction
     // ═══════════════════════════════════════════════════════════════════════
 
-    py::class_<shannon_thermo::ShannonEnergyMatrix>(m, "ShannonEnergyMatrix",
-        "256×256 precomputed Shannon energy matrix with O(1) lookup")
-        .def_static("instance", &shannon_thermo::ShannonEnergyMatrix::instance,
-            py::return_value_policy::reference,
-            "Get the singleton ShannonEnergyMatrix instance")
-        .def("initialise", &shannon_thermo::ShannonEnergyMatrix::initialise,
-            "Initialise from uniform priors (seed 42)")
-        .def("initialise_from_file",
-            &shannon_thermo::ShannonEnergyMatrix::initialise_from_file,
-            py::arg("path"),
-            "Load trained 256×256 matrix from SHNN binary blob")
-        .def("initialise_from_data",
-            [](shannon_thermo::ShannonEnergyMatrix& self,
-               py::array_t<float, py::array::c_style | py::array::forcecast> data) {
-                auto buf = data.request();
-                int count = static_cast<int>(buf.size);
-                self.initialise_from_data(static_cast<const float*>(buf.ptr), count);
-            },
-            py::arg("data"),
-            "Load matrix from float32 numpy array (256*256 elements)")
-        .def("lookup", &shannon_thermo::ShannonEnergyMatrix::lookup,
-            py::arg("bin_i"), py::arg("bin_j"),
-            "O(1) pairwise entropy contribution lookup")
-        .def("is_initialised",
-            &shannon_thermo::ShannonEnergyMatrix::is_initialised)
-        .def("as_numpy",
-            [](const shannon_thermo::ShannonEnergyMatrix& self) {
-                if (!self.is_initialised())
-                    throw std::runtime_error("Matrix not initialised");
-                return py::array_t<double>(
-                    {shannon_thermo::SHANNON_BINS, shannon_thermo::SHANNON_BINS},
-                    self.data(),
-                    py::cast(self)  // prevent dealloc
-                );
-            },
-            "Return matrix as numpy array (256×256, read-only view)")
-        .def("__repr__", [](const shannon_thermo::ShannonEnergyMatrix& self) {
-            return std::string("<ShannonEnergyMatrix 256×256 ") +
-                   (self.is_initialised() ? "initialised" : "uninitialised") + ">";
+    py::enum_<fast_optics::ClusterMode>(m, "ClusterMode",
+        "Clustering mode for FastOPTICS extraction")
+        .value("FULL_OPTICS", fast_optics::ClusterMode::FULL_OPTICS, "Full OPTICS hierarchy walk")
+        .value("SUPER_CLUSTER_ONLY", fast_optics::ClusterMode::SUPER_CLUSTER_ONLY,
+               "Fast super-cluster extraction (~40%% faster)")
+        .export_values();
+
+    py::class_<fast_optics::Point>(m, "Point", "N-dimensional point for OPTICS clustering")
+        .def(py::init<>())
+        .def(py::init([](std::vector<double> c) {
+            fast_optics::Point p; p.coords = std::move(c); return p;
+        }), py::arg("coords"))
+        .def_readwrite("coords", &fast_optics::Point::coords);
+
+    py::class_<fast_optics::Reachability>(m, "Reachability",
+        "OPTICS ordering entry with point index and reachability distance")
+        .def_readonly("index", &fast_optics::Reachability::index)
+        .def_readonly("reach", &fast_optics::Reachability::reach);
+
+    py::class_<fast_optics::FastOPTICS>(m, "FastOPTICSLight",
+        "Lightweight FastOPTICS clustering with super-cluster extraction")
+        .def(py::init<const std::vector<fast_optics::Point>&, int, double>(),
+            py::arg("points"), py::arg("min_pts") = 4, py::arg("eps") = 0.0,
+            "Build OPTICS ordering from points")
+        .def("get_ordering", &fast_optics::FastOPTICS::getOrdering,
+            py::return_value_policy::reference_internal,
+            "Return the OPTICS reachability ordering")
+        .def("extract_super_cluster", &fast_optics::FastOPTICS::extractSuperCluster,
+            py::arg("mode") = fast_optics::ClusterMode::FULL_OPTICS,
+            "Extract cluster indices (SUPER_CLUSTER_ONLY for fast mode)");
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Spectrophore — 144-float 3D fingerprint
+    // ──────────────────────────────────────────────────────────────────────
+
+    m.attr("SPECTROPHORE_DESCRIPTOR_SIZE") = spectrophore::DESCRIPTOR_SIZE;
+    m.attr("SPECTROPHORE_N_ANGULAR") = spectrophore::N_ANGULAR;
+    m.attr("SPECTROPHORE_N_RADIAL") = spectrophore::N_RADIAL;
+    m.attr("SPECTROPHORE_N_PROPERTIES") = spectrophore::N_PROPERTIES;
+
+    py::class_<spectrophore::Spectrophore>(m, "Spectrophore",
+        "144-float 3D molecular fingerprint (4 properties × 12 angular × 3 radial)")
+        .def(py::init<>())
+        .def("tanimoto", &spectrophore::Spectrophore::tanimoto,
+            py::arg("other"),
+            "Tanimoto similarity to another Spectrophore (0–1)")
+        .def("euclidean", &spectrophore::Spectrophore::euclidean,
+            py::arg("other"),
+            "Euclidean distance to another Spectrophore")
+        .def_property_readonly("values", [](const spectrophore::Spectrophore& s) {
+            return py::array_t<float>({spectrophore::DESCRIPTOR_SIZE},
+                                      {sizeof(float)},
+                                      s.values, py::cast(s));
+        }, "144-element descriptor array (read-only view)")
+        .def_property_readonly("centroid", [](const spectrophore::Spectrophore& s) {
+            return py::array_t<float>({3}, {sizeof(float)}, s.centroid, py::cast(s));
+        }, "3D centroid used for computation");
+
+    py::class_<spectrophore::SimpleAtom>(m, "SpectrophoreAtom",
+        "Lightweight atom for spectrophore computation")
+        .def(py::init<>())
+        .def(py::init([](float x, float y, float z, float radius, float charge) {
+            return spectrophore::SimpleAtom{x, y, z, radius, charge};
+        }), py::arg("x"), py::arg("y"), py::arg("z"),
+            py::arg("radius") = 1.7f, py::arg("charge") = 0.0f)
+        .def_readwrite("x", &spectrophore::SimpleAtom::x)
+        .def_readwrite("y", &spectrophore::SimpleAtom::y)
+        .def_readwrite("z", &spectrophore::SimpleAtom::z)
+        .def_readwrite("radius", &spectrophore::SimpleAtom::radius)
+        .def_readwrite("charge", &spectrophore::SimpleAtom::charge);
+
+    m.def("compute_spectrophore_from_atoms",
+        [](py::array_t<float> coords, py::array_t<float> radii,
+           py::array_t<float> charges, py::array_t<float> center) {
+            auto c = coords.unchecked<2>();
+            auto r = radii.unchecked<1>();
+            auto q = charges.unchecked<1>();
+            auto ctr = center.unchecked<1>();
+            int n = static_cast<int>(c.shape(0));
+            std::vector<spectrophore::SimpleAtom> atoms(static_cast<size_t>(n));
+            for (int i = 0; i < n; ++i) {
+                atoms[static_cast<size_t>(i)] = {c(i, 0), c(i, 1), c(i, 2),
+                                                  r(i), q(i)};
+            }
+            float cen[3] = {ctr(0), ctr(1), ctr(2)};
+            return spectrophore::compute_from_atoms(atoms.data(), n, cen);
+        },
+        py::arg("coords"), py::arg("radii"), py::arg("charges"),
+        py::arg("center"),
+        "Compute spectrophore from atom coordinates, radii, and charges");
+
+    // ──────────────────────────────────────────────────────────────────────
+    // BindingResidues — key residue identification from MIF scores
+    // ──────────────────────────────────────────────────────────────────────
+
+    py::class_<binding_residues::ResidueContribution>(m, "ResidueContribution",
+        "A protein residue's contribution to binding (from MIF analysis)")
+        .def_readonly("res_index", &binding_residues::ResidueContribution::res_index)
+        .def_property_readonly("name", [](const binding_residues::ResidueContribution& r) {
+            return std::string(r.name);
+        })
+        .def_readonly("number", &binding_residues::ResidueContribution::number)
+        .def_property_readonly("chain", [](const binding_residues::ResidueContribution& r) {
+            return std::string(1, r.chain);
+        })
+        .def_readonly("mif_score", &binding_residues::ResidueContribution::mif_score)
+        .def_readonly("contact_count", &binding_residues::ResidueContribution::contact_count)
+        .def_readonly("min_distance", &binding_residues::ResidueContribution::min_distance)
+        .def("__repr__", [](const binding_residues::ResidueContribution& r) {
+            return std::string(r.name) + " " + std::to_string(r.number) +
+                   ":" + r.chain + " (MIF=" +
+                   std::to_string(r.mif_score) + ")";
         });
-
-    // ShannonThermoStack constants
-    m.attr("SHANNON_BINS") = shannon_thermo::SHANNON_BINS;
-
-#ifdef FLEXAIDS_USE_256_MATRIX
-    // Register 256×256 matrix bindings (atom256, SoftContactMatrix, ShannonMatrixScorer)
-    register_matrix_bindings(m);
-#endif
 }

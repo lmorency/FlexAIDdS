@@ -7,6 +7,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import Foundation
+import Intelligence
 #if canImport(CryptoKit)
 import CryptoKit
 #endif
@@ -357,6 +358,167 @@ public actor FleetScheduler {
     }
 }
 
+// MARK: - Referee Integration
+
+/// Recommendation from the thermodynamic referee for scheduling decisions.
+public enum RefereeRecommendation: Sendable, Codable {
+    /// Results are trustworthy — no further action needed
+    case proceed
+    /// Increase population size to improve sampling
+    case increasePopulation(factor: Double)
+    /// Increase GA generations to reach convergence
+    case increaseGenerations(factor: Double)
+    /// Need more data — cannot assess quality
+    case needsMoreData
+}
+
+extension FleetScheduler {
+    /// Aggregate completed chunk results and run the thermodynamic referee.
+    ///
+    /// After all chunks for a job complete, this method:
+    /// 1. Collects all chunk result data
+    /// 2. Runs `RuleBasedReferee` on the aggregated thermodynamics
+    /// 3. Returns a scheduling recommendation based on the verdict
+    ///
+    /// - Parameter jobID: The fleet job to analyze
+    /// - Returns: Recommendation for scheduling follow-up work, or nil if job incomplete
+    public func aggregateAndReferee(jobID: UUID) -> (CrossPlatformRefereeVerdict, RefereeRecommendation)? {
+        guard isJobComplete(jobID) else { return nil }
+        guard let results = completedResults[jobID], !results.isEmpty else { return nil }
+
+        // Aggregate thermodynamic summary from chunk results
+        // Each ChunkResult carries summary data; we combine them
+        let totalChunks = results.count
+        var sumFreeEnergy = 0.0
+        var sumEntropy = 0.0
+        var sumHeatCapacity = 0.0
+        var sumMeanEnergy = 0.0
+        var sumStdEnergy = 0.0
+        var totalModes = 0
+        var minFreeEnergy = Double.infinity
+
+        for result in results {
+            sumFreeEnergy += result.summaryFreeEnergy
+            sumEntropy += result.summaryEntropy
+            sumHeatCapacity += result.summaryHeatCapacity
+            sumMeanEnergy += result.summaryMeanEnergy
+            sumStdEnergy += result.summaryStdEnergy
+            totalModes += result.summaryModeCount
+            minFreeEnergy = min(minFreeEnergy, result.summaryBestFreeEnergy)
+        }
+
+        // Weighted average across chunks
+        let n = Double(totalChunks)
+        let avgThermo = AggregatedThermodynamics(
+            temperature: results.first?.temperature ?? 298.15,
+            freeEnergy: sumFreeEnergy / n,
+            entropy: sumEntropy / n,
+            heatCapacity: sumHeatCapacity / n,
+            meanEnergy: sumMeanEnergy / n,
+            stdEnergy: sumStdEnergy / n,
+            modeCount: totalModes,
+            bestFreeEnergy: minFreeEnergy
+        )
+
+        // Build a verdict using threshold logic (no LLM needed for fleet decisions)
+        let verdict = buildFleetVerdict(from: avgThermo)
+
+        // Determine scheduling recommendation from verdict
+        let recommendation = scheduleFromVerdict(verdict)
+
+        return (verdict, recommendation)
+    }
+
+    /// Build a fleet-level verdict from aggregated thermodynamics.
+    private func buildFleetVerdict(from thermo: AggregatedThermodynamics) -> CrossPlatformRefereeVerdict {
+        var findings: [CrossPlatformRefereeFinding] = []
+        var trustworthy = true
+
+        // Fleet-level convergence heuristic: if stdEnergy > |freeEnergy| * 0.8, not converged
+        if thermo.stdEnergy > abs(thermo.freeEnergy) * 0.8 {
+            trustworthy = false
+            findings.append(CrossPlatformRefereeFinding(
+                title: "Fleet ensemble not converged",
+                detail: "Energy variance (σ=\(String(format: "%.2f", thermo.stdEnergy))) is large relative to F (\(String(format: "%.2f", thermo.freeEnergy))). Aggregated chunks may need more generations.",
+                severity: "critical",
+                category: "convergence"
+            ))
+        } else {
+            findings.append(CrossPlatformRefereeFinding(
+                title: "Fleet ensemble converging",
+                detail: "Energy variance (σ=\(String(format: "%.2f", thermo.stdEnergy))) reasonable for F=\(String(format: "%.2f", thermo.freeEnergy)) across \(thermo.modeCount) modes.",
+                severity: "pass",
+                category: "convergence"
+            ))
+        }
+
+        // Affinity
+        if thermo.freeEnergy < -10 {
+            findings.append(CrossPlatformRefereeFinding(
+                title: "Strong aggregated binding",
+                detail: "F = \(String(format: "%.1f", thermo.freeEnergy)) kcal/mol across fleet — promising lead.",
+                severity: "pass",
+                category: "affinity"
+            ))
+        } else if thermo.freeEnergy > -5 {
+            findings.append(CrossPlatformRefereeFinding(
+                title: "Weak aggregated binding",
+                detail: "F = \(String(format: "%.1f", thermo.freeEnergy)) kcal/mol — consider structural optimization.",
+                severity: "warning",
+                category: "affinity"
+            ))
+        }
+
+        let action = trustworthy
+            ? "Fleet results reliable. Proceed with full FOPTICS re-clustering."
+            : "Increase sampling. Submit follow-up job with larger population."
+
+        return CrossPlatformRefereeVerdict(
+            findings: findings,
+            overallTrustworthy: trustworthy,
+            recommendedAction: action,
+            confidence: trustworthy ? 0.8 : 0.4
+        )
+    }
+
+    /// Translate a verdict into a concrete scheduling recommendation.
+    private func scheduleFromVerdict(_ verdict: CrossPlatformRefereeVerdict) -> RefereeRecommendation {
+        if verdict.overallTrustworthy {
+            return .proceed
+        }
+
+        // Check for convergence issues → increase generations
+        let hasConvergenceIssue = verdict.findings.contains {
+            $0.category == "convergence" && ($0.severity == "critical" || $0.severity == "warning")
+        }
+        if hasConvergenceIssue {
+            return .increaseGenerations(factor: 1.5)
+        }
+
+        // Check for sampling issues → increase population
+        let hasSamplingIssue = verdict.findings.contains {
+            $0.category == "histogram" && ($0.severity == "critical" || $0.severity == "warning")
+        }
+        if hasSamplingIssue {
+            return .increasePopulation(factor: 2.0)
+        }
+
+        return .needsMoreData
+    }
+}
+
+/// Aggregated thermodynamics from fleet chunk results (not a full StatMechEngine recompute).
+struct AggregatedThermodynamics {
+    let temperature: Double
+    let freeEnergy: Double
+    let entropy: Double
+    let heatCapacity: Double
+    let meanEnergy: Double
+    let stdEnergy: Double
+    let modeCount: Int
+    let bestFreeEnergy: Double
+}
+
 // MARK: - iCloud Watcher
 
 /// Watches an iCloud Drive directory for incoming fleet results.
@@ -427,6 +589,44 @@ public final class iCloudWatcher: @unchecked Sendable {
     }
 }
 #endif
+
+// MARK: - Fleet Aggregation
+
+extension FleetScheduler {
+    /// Aggregate completed results for a job into a unified binding population.
+    ///
+    /// Runs the full FleetAggregator pipeline: deduplication, re-clustering,
+    /// global Boltzmann weighting, and per-mode thermodynamics.
+    ///
+    /// - Parameters:
+    ///   - jobID: The fleet job to aggregate
+    ///   - deduplicationThreshold: Energy difference (kcal/mol) for duplicate detection (default 0.01)
+    ///   - clusterMinSize: Minimum poses per binding mode (default 2)
+    ///   - clusterEnergyBandwidth: Energy bandwidth for density-peak clustering (default 2.0)
+    /// - Returns: Aggregated result, or nil if the job is not yet complete
+    public func aggregateResults(
+        jobID: UUID,
+        deduplicationThreshold: Double = 0.01,
+        clusterMinSize: Int = 2,
+        clusterEnergyBandwidth: Double = 2.0
+    ) -> FleetAggregationResult? {
+        guard isJobComplete(jobID) else { return nil }
+        guard let results = completedResults[jobID], !results.isEmpty else { return nil }
+
+        let temperature = results.first?.temperature ?? 298.15
+        let aggregator = FleetAggregator(temperature: temperature)
+
+        for result in results {
+            aggregator.ingest(result)
+        }
+
+        return aggregator.aggregate(
+            deduplicationThreshold: deduplicationThreshold,
+            clusterMinSize: clusterMinSize,
+            clusterEnergyBandwidth: clusterEnergyBandwidth
+        )
+    }
+}
 
 // MARK: - Errors
 

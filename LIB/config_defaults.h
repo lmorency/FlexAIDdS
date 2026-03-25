@@ -51,6 +51,7 @@ inline json::Value flexaid_default_config() {
             {"bonded_loops",                V(2)},      // bloops: exclude interactions n bonds away
             {"use_flexdee",                 V(false)},  // dead-end elimination for sidechains
             {"dee_clash",                   V(0.5)},
+            {"multi_model",                 V(false)},  // CCBM: multi-conformer receptor docking
         })},
 
         // ── Thermodynamics ───────────────────────────────────────
@@ -66,7 +67,7 @@ inline json::Value flexaid_default_config() {
             {"num_generations",      V(500)},
             {"crossover_rate",       V(0.8)},
             {"mutation_rate",        V(0.03)},
-            {"fitness_model",        V("PSHARE")},
+            {"fitness_model",        V("SMFREE")},  // SMFREE = entropy-aware (StatMech Free energy + sharing)
             {"reproduction_model",   V("BOOM")},
             {"boom_fraction",        V(1.0)},
             {"population_init",      V("RANDOM")},
@@ -81,6 +82,9 @@ inline json::Value flexaid_default_config() {
             {"initial_mutation_prob", V(0.0)},
             {"end_mutation_prob",    V(0.0)},
             {"steady_state_num",     V(0)},
+            {"entropy_weight",       V(0.5)},   // SMFREE blending: 0=rank-only, 1=pure Boltzmann
+            {"entropy_interval",     V(0)},     // log ensemble thermo every N gens (0=auto)
+            {"use_shannon",          V(false)},  // include Shannon configurational entropy
         })},
 
         // ── Output ───────────────────────────────────────────────

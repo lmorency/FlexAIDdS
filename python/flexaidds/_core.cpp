@@ -18,7 +18,7 @@
 
 #include "statmech.h"
 #include "encom.h"
-#include "tencm.h"
+#include "tENCoM/tencm.h"
 #include "ShannonThermoStack/ShannonThermoStack.h"
 
 namespace py = pybind11;

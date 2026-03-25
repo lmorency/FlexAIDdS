@@ -297,6 +297,12 @@ class Atom:
     element: str
     record: str  # 'ATOM' or 'HETATM'
 
+    def __repr__(self) -> str:
+        return (
+            f"<Atom {self.serial} {self.name} {self.resname} "
+            f"{self.chainid}{self.resseq}>"
+        )
+
     @property
     def coords(self) -> np.ndarray:
         return np.array([self.x, self.y, self.z])
@@ -352,6 +358,14 @@ class PDBStructure:
             if a.chainid not in seen:
                 seen.append(a.chainid)
         return seen
+
+    def __repr__(self) -> str:
+        chains = self.get_chain_ids()
+        chain_str = ",".join(chains) if chains else "none"
+        return (
+            f"<PDBStructure atoms={len(self.atoms)} "
+            f"chains=[{chain_str}]>"
+        )
 
 
 def read_pdb(path: str) -> PDBStructure:
@@ -490,6 +504,12 @@ class SphereRecord:
     z: float
     radius: float
     cleft_id: int = 1
+
+    def __repr__(self) -> str:
+        return (
+            f"<SphereRecord ({self.x:.2f}, {self.y:.2f}, {self.z:.2f}) "
+            f"r={self.radius:.2f} cleft={self.cleft_id}>"
+        )
 
     @property
     def coords(self) -> np.ndarray:

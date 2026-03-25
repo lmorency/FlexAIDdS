@@ -246,7 +246,7 @@ TEST_F(QuickSortTest, SortByFitnessDescending) {
 
     QuickSort(ca.data(), 0, N - 1, false);
 
-    // Verify descending order
+    // Verify descending order (highest fitness first)
     for (int i = 0; i < N - 1; ++i)
         EXPECT_GE(ca[i].fitnes, ca[i + 1].fitnes);
 
@@ -384,9 +384,9 @@ TEST(FitnessStats, CalculatesMaxAndAverage) {
 
     fitness_stats(&gb, ca.data(), 4);
 
-    // Correct: sums all 4 elements (10+20+30+40=100), divides by 4 → 25.0
+    // Average: (10+20+30+40)/4 = 25.0
     EXPECT_DOUBLE_EQ(gb.fit_avg, 25.0);
-    // Max across all elements
+    // Max: 40.0
     EXPECT_DOUBLE_EQ(gb.fit_max, 40.0);
 }
 

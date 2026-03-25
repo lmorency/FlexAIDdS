@@ -2,6 +2,87 @@
 #include "fileio.h"
 #include "CavityDetect/CavityDetect.h"
 #include "CleftDetector.h"
+#include "MIFGrid.h"
+#include "RefLigSeed.h"
+#include "CavityDetect/SpatialGrid.h"
+#include "BindingResidues.h"
+#include <vector>
+#include <algorithm>
+
+/*****************************************************************************
+ * compute_mif_and_reflig — MIF computation, grid prioritization, RefLig seeding
+ * Called after generate_grid() + calc_cleftic() for all detection modes.
+ *****************************************************************************/
+static void compute_mif_and_reflig(FA_Global* FA, atom* atoms,
+                                    gridpoint** cleftgrid, const char* lig_file) {
+	const bool need_mif = FA->mif_enabled || FA->grid_prio_percent < 100.0f;
+	const bool need_reflig = FA->reflig_file[0] != '\0';
+	const bool need_hetatm = !need_reflig && FA->reflig_hetatm_fallback && lig_file[0] != '\0';
+
+	if (!need_mif && !need_reflig && !need_hetatm) return;
+
+	// Build SpatialGrid for neighbor queries
+	std::vector<atom> protein_atoms(atoms, atoms + FA->atm_cnt_real);
+	cavity_detect::SpatialGrid sg;
+	sg.build(protein_atoms);
+
+	// ── MIF computation ──
+	if (need_mif) {
+		auto mif = mif::compute_mif(*cleftgrid, FA->num_grd,
+		                             atoms, FA->atm_cnt_real, sg);
+		free(FA->mif_energies); free(FA->mif_sorted); free(FA->mif_cdf);
+		FA->mif_count = static_cast<int>(mif.sorted_indices.size());
+		FA->mif_energies = static_cast<float*>(
+		    malloc(mif.energies.size() * sizeof(float)));
+		FA->mif_sorted = static_cast<int*>(
+		    malloc(mif.sorted_indices.size() * sizeof(int)));
+		std::copy_n(mif.energies.data(), mif.energies.size(), FA->mif_energies);
+		std::copy_n(mif.sorted_indices.data(), mif.sorted_indices.size(), FA->mif_sorted);
+
+		mif::build_sampling_cdf(mif, FA->mif_temperature);
+		FA->mif_cdf = static_cast<double*>(
+		    malloc(mif.cdf.size() * sizeof(double)));
+		std::copy_n(mif.cdf.data(), mif.cdf.size(), FA->mif_cdf);
+
+		// Grid prioritization: filter to top-K%
+		if (FA->grid_prio_percent < 100.0f) {
+			auto kept = mif::prioritize_grid(mif, FA->grid_prio_percent);
+			gridpoint* new_grid = nullptr;
+			int new_count = mif::rebuild_cleftgrid(
+			    *cleftgrid, FA->num_grd, kept, &new_grid);
+			if (new_grid && new_count > 0) {
+				int old_count = FA->num_grd;
+				free(*cleftgrid);
+				*cleftgrid = new_grid;
+				FA->num_grd = new_count;
+				calc_cleftic(FA, *cleftgrid);
+				printf("GRIDPRIO: kept %d/%d grid points (top %.0f%%)\n",
+				       new_count - 1, old_count - 1, FA->grid_prio_percent);
+			}
+		}
+
+		printf("MIF: computed for %d grid points (T=%.0fK)\n",
+		       FA->mif_count, FA->mif_temperature);
+	}
+
+	// ── RefLig seeding (explicit file OR HETATM fallback) ──
+	const char* reflig_path = need_reflig ? FA->reflig_file :
+	                          need_hetatm ? lig_file : nullptr;
+	if (reflig_path) {
+		auto data = reflig::prepare_reflig_seed(
+		    reflig_path, *cleftgrid, FA->num_grd, FA->reflig_k_nearest);
+		free(FA->reflig_nearest_grid);
+		FA->reflig_nearest_count = static_cast<int>(data.nearest_grid.size());
+		FA->reflig_nearest_grid = static_cast<int*>(
+		    malloc(data.nearest_grid.size() * sizeof(int)));
+		std::copy_n(data.nearest_grid.data(), data.nearest_grid.size(),
+		            FA->reflig_nearest_grid);
+
+		printf("REFLIG: seeded from %s — centroid (%.1f, %.1f, %.1f), %d nearest points\n",
+		       reflig_path, data.centroid[0], data.centroid[1], data.centroid[2],
+		       FA->reflig_nearest_count);
+	}
+}
 
 /*****************************************************************************
  * SUBROUTINE read_input reads input file.
@@ -33,7 +114,7 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 	char rotlib_file[MAX_PATH__];  /* rotamer library file */
 	char rotobs_file[MAX_PATH__];  /* rotamer observations file */
 
-	char rngopt[7];
+	char rngopt[7] = "";
 	char rngoptline[MAX_PATH__];
 
 	//char anam[5];            /* temporary atom name */
@@ -46,7 +127,6 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 	char a[7],b[7]; //,mol_name[4]; 
 
 	char gridfile[MAX_PATH__];
-	char gridfilename[MAX_PATH__];
 	//char sphfile[MAX_PATH__];
 	char tmpprotname[MAX_PATH__];
 
@@ -76,34 +156,41 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 	}
 
 	while (fgets(buffer, sizeof(buffer),infile_ptr)){
+		size_t blen = strlen(buffer);
+		if (blen > 0 && buffer[blen-1] == '\n')
+			buffer[--blen] = '\0';
 
-		buffer[strlen(buffer)-1] = '\0';
-        
+		if (blen < 6) continue;
 		for(i=0;i<6;++i) field[i]=buffer[i];
 		field[6]='\0';
 		
-		if(strcmp(field,"PDBNAM") == 0){strcpy(pdb_name,&buffer[7]);}
-		if(strcmp(field,"INPLIG") == 0){strcpy(lig_file,&buffer[7]);}
-		if(strcmp(field,"METOPT") == 0){sscanf(buffer,"%s %s",a,FA->metopt);}
+		if(strcmp(field,"PDBNAM") == 0){strncpy(pdb_name,&buffer[7],MAX_PATH__-1);pdb_name[MAX_PATH__-1]='\0';}
+		if(strcmp(field,"INPLIG") == 0){strncpy(lig_file,&buffer[7],MAX_PATH__-1);lig_file[MAX_PATH__-1]='\0';}
+		if(strcmp(field,"METOPT") == 0){sscanf(buffer,"%s %2s",a,FA->metopt);}
 		if(strcmp(field,"DEEFLX") == 0){FA->deelig_flex=1;}
-		if(strcmp(field,"BPKENM") == 0){sscanf(buffer,"%s %s",a,FA->bpkenm);}
-		if(strcmp(field,"COMPLF") == 0){sscanf(buffer,"%s %s",a,FA->complf);}
-		if(strcmp(field,"VCTSCO") == 0){sscanf(buffer,"%s %s",a,FA->vcontacts_self_consistency);}
+		if(strcmp(field,"BPKENM") == 0){sscanf(buffer,"%s %2s",a,FA->bpkenm);}
+		if(strcmp(field,"COMPLF") == 0){sscanf(buffer,"%s %3s",a,FA->complf);}
+		if(strcmp(field,"VCTSCO") == 0){sscanf(buffer,"%s %5s",a,FA->vcontacts_self_consistency);}
 		if(strcmp(field,"VCTPLA") == 0){sscanf(buffer,"%s %c",a,&FA->vcontacts_planedef);}
 		if(strcmp(field,"NORMAR") == 0){FA->normalize_area=1;}
 		if(strcmp(field,"USEACS") == 0){FA->useacs=1;}
 		if(strcmp(field,"ACSWEI") == 0){sscanf(buffer,"%s %f",field,&FA->acsweight);}
-		if(strcmp(field,"RNGOPT") == 0){strcpy(rngoptline,buffer);for(i=0;i<6;i++)rngopt[i]=buffer[7+i];rngopt[6]='\0';}
-		if(strcmp(field,"OPTIMZ") == 0){strcpy(optline[nopt++],buffer);}
-		if(strcmp(field,"FLEXSC") == 0){strcpy(flexscline[nflexsc++],buffer);}
+		if(strcmp(field,"RNGOPT") == 0){strncpy(rngoptline,buffer,MAX_PATH__-1);rngoptline[MAX_PATH__-1]='\0';for(i=0;i<6;i++)rngopt[i]=buffer[7+i];rngopt[6]='\0';}
+		if(strcmp(field,"OPTIMZ") == 0){if(nopt<MAX_PAR){strncpy(optline[nopt],buffer,MAX_PATH__-1);optline[nopt][MAX_PATH__-1]='\0';nopt++;}}
+		if(strcmp(field,"FLEXSC") == 0){if(nflexsc<MAX_PAR){strncpy(flexscline[nflexsc],buffer,MAX_PATH__-1);flexscline[nflexsc][MAX_PATH__-1]='\0';nflexsc++;}}
 		if(strcmp(field,"ROTOBS") == 0){FA->rotobs=1;}
-		if(strcmp(field,"DEFTYP") == 0){strcpy(deftyp_forced,&buffer[7]);}
+		if(strcmp(field,"DEFTYP") == 0){strncpy(deftyp_forced,&buffer[7],MAX_PATH__-1);deftyp_forced[MAX_PATH__-1]='\0';}
 		if(strcmp(field,"CLRMSD") == 0){sscanf(buffer,"%s %f",a,&FA->cluster_rmsd);}
+		if(strcmp(field,"SUPCLU") == 0){FA->use_super_cluster=true;}
+		if(strcmp(field,"TQCM__") == 0){FA->use_tqcm=true;}
+		if(strcmp(field,"TQENS_") == 0){FA->use_tqens=true;}
+		if(strcmp(field,"TQNN__") == 0){FA->use_tqnn=true;}
+		if(strcmp(field,"MULTIM") == 0){FA->multi_model=true;}  // CCBM: multi-model ensemble docking
 		if(strcmp(field,"ROTOUT") == 0){FA->rotout=1;}
 		if(strcmp(field,"NMAMOD") == 0){sscanf(buffer,"%s %d",a,&FA->normal_modes);}
-		if(strcmp(field,"NMAAMP") == 0){strcpy(normal_file,&buffer[7]);}
-		if(strcmp(field,"NMAEIG") == 0){strcpy(eigen_file,&buffer[7]);}
-		if(strcmp(field,"RMSDST") == 0){strcpy(rmsd_file,&buffer[7]);}
+		if(strcmp(field,"NMAAMP") == 0){strncpy(normal_file,&buffer[7],MAX_PATH__-1);normal_file[MAX_PATH__-1]='\0';}
+		if(strcmp(field,"NMAEIG") == 0){strncpy(eigen_file,&buffer[7],MAX_PATH__-1);eigen_file[MAX_PATH__-1]='\0';}
+		if(strcmp(field,"RMSDST") == 0){strncpy(rmsd_file,&buffer[7],MAX_PATH__-1);rmsd_file[MAX_PATH__-1]='\0';}
 		if(strcmp(field,"EXCHET") == 0){FA->exclude_het=1;}
 		if(strcmp(field,"INCHOH") == 0){FA->remove_water=0;}
 		if(strcmp(field,"NOINTR") == 0){FA->intramolecular=0;}
@@ -121,15 +208,15 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 		if(strcmp(field,"DIELEC") == 0){sscanf(buffer,"%s %f",field,&FA->dielectric);}
 		if(strcmp(field,"OUTRNG") == 0){FA->output_range=1;}
 		if(strcmp(field,"USEDEE") == 0){FA->useflexdee=1;}
-		if(strcmp(field,"IMATRX") == 0){strcpy(emat_forced,&buffer[7]);}
+		if(strcmp(field,"IMATRX") == 0){strncpy(emat_forced,&buffer[7],MAX_PATH__-1);emat_forced[MAX_PATH__-1]='\0';}
 		if(strcmp(field,"DEECLA") == 0){sscanf(buffer,"%s %f",field,&FA->dee_clash);}
 		if(strcmp(field,"ROTPER") == 0){sscanf(buffer,"%s %f",field,&FA->rotamer_permeability);}
-		if(strcmp(field,"CONSTR") == 0){strcpy(constraint_file,&buffer[7]);}
+		if(strcmp(field,"CONSTR") == 0){strncpy(constraint_file,&buffer[7],MAX_PATH__-1);constraint_file[MAX_PATH__-1]='\0';}
 		if(strcmp(field,"MAXRES") == 0){sscanf(buffer,"%s %d",field,&FA->max_results);}
 		if(strcmp(field,"SPACER") == 0){sscanf(buffer,"%s %f",field,&FA->spacer_length);}
-		if(strcmp(field,"DEPSPA") == 0){strcpy(FA->dependencies_path,&buffer[7]);}
-		if(strcmp(field,"STATEP") == 0){strcpy(FA->state_path,&buffer[7]);}
-		if(strcmp(field,"TEMPOP") == 0){strcpy(FA->temp_path,&buffer[7]);}
+		if(strcmp(field,"DEPSPA") == 0){strncpy(FA->dependencies_path,&buffer[7],MAX_PATH__-1);FA->dependencies_path[MAX_PATH__-1]='\0';}
+		if(strcmp(field,"STATEP") == 0){strncpy(FA->state_path,&buffer[7],MAX_PATH__-1);FA->state_path[MAX_PATH__-1]='\0';}
+		if(strcmp(field,"TEMPOP") == 0){strncpy(FA->temp_path,&buffer[7],MAX_PATH__-1);FA->temp_path[MAX_PATH__-1]='\0';}
 		if(strcmp(field,"NRGSUI") == 0){FA->nrg_suite=1;}
 		if(strcmp(field,"NRGOUT") == 0){sscanf(buffer,"%s %d",field,&FA->nrg_suite_timeout);}
 		if(strcmp(field,"SCOLIG") == 0){FA->score_ligand_only=1;}
@@ -145,7 +232,7 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 		}
 		if(strcmp(field,"CLUSTA") == 0)
 		{
-			if(FA->temperature > 0) sscanf(buffer, "%s %s", field, FA->clustering_algorithm);
+			if(FA->temperature > 0) sscanf(buffer, "%s %2s", field, FA->clustering_algorithm);
 			else
 			{
 				fprintf(stdout,"Overriding the clustering algorithm to CF as the Temperature given in input parameter does not allow the consideration of conformational entropy.\n");
@@ -171,20 +258,20 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 
 	// default state path (controls pause-stop-abort)
 	if(!strcmp(FA->state_path,"")){
-		strcpy(FA->state_path,FA->base_path);
+		strncpy(FA->state_path,FA->base_path,MAX_PATH__-1);
+		FA->state_path[MAX_PATH__-1]='\0';
 	}
 
 	if(!strcmp(FA->temp_path,"")){
-		strcpy(FA->temp_path,FA->base_path);
+		strncpy(FA->temp_path,FA->base_path,MAX_PATH__-1);
+		FA->temp_path[MAX_PATH__-1]='\0';
 	}
-    
+
 	// temporary pdb name
-	strcpy(tmpprotname,FA->temp_path);
-    
 #ifdef _WIN32
-	strcat(tmpprotname,"\\target.pdb");
+	snprintf(tmpprotname,MAX_PATH__,"%s\\target.pdb",FA->temp_path);
 #else
-	strcat(tmpprotname,"/target.pdb");
+	snprintf(tmpprotname,MAX_PATH__,"%s/target.pdb",FA->temp_path);
 #endif
 
 
@@ -193,21 +280,15 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 	/************************************************************/
 	if(!strcmp(emat_forced,"")){
 		// use default
-		if(!strcmp(FA->dependencies_path,"")){
-			// use executable path
-			strcpy(emat,FA->base_path);		
-		}else{
-			// use new dependencies path
-			strcpy(emat,FA->dependencies_path);
-		}
+		const char* emat_base = !strcmp(FA->dependencies_path,"") ? FA->base_path : FA->dependencies_path;
 #ifdef _WIN32
-		strcat(emat,"\\MC_st0r5.2_6.dat");
+		snprintf(emat,MAX_PATH__,"%s\\MC_st0r5.2_6.dat",emat_base);
 #else
-		strcat(emat,"/MC_st0r5.2_6.dat");
+		snprintf(emat,MAX_PATH__,"%s/MC_st0r5.2_6.dat",emat_base);
 #endif
 	}else{
 		// use forced matrix
-		strcpy(emat,emat_forced);
+		strncpy(emat,emat_forced,MAX_PATH__-1);emat[MAX_PATH__-1]='\0';
 	}
 	
 	printf("interaction matrix is <%s>\n", emat);
@@ -224,31 +305,16 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 	/************************************************************/
 	if(!strcmp(deftyp_forced,"")){
 		// use default definition
-		
-		if(!strcmp(FA->dependencies_path,"")){
-			strcpy(deftyp,FA->base_path);
-		}else{
-			strcpy(deftyp,FA->dependencies_path);
-		}
-		
-		
-		if(FA->is_protein){
+		const char* deftyp_base = !strcmp(FA->dependencies_path,"") ? FA->base_path : FA->dependencies_path;
+		const char* deftyp_file = FA->is_protein ? "AMINO.def" : "NUCLEOTIDES.def";
 #ifdef _WIN32
-			strcat(deftyp,"\\AMINO.def");
+		snprintf(deftyp,MAX_PATH__,"%s\\%s",deftyp_base,deftyp_file);
 #else
-			strcat(deftyp,"/AMINO.def");
+		snprintf(deftyp,MAX_PATH__,"%s/%s",deftyp_base,deftyp_file);
 #endif
-		}else{
-#ifdef _WIN32
-			strcat(deftyp,"\\NUCLEOTIDES.def");
-#else
-			strcat(deftyp,"/NUCLEOTIDES.def");
-#endif
-		}
-		
 	}else{
 		// use forced definition of types
-		strcpy(deftyp,deftyp_forced);
+		strncpy(deftyp,deftyp_forced,MAX_PATH__-1);deftyp[MAX_PATH__-1]='\0';
 	}
 
 	printf("definition of types is <%s>\n", deftyp);
@@ -298,13 +364,17 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 
 	// Create the new filename with _tmp_random
 	char *extension_pos = dot;
-	char random_str[16]; // Buffer for "_tmp_XXXXXX"
-	sprintf(random_str, "_tmp_%d.pdb", random_num);
+	char random_str[24]; // Buffer for "_tmp_XXXXXX.pdb"
+	snprintf(random_str, sizeof(random_str), "_tmp_%d.pdb", random_num);
 
 	if (extension_pos != NULL) {
-		strcpy(extension_pos, random_str);
+		size_t avail = MAX_PATH__ - (size_t)(extension_pos - tmpprotname);
+		strncpy(extension_pos, random_str, avail - 1);
+		tmpprotname[MAX_PATH__ - 1] = '\0';
 	} else {
-		strcat(tmpprotname, random_str);
+		size_t cur = strlen(tmpprotname);
+		strncpy(tmpprotname + cur, random_str, MAX_PATH__ - cur - 1);
+		tmpprotname[MAX_PATH__ - 1] = '\0';
 	}
 
 	modify_pdb(pdb_name,tmpprotname,FA->exclude_het,FA->remove_water,FA->is_protein,
@@ -358,50 +428,49 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
   
 	//////////////////////////////////////////////
 
-	if(nflexsc && FA->is_protein){
-		
-		read_flexscfile(FA,*residue,rotamer,flexscline,nflexsc,rotlib_file,rotobs_file);
+	if((nflexsc || FA->autoflex_enabled) && FA->is_protein){
 
-		
+		if(nflexsc){
+			read_flexscfile(FA,*residue,rotamer,flexscline,nflexsc,rotlib_file,rotobs_file);
+		}else{
+			// Auto-flex only: allocate rotamer array (read_flexscfile normally does this)
+			(*rotamer) = (rot*)malloc(FA->MIN_ROTAMER_LIBRARY_SIZE*sizeof(rot));
+			if(!(*rotamer)){
+				fprintf(stderr,"ERROR: memory allocation error for rotamer\n");
+				Terminate(2);
+			}
+			memset((*rotamer),0,FA->MIN_ROTAMER_LIBRARY_SIZE*sizeof(rot));
+		}
+
 		if (FA->rotobs) {
 
 			// use rotamers found in bound conformations (hap2db)
-			if(!strcmp(FA->dependencies_path,"")){
-				strcpy(rotobs_file,FA->base_path);
-			}else{
-				strcpy(rotobs_file,FA->dependencies_path);
-			}
-            
+			const char* rotobs_base = !strcmp(FA->dependencies_path,"") ? FA->base_path : FA->dependencies_path;
 #ifdef _WIN32
-			strcat(rotobs_file,"\\rotobs.lst");
+			snprintf(rotobs_file,MAX_PATH__,"%s\\rotobs.lst",rotobs_base);
 #else
-			strcat(rotobs_file,"/rotobs.lst");
+			snprintf(rotobs_file,MAX_PATH__,"%s/rotobs.lst",rotobs_base);
 #endif
-            
+
 			printf("read rotamer observations <%s>\n",rotobs_file);
 			read_rotobs(FA,rotamer,rotobs_file);
 		}else{
-			
+
 			// use penultimate rotamer library instances
-			if(!strcmp(FA->dependencies_path,"")){
-				strcpy(rotlib_file,FA->base_path);
-			}else{
-				strcpy(rotlib_file,FA->dependencies_path);
-			}
-            
+			const char* rotlib_base = !strcmp(FA->dependencies_path,"") ? FA->base_path : FA->dependencies_path;
 #ifdef _WIN32
-			strcat(rotlib_file,"\\Lovell_LIB.dat");
+			snprintf(rotlib_file,MAX_PATH__,"%s\\Lovell_LIB.dat",rotlib_base);
 #else
-			strcat(rotlib_file,"/Lovell_LIB.dat");
+			snprintf(rotlib_file,MAX_PATH__,"%s/Lovell_LIB.dat",rotlib_base);
 #endif
-            
+
 			printf("read rotamer library <%s>\n",rotlib_file);
 			read_rotlib(FA,rotamer,rotlib_file);
 		}
-    
+
 		if(FA->nflxsc > 0 && FA->rotlibsize > 0){
-			build_rotamers(FA,atoms,*residue,*rotamer); 
-			//build_close(FA,residue,atoms);         
+			build_rotamers(FA,atoms,*residue,*rotamer);
+			//build_close(FA,residue,atoms);
 		}
 	}
 
@@ -436,7 +505,8 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 		
 		(*cleftgrid) = generate_grid(FA,spheres,(*atoms),(*residue));
 		calc_cleftic(FA,*cleftgrid);
-        
+		compute_mif_and_reflig(FA, *atoms, cleftgrid, lig_file);
+
 	}else if(!strcmp(rngopt,"LOCCLF")){
 
 		//RNGOPT LOCCLF filename.pdb
@@ -448,6 +518,7 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 
 		(*cleftgrid) = generate_grid(FA,spheres,(*atoms),(*residue));
 		calc_cleftic(FA,*cleftgrid);
+		compute_mif_and_reflig(FA, *atoms, cleftgrid, lig_file);
 
 	}else if(!strcmp(rngopt,"LOCCDT")){
 
@@ -494,6 +565,11 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 			Terminate(2);
 		}
 
+		// Generate grid from detected cavity spheres (was missing)
+		(*cleftgrid) = generate_grid(FA, spheres, (*atoms), (*residue));
+		calc_cleftic(FA, *cleftgrid);
+		compute_mif_and_reflig(FA, *atoms, cleftgrid, lig_file);
+
 	}else if(!strncmp(rngopt,"AUTO  ",4)){
 
 		// RNGOPT AUTO — automatic cleft detection (SURFNET gap-sphere)
@@ -508,16 +584,16 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 
 		// Optionally write detected spheres for inspection
 		char auto_sph[MAX_PATH__];
-		strcpy(auto_sph, FA->temp_path);
 #ifdef _WIN32
-		strcat(auto_sph, "\\auto_cleft.sph");
+		snprintf(auto_sph, MAX_PATH__, "%s\\auto_cleft.sph", FA->temp_path);
 #else
-		strcat(auto_sph, "/auto_cleft.sph");
+		snprintf(auto_sph, MAX_PATH__, "%s/auto_cleft.sph", FA->temp_path);
 #endif
 		write_cleft_spheres(spheres, auto_sph);
 
 		(*cleftgrid) = generate_grid(FA,spheres,(*atoms),(*residue));
 		calc_cleftic(FA,*cleftgrid);
+		compute_mif_and_reflig(FA, *atoms, cleftgrid, lig_file);
 	}
     
 	//printf("IC bounds...\n");
@@ -526,14 +602,6 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 	///////////////////////////////////////////////////////////////////////////////
     
 	for(i=0;i<nopt;i++){
-		//printf("%s\n", optline[i]);
-		if(i==MAX_PAR){
-			printf("WARNING: number of params allowed was reached (100). other params will be skipped.\n");
-			break;
-		}
-    
-		//printf("optline[%d]=%s\n",i,optline[i]);
-		
 		sscanf(optline[i],"%s %d %s %d",a,&opt[0],a,&opt[1]);
 		//printf("%d %d\n",opt[0],opt[1]);
 		//getchar();
@@ -543,6 +611,39 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 		//printf("Add2 optimiz vector...\n");
 		add2_optimiz_vec(FA,*atoms,*residue,opt,chain,"");
 
+	}
+
+	// ── Auto-flex: add key binding residues as flexible side-chains ──
+	if (FA->autoflex_enabled && FA->mif_energies && FA->mif_count > 0) {
+		int nflxsc_before = FA->nflxsc;
+		int n_added = binding_residues::add_key_residues_as_flexible(
+			FA, *cleftgrid, *atoms, *residue, FA->autoflex_max);
+
+		// Build rotamers for newly added flexible residues only
+		if (n_added > 0 && FA->rotlibsize > 0) {
+			int saved_nflxsc = FA->nflxsc;
+			int saved_nflxsc_real = FA->nflxsc_real;
+			flxsc* saved_flex_res = FA->flex_res;
+
+			// Point flex_res to only the new entries so build_rotamers
+			// processes only the auto-flexed residues
+			FA->flex_res = &saved_flex_res[nflxsc_before];
+			FA->nflxsc = n_added;
+
+			build_rotamers(FA, atoms, *residue, *rotamer);
+
+			// Accumulate nflxsc_real from both batches
+			int new_nflxsc_real = FA->nflxsc_real;
+
+			// Restore full flex_res array
+			FA->flex_res = saved_flex_res;
+			FA->nflxsc = saved_nflxsc;
+			FA->nflxsc_real = saved_nflxsc_real + new_nflxsc_real;
+
+			printf("AUTOFLEX: built rotamers for %d auto-flexed residues "
+			       "(%d with rotamers, total flexible: %d)\n",
+			       n_added, new_nflxsc_real, FA->nflxsc);
+		}
 	}
 
 	add2_optimiz_vec(FA,*atoms,*residue,opt,chain,"SC");
@@ -555,17 +656,12 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 		Terminate(2);
 	}
     
-	if(FA->output_range){		
-        
+	if(FA->output_range){
 #ifdef _WIN32
-		strcpy(gridfilename,"\\grid.sta.pdb");
+		snprintf(gridfile,MAX_PATH__,"%s\\grid.sta.pdb",FA->temp_path);
 #else
-		strcpy(gridfilename,"/grid.sta.pdb");
+		snprintf(gridfile,MAX_PATH__,"%s/grid.sta.pdb",FA->temp_path);
 #endif
-        
-		strcpy(gridfile,FA->temp_path);
-		strcat(gridfile,gridfilename);
-        
 		write_grid(FA,*cleftgrid,gridfile);
 	}
     

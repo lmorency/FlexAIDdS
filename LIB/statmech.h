@@ -100,11 +100,27 @@ public:
     // Thermodynamic integration via trapezoidal rule
     static double thermodynamic_integration(std::span<const TIPoint> points);
 
+    // ── Ensemble merging (for parallel grid-decomposed docking) ────────────
+    // Merge another engine's ensemble into this one.
+    // Thermodynamically correct: Z_merged = Σ_all exp(-βE_i).
+    void merge(const StatMechEngine& other);
+
+    // Merge from raw arrays (for MPI deserialization)
+    void merge_samples(std::span<const double> energies,
+                       std::span<const int> multiplicities);
+
+    // Serialize ensemble for transport (MPI, socket, etc.)
+    std::vector<double> serialize_energies() const;
+    std::vector<int>    serialize_multiplicities() const;
+
     // Accessors
     double temperature() const noexcept { return T_; }
     double beta()        const noexcept { return beta_; }
     size_t size()        const noexcept { return ensemble_.size(); }
     void   clear()               { ensemble_.clear(); }
+
+    // Read-only access to ensemble (for serialization/inspection)
+    const std::vector<State>& ensemble() const noexcept { return ensemble_; }
 
     // Convenience: Helmholtz free energy from a raw energy vector
     static double helmholtz(std::span<const double> energies, double T);

@@ -14,7 +14,7 @@
 // Uses 1-based indexing matching FlexAID convention.
 #pragma once
 
-#include "flexaid.h"
+#include "../flexaid.h"
 
 #include <string>
 #include <vector>
