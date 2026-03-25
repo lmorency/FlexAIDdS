@@ -260,6 +260,8 @@ target_sources(FlexAID PRIVATE
         LIB/tENCoM/tencm.cpp
         LIB/statmech.cpp
         LIB/encom.cpp             # ← NEW: ENCoM vibrational entropy
+        # ── TurboQuant vector quantization (Zandieh et al. 2025) ──
+        LIB/TurboQuant.cpp
         # ── v1.5 thermodynamic + hardware acceleration modules ──
         LIB/hardware_detect.cpp
         LIB/hardware_dispatch.cpp
@@ -425,6 +427,7 @@ if(BUILD_PYTHON_BINDINGS AND pybind11_FOUND)
     pybind11_add_module(_core
         python/bindings/core_bindings.cpp
         LIB/statmech.cpp
+        LIB/TurboQuant.cpp
         LIB/hardware_dispatch.cpp
         LIB/hardware_detect.cpp
         LIB/encom.cpp
@@ -467,6 +470,7 @@ if(ENABLE_TENCOM_BENCHMARK)
         LIB/tENCoM/benchmark_tencom.cpp
         LIB/tENCoM/tencm.cpp
         LIB/statmech.cpp
+        LIB/TurboQuant.cpp
         LIB/hardware_dispatch.cpp
         LIB/hardware_detect.cpp
         LIB/encom.cpp
@@ -505,6 +509,7 @@ if(ENABLE_TENCOM_TOOL)
         LIB/tENCoM/pdb_calpha.cpp
         LIB/tENCoM/tencm.cpp
         LIB/statmech.cpp
+        LIB/TurboQuant.cpp
         LIB/hardware_dispatch.cpp
         LIB/hardware_detect.cpp
         LIB/encom.cpp
@@ -709,6 +714,7 @@ if(BUILD_TESTING)
 
     # test_statmech — StatMechEngine unit tests
     add_executable(test_statmech tests/test_statmech.cpp LIB/statmech.cpp
+        LIB/TurboQuant.cpp
                    LIB/hardware_dispatch.cpp LIB/hardware_detect.cpp)
     target_include_directories(test_statmech PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
     target_link_libraries(test_statmech PRIVATE GTest::gtest GTest::gtest_main)
@@ -748,6 +754,7 @@ if(BUILD_TESTING)
         tests/test_hardware_dispatch.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         LIB/statmech.cpp
+        LIB/TurboQuant.cpp
         LIB/hardware_dispatch.cpp
         LIB/hardware_detect.cpp
         LIB/tENCoM/tencm.cpp)
@@ -776,6 +783,7 @@ if(BUILD_TESTING)
         LIB/hardware_detect.cpp
         LIB/hardware_dispatch.cpp
         LIB/statmech.cpp)
+        LIB/TurboQuant.cpp
     target_include_directories(test_hardware_detect_dispatch PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
     target_link_libraries(test_hardware_detect_dispatch PRIVATE GTest::gtest GTest::gtest_main)
@@ -812,6 +820,7 @@ if(BUILD_TESTING)
         LIB/tENCoM/pdb_calpha.cpp
         LIB/tENCoM/tencm.cpp
         LIB/statmech.cpp
+        LIB/TurboQuant.cpp
         LIB/hardware_dispatch.cpp
         LIB/hardware_detect.cpp
         LIB/encom.cpp
@@ -861,6 +870,7 @@ if(BUILD_TESTING)
         LIB/gaboom.cpp
         LIB/Vcontacts.cpp
         LIB/statmech.cpp
+        LIB/TurboQuant.cpp
         LIB/geometry.cpp
         LIB/tENCoM/tencm.cpp
         LIB/encom.cpp
@@ -1106,6 +1116,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/gaboom.cpp
         LIB/Vcontacts.cpp
         LIB/statmech.cpp
+        LIB/TurboQuant.cpp
         LIB/geometry.cpp
         LIB/tENCoM/tencm.cpp
         LIB/encom.cpp
@@ -1149,6 +1160,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/gaboom.cpp
         LIB/Vcontacts.cpp
         LIB/statmech.cpp
+        LIB/TurboQuant.cpp
         LIB/geometry.cpp
         LIB/tENCoM/tencm.cpp
         LIB/encom.cpp
@@ -1192,6 +1204,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/gaboom.cpp
         LIB/Vcontacts.cpp
         LIB/statmech.cpp
+        LIB/TurboQuant.cpp
         LIB/geometry.cpp
         LIB/tENCoM/tencm.cpp
         LIB/encom.cpp
@@ -1235,6 +1248,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/gaboom.cpp
         LIB/Vcontacts.cpp
         LIB/statmech.cpp
+        LIB/TurboQuant.cpp
         LIB/geometry.cpp
         LIB/tENCoM/tencm.cpp
         LIB/encom.cpp
@@ -1277,6 +1291,7 @@ flexaids_configure_simd(test_cavity_detect)
             tests/test_soft_contact_matrix.cpp
             LIB/ShannonThermoStack/ShannonThermoStack.cpp
             LIB/statmech.cpp
+        LIB/TurboQuant.cpp
             LIB/encom.cpp
             LIB/tencm.cpp
             LIB/hardware_dispatch.cpp
@@ -1328,6 +1343,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/gaboom.cpp
         LIB/Vcontacts.cpp
         LIB/statmech.cpp
+        LIB/TurboQuant.cpp
         LIB/geometry.cpp
         LIB/tencm.cpp
         LIB/encom.cpp
@@ -1381,6 +1397,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/GridDecomposer.cpp
         LIB/SharedPosePool.cpp
         LIB/statmech.cpp
+        LIB/TurboQuant.cpp
         LIB/hardware_dispatch.cpp
         LIB/hardware_detect.cpp
     )
@@ -1430,6 +1447,7 @@ if(BUILD_SWIFT_BRIDGE)
         swift/Sources/FlexAIDCore/FXBoltzmannLUT.mm
         swift/Sources/FlexAIDCore/FXGA.mm
         LIB/statmech.cpp
+        LIB/TurboQuant.cpp
         LIB/encom.cpp
     )
     target_include_directories(FlexAIDCore PUBLIC
