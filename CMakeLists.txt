@@ -304,6 +304,9 @@ target_sources(FlexAID PRIVATE
         LIB/GridDecomposer.cpp
         LIB/SharedPosePool.cpp
         LIB/ParallelDock.cpp
+        # ── CoarseScreen: NRGRank coarse-grained screening ──
+        LIB/CoarseScreen.cpp
+        LIB/TwoStageScreen.cpp
 )
 
 target_include_directories(FlexAID PRIVATE
@@ -1511,5 +1514,26 @@ if(BUILD_SWIFT_BRIDGE)
     endif()
     add_test(NAME UnifiedDispatchTests COMMAND test_unified_dispatch)
 
-    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_tencom_diff, test_unified_dispatch")
+    # test_coarse_screen — NRGRank CoarseScreen + TwoStageScreen unit tests
+    add_executable(test_coarse_screen
+        tests/test_coarse_screen.cpp
+        LIB/CoarseScreen.cpp
+        LIB/TwoStageScreen.cpp
+    )
+    target_include_directories(test_coarse_screen PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_coarse_screen PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_coarse_screen PRIVATE /O2)
+    else()
+        target_compile_options(test_coarse_screen PRIVATE -O2)
+    endif()
+    flexaids_configure_simd(test_coarse_screen)
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(test_coarse_screen PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    flexaids_configure_msvc_test(test_coarse_screen)
+    add_test(NAME CoarseScreenTests COMMAND test_coarse_screen)
+
+    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_tencom_diff, test_unified_dispatch, test_coarse_screen")
 endif()

@@ -12,6 +12,8 @@
 #include "ProcessLigand/CoordBuilder.h"
 #include "LibrarySplitter.h"
 #include "ReferenceEntropy.h"
+#include "CoarseScreen.h"
+#include "TwoStageScreen.h"
 
 #include <cstring>
 #include <string>
@@ -102,6 +104,8 @@ static void print_usage(const char* progname) {
 	printf("  -c, --config <file.json>   JSON config (overrides defaults)\n");
 	printf("  -o, --output <prefix>      Output prefix (default: flexaid_out)\n");
 	printf("  --rigid                    Fast rigid-body screening\n");
+	printf("  --screen                   NRGRank coarse-grained screening mode\n");
+	printf("  --screen-top-n <N>         Return top N from coarse screen (default: 100)\n");
 	printf("  --folded                   Skip NATURaL chain growth\n");
 	printf("  --legacy                   Legacy 3-file input mode\n");
 	printf("  -h, --help                 Show this help\n\n");
@@ -327,6 +331,8 @@ int main(int argc, char **argv){
 	bool legacy_mode = false;
 	bool use_rigid = false;
 	bool use_folded = false;
+	bool use_screen = false;
+	int  screen_top_n = 100;
 	std::string config_path;
 	std::string output_prefix = "flexaid_out";
 
@@ -378,6 +384,11 @@ int main(int argc, char **argv){
 				continue;
 			}
 			if (arg == "--rigid")  { use_rigid = true;  continue; }
+			if (arg == "--screen") { use_screen = true; continue; }
+			if (arg == "--screen-top-n") {
+				if (a + 1 < argc) screen_top_n = std::atoi(argv[++a]);
+				continue;
+			}
 			if (arg == "--folded") { use_folded = true; continue; }
 			if (arg == "-h" || arg == "--help") { print_usage(argv[0]); Terminate(0); }
 
