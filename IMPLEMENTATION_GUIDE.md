@@ -592,11 +592,13 @@ def test_boltzmann_weights():
 - Add `setup.py` and `pyproject.toml`
 - Write Python test suite
 
-### Phase 3: ENCoM Integration (Future PR)
-- Implement `VibrationalEntropy` class
-- Add ENCoM file readers
-- Extend `BindingMode` with vibrational modes
-- Update config parser for `NMAMOD`, `NMAEIG`, `NMAMP` keywords
+### Phase 3: ProcessLigand, CIF Support, ROCm, TurboQuant, Idiotproof CLI (Complete)
+- ✅ ProcessLigand module (23 files) — pure C++20 + Eigen standalone ligand preprocessing
+- ✅ CIF/mmCIF reader for receptor and ligand records
+- ✅ ROCm/HIP GPU backend (MI100/MI200/MI300)
+- ✅ TurboQuant vector quantization
+- ✅ Idiotproof CLI with auto-detection and SMILES input
+- See "Phase 3: ProcessLigand Pipeline" section below for full details
 
 ---
 
@@ -609,12 +611,88 @@ def test_boltzmann_weights():
 
 ---
 
+## 4. Phase 3: ProcessLigand Pipeline
+
+### Overview
+
+Phase 3 adds five major components: a standalone ligand preprocessing engine (ProcessLigand), CIF/mmCIF file support, ROCm/HIP GPU backend, TurboQuant vector quantization, and an idiotproof CLI.
+
+### ProcessLigand Module (`LIB/ProcessLigand/`, 23 files)
+
+Pure C++20 + Eigen standalone ligand preprocessing engine — no RDKit or Boost dependency.
+
+**Pipeline stages:**
+
+```
+SMILES string ──▶ SMILES Parser ──▶ Molecular Graph ──▶ Ring Perception ──▶ Aromaticity
+                  (OpenSMILES)      (atoms, bonds)     (SSSR, Horton)    (Hückel 4n+2)
+                                                              │
+                                                              ▼
+FlexAID .inp/.ga ◀── Atom Typing ◀── Valence Check ◀── Rotatable Bonds
+  files              (SYBYL 256)     (validation)      (identification)
+                          │
+                          ▼
+                   3D Coord Builder ──▶ Docking-ready ligand
+                   (CoordBuilder)
+```
+
+**Key components:**
+
+| Component | Description |
+|:----------|:------------|
+| SMILES Parser | In-house OpenSMILES-compliant parser — handles stereochemistry, aromaticity notation, ring closures |
+| Ring Perception | SSSR (Smallest Set of Smallest Rings) via Horton's algorithm |
+| Aromaticity | Hückel rule (4n+2 π electrons) detection per ring |
+| Rotatable Bonds | Identifies freely rotatable bonds for conformational sampling |
+| Valence Checker | Validates atomic valences against expected ranges |
+| Atom Typing | SYBYL atom type assignment + 256-type encoding for the contact matrix |
+| CoordBuilder | Builds 3D coordinates from SMILES topology using distance geometry |
+| File Generation | Outputs FlexAID `.inp` and `.ga` files ready for docking |
+
+### CIF/mmCIF Support (`LIB/CifReader.h/.cpp`)
+
+Reads PDBx/mmCIF files (mandatory PDB deposition format since 2019). Auto-detects `_atom_site` column order and works for both receptor and ligand records. No format conversion needed.
+
+### ROCm/HIP GPU Backend
+
+Added `Backend::ROCM = 6` in HardwareDispatch. Supports:
+- gfx908 (AMD Instinct MI100)
+- gfx90a (AMD Instinct MI200)
+- gfx942 (AMD Instinct MI300)
+
+Runtime dispatch priority: CUDA > ROCm > Metal > AVX-512 > AVX-2 > OpenMP > scalar.
+
+Build with: `cmake -DFLEXAIDS_USE_ROCM=ON`
+
+### TurboQuant Vector Quantization (`LIB/TurboQuant.h`)
+
+Implements the near-optimal vector quantization algorithm from Zandieh et al. 2025 (arXiv:2504.19874). Used to compress:
+- 256-dimensional contact vectors from the Voronoi CF scoring
+- GA ensemble energy vectors
+
+Achieves distortion within 2.7× of the Shannon bound, reducing memory and communication overhead for distributed docking (Bonhomme Fleet) and large-ensemble thermodynamics.
+
+### Idiotproof CLI
+
+The CLI now auto-detects receptor vs. ligand from file content rather than argument position:
+- Accepted receptor formats: `.pdb`, `.cif`, `.mmcif`
+- Accepted ligand formats: `.mol2`, `.sdf`, `.mol`, SMILES strings
+- Configuration: `.json`
+- SMILES input automatically triggers ProcessLigand → CoordBuilder → docking
+- Clear error messages for every failure mode (missing files, invalid SMILES, unsupported formats, etc.)
+
+---
+
 ## Summary
 
-These three improvements transform FlexAIDdS from a CF-scoring GA into a rigorous thermodynamic docking engine:
+These improvements transform FlexAIDdS from a CF-scoring GA into a rigorous thermodynamic docking engine:
 
 1. **Statistical Mechanics:** Full ensemble thermodynamics (F, S, H, C_v) replace ad-hoc energy calculations
 2. **Python Ecosystem:** pybind11 bindings enable Jupyter notebooks, ML pipelines, data analysis
 3. **Vibrational Entropy:** ENCoM integration captures conformational flexibility beyond discrete pose sampling
+4. **ProcessLigand:** Pure C++20 SMILES-to-3D pipeline eliminates RDKit/Boost dependency for ligand preparation
+5. **Format Support:** CIF/mmCIF reader and idiotproof CLI lower the barrier to entry
+6. **AMD GPUs:** ROCm/HIP backend extends hardware acceleration beyond NVIDIA
+7. **TurboQuant:** Near-optimal vector quantization reduces memory footprint for large ensembles
 
 All changes maintain backward compatibility while exposing modern APIs for advanced workflows.

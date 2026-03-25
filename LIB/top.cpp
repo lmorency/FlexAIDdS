@@ -10,6 +10,8 @@
 #include "statmech.h"
 #include "ProcessLigand/ProcessLigand.h"
 #include "ProcessLigand/CoordBuilder.h"
+#include "LibrarySplitter.h"
+#include "ReferenceEntropy.h"
 
 #include <cstring>
 #include <string>
@@ -46,14 +48,20 @@ static std::string detect_file_role(const std::string& path) {
 		}
 	}
 
-	// Ligand formats
+	// Ligand formats (single molecule or library)
 	if (ext == ".mol2" || ext == ".sdf" || ext == ".mol") return "ligand";
+
+	// SMILES file = ligand library
+	if (ext == ".smi" || ext == ".smiles") return "ligand";
 
 	// Config formats
 	if (ext == ".json") return "config";
 
-	// CIF/mmCIF — always receptor (PDB archive format)
+	// CIF/mmCIF — receptor (PDB archive format)
 	if (ext == ".cif" || ext == ".mmcif") return "receptor";
+
+	// Directory of ligand files = ligand library
+	if (std::filesystem::is_directory(path)) return "ligand";
 
 	// PDB could be receptor or ligand — peek at content
 	if (ext == ".pdb" || ext == ".ent") {
@@ -97,11 +105,24 @@ static void print_usage(const char* progname) {
 	printf("  --folded                   Skip NATURaL chain growth\n");
 	printf("  --legacy                   Legacy 3-file input mode\n");
 	printf("  -h, --help                 Show this help\n\n");
+	printf("Library input (virtual screening):\n");
+	printf("  Ligand can be a multi-molecule SDF, a SMILES file (.smi),\n");
+	printf("  or a directory of MOL2/SDF files. Each ligand is docked\n");
+	printf("  independently against the receptor.\n\n");
+	printf("Multi-model receptor (NMR / cryo-EM / MD):\n");
+	printf("  PDB with MODEL/ENDMDL records or multi-model CIF.\n");
+	printf("  Each model is used as a separate receptor conformer.\n");
+	printf("  Results are combined via Boltzmann ensemble consensus\n");
+	printf("  with reference entropy correction.\n\n");
 	printf("Examples:\n");
 	printf("  %s receptor.pdb ligand.mol2\n", progname);
 	printf("  %s ligand.sdf receptor.pdb          # order doesn't matter\n", progname);
 	printf("  %s receptor.pdb 'c1ccccc1' --rigid  # SMILES input\n", progname);
-	printf("  %s protein.pdb drug.sdf -c config.json -o results\n\n", progname);
+	printf("  %s protein.pdb drug.sdf -c config.json -o results\n", progname);
+	printf("  %s receptor.pdb library.sdf          # multi-molecule SDF\n", progname);
+	printf("  %s receptor.pdb ligands/             # directory of files\n", progname);
+	printf("  %s receptor.pdb compounds.smi        # SMILES file\n", progname);
+	printf("  %s nmr_ensemble.pdb ligand.mol2      # NMR ensemble\n\n", progname);
 	printf("Defaults: T=300K, full flexibility, Voronoi contacts, intramolecular ON.\n");
 }
 

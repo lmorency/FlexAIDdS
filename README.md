@@ -28,7 +28,7 @@ FlexAID∆S extends the [FlexAID](https://doi.org/10.1021/acs.jcim.5b00078) dock
 - Torsional elastic network model (tENCoM) for backbone vibrational entropy
 - Full ligand flexibility: torsions, ring conformers, chiral center discrimination
 - Co-translational / co-transcriptional assembly (NATURaL module)
-- Unified hardware dispatch with automatic backend selection (CUDA, Metal, AVX-512, AVX2, OpenMP)
+- Unified hardware dispatch with automatic backend selection (CUDA, ROCm/HIP, Metal, AVX-512, AVX2, OpenMP)
 - Distributed docking across Apple devices (Bonhomme Fleet) with iCloud coordination
 - Python package with docking API, result analysis, and PyMOL visualization
 - Swift (macOS/iOS) and TypeScript (PWA) packages for cross-platform access
@@ -46,6 +46,15 @@ cmake .. -DCMAKE_BUILD_TYPE=Release && cmake --build . -j $(nproc)
 ```bash
 # Dock with full flexibility and entropy at 300 K (default)
 ./FlexAIDdS receptor.pdb ligand.mol2
+
+# Argument order doesn't matter — inputs are auto-detected from file content
+./FlexAIDdS ligand.mol2 receptor.pdb
+
+# Dock directly from a SMILES string (3D coordinates built automatically)
+./FlexAIDdS receptor.pdb "CC(=O)Oc1ccccc1C(=O)O"
+
+# Use CIF/mmCIF files (mandatory PDB format since 2019)
+./FlexAIDdS receptor.cif ligand.sdf
 
 # Override parameters via JSON
 ./FlexAIDdS receptor.pdb ligand.mol2 -c config.json
@@ -71,21 +80,23 @@ for mode in results.rank_by_free_energy():
 ## Architecture
 
 ```
-┌─────────────┐    ┌──────────────┐    ┌───────────────────┐    ┌─────────────────┐
-│   Input      │    │   Genetic    │    │     Scoring       │    │ Thermodynamics  │
-│              │───▶│  Algorithm   │───▶│                   │───▶│                 │
-│ PDB + MOL2   │    │  (gaboom)    │    │ Voronoi CF + DEE  │    │ StatMech + S    │
-└─────────────┘    └──────┬───────┘    └───────────────────┘    └────────┬────────┘
-                          │                                              │
-                          ▼                                              ▼
-                   ┌──────────────┐                              ┌─────────────────┐
-                   │  Flexibility │                              │  Binding Modes  │
-                   │              │                              │                 │
-                   │ Torsions     │                              │ Clustering +    │
-                   │ Rings        │                              │ ΔG, ΔH, −TΔS   │
-                   │ Chirality    │                              │ Cv, Boltzmann   │
-                   │ tENCoM       │                              └─────────────────┘
-                   └──────────────┘
+┌─────────────┐    ┌────────────────┐    ┌──────────────┐    ┌───────────────────┐    ┌─────────────────┐
+│   Input      │    │ ProcessLigand  │    │   Genetic    │    │     Scoring       │    │ Thermodynamics  │
+│              │───▶│                │───▶│  Algorithm   │───▶│                   │───▶│                 │
+│ PDB/CIF +    │    │ SMILES parse,  │    │  (gaboom)    │    │ Voronoi CF + DEE  │    │ StatMech + S    │
+│ MOL2/SDF/    │    │ 3D build,      │    └──────┬───────┘    └───────────────────┘    └────────┬────────┘
+│ SMILES       │    │ atom typing    │           │                                              │
+└─────────────┘    └────────────────┘           ▼                                              ▼
+                                         ┌──────────────┐                              ┌─────────────────┐
+                                         │  Flexibility │                              │  Binding Modes  │
+                                         │              │                              │                 │
+                                         │ Torsions     │                              │ Clustering +    │
+                                         │ Rings        │                              │ ΔG, ΔH, −TΔS   │
+                                         │ Chirality    │                              │ Cv, Boltzmann   │
+                                         │ tENCoM       │                              └─────────────────┘
+                                         └──────────────┘
+
+Hardware: CUDA > ROCm/HIP > Metal > AVX-512 > AVX2 > OpenMP > scalar
 ```
 
 **Scoring** uses two complementary layers: a **Voronoi contact function** (CF) for geometry-based shape complementarity, weighted by a **2-term LJ+Coulomb potential** parameterised over 40 SYBYL atom types. The CF computes contact surface area; the interaction matrix determines how favourable each contact is. The StatMechEngine then converts the GA ensemble into thermodynamic quantities via the canonical partition function with log-sum-exp numerical stability.
@@ -113,15 +124,19 @@ for mode in results.rank_by_free_energy():
 - **Full flexibility by default** — ligand torsions, ring conformers, chirality, intramolecular scoring at 300 K
 - **Non-aromatic ring sampling** — chair/boat/twist for 6-membered, envelope/twist for 5-membered rings, sugar pucker
 - **Chiral center discrimination** — explicit R/S sampling with stereochemical energy penalty
-- **Multi-format input** — MOL2, SDF/MOL V2000, and legacy INP
+- **Multi-format input** — PDB, CIF/mmCIF, MOL2, SDF/MOL V2000, SMILES (with automatic 3D coordinate generation), and legacy INP
 
 #### Hardware Acceleration
-- **Unified hardware dispatch** — automatic backend selection at runtime (CUDA > Metal > AVX-512 > AVX2 > OpenMP > scalar)
+- **Unified hardware dispatch** — automatic backend selection at runtime (CUDA > ROCm/HIP > Metal > AVX-512 > AVX2 > OpenMP > scalar)
 - **CUDA** — batch CF evaluation and Shannon entropy histograms (Volta through Hopper)
+- **ROCm/HIP** — AMD GPU acceleration for MI100 (gfx908), MI200 (gfx90a), and MI300 (gfx942)
 - **Metal** — Apple Silicon GPU for Shannon entropy, cavity detection, and evaluation
 - **SIMD** — AVX-512 and AVX2 vectorised geometric primitives
 - **OpenMP + Eigen3** — thread parallelism and vectorised linear algebra
 - **LTO binaries** — link-time optimized `FlexAIDdS` and `tENCoM` executables
+
+#### Vector Quantization
+- **TurboQuant** — near-optimal vector quantization (Zandieh et al. 2025, arXiv:2504.19874) for compressing 256-dim contact vectors and GA ensemble energy vectors, achieving distortion within 2.7x of the Shannon bound
 
 #### Analysis & Integration
 - **Python package** (`flexaidds`) — docking API, result I/O, thermodynamics, CLI inspector, PyMOL plugin
@@ -145,7 +160,8 @@ for mode in results.rank_by_free_energy():
 ### Requirements
 
 - **Required**: C++20 compiler (GCC >= 10, Clang >= 10, MSVC), CMake >= 3.18
-- **Optional**: Eigen3 (`libeigen3-dev`), OpenMP, CUDA Toolkit, Metal framework (macOS), pybind11
+- **Optional**: Eigen3 (`libeigen3-dev`), OpenMP, CUDA Toolkit, ROCm/HIP (AMD GPUs), Metal framework (macOS), pybind11
+- **Not required**: RDKit, Boost — ProcessLigand is pure C++20 + Eigen
 
 ### Output Binaries
 
@@ -154,6 +170,7 @@ for mode in results.rank_by_free_energy():
 | `FlexAID` | Standard docking executable |
 | `FlexAIDdS` | Optimized docking (LTO + `-march=native`) |
 | `tENCoM` | Vibrational entropy differential tool |
+| `flexaidds_process_ligand` | Standalone ligand preprocessing (SMILES → 3D, atom typing, .inp/.ga generation) |
 
 ### Build Variants
 
@@ -186,6 +203,7 @@ For cluster / HPC nodes, build once on the target architecture:
 | `BUILD_FLEXAIDDS_FAST`    | **ON**  | LTO-optimized FlexAIDdS binary           |
 | `ENABLE_TENCOM_TOOL`      | **ON**  | tENCoM vibrational entropy tool          |
 | `FLEXAIDS_USE_CUDA`       | OFF     | CUDA GPU acceleration                    |
+| `FLEXAIDS_USE_ROCM`       | OFF     | ROCm/HIP GPU acceleration (AMD MI100/MI200/MI300) |
 | `FLEXAIDS_USE_METAL`      | OFF     | Metal GPU acceleration (macOS)           |
 | `FLEXAIDS_USE_AVX2`       | ON      | AVX2 SIMD acceleration                   |
 | `FLEXAIDS_USE_AVX512`     | OFF     | AVX-512 SIMD acceleration                |
@@ -208,6 +226,15 @@ For cluster / HPC nodes, build once on the target architecture:
 ```bash
 # Full flexibility dock (all defaults, entropy at 300 K)
 ./FlexAIDdS receptor.pdb ligand.mol2
+
+# Argument order doesn't matter — auto-detected from file content
+./FlexAIDdS ligand.sdf receptor.cif
+
+# Dock from SMILES — 3D coordinates built automatically
+./FlexAIDdS receptor.pdb "c1ccc(NC(=O)C)cc1"
+
+# CIF/mmCIF receptor input
+./FlexAIDdS receptor.cif ligand.mol2
 
 # JSON config override
 ./FlexAIDdS receptor.pdb ligand.mol2 -c config.json

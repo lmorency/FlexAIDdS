@@ -8,7 +8,7 @@ Complete reference for using FlexAID∆S — from zero-config docking to advance
 
 FlexAID∆S is an entropy-driven molecular docking engine. It extends the FlexAID genetic algorithm with canonical ensemble thermodynamics, computing the Helmholtz free energy *F* = *H* − *TS* from the full conformational ensemble.
 
-**Design philosophy**: All parameters have sensible defaults. A typical docking run requires only a receptor PDB and a ligand MOL2 file — no configuration needed.
+**Design philosophy**: All parameters have sensible defaults. A typical docking run requires only a receptor and a ligand — no configuration needed. Arguments are auto-detected from file content, so order doesn't matter.
 
 ---
 
@@ -48,8 +48,10 @@ for mode in results.rank_by_free_energy():
 ### FlexAIDdS (Docking)
 
 ```
-FlexAIDdS <receptor.pdb> <ligand.mol2> [options]
+FlexAIDdS <receptor> <ligand> [options]
 ```
+
+Inputs are auto-detected from file content — argument order doesn't matter. Accepted formats: `.pdb`, `.cif`, `.mmcif` (receptor), `.mol2`, `.sdf`, `.mol` (ligand), SMILES strings, `.json` (config).
 
 | Flag | Description |
 |:-----|:------------|
@@ -199,6 +201,84 @@ All keys are optional — defaults enable full flexibility at 300 K. Override on
 | `keep_ions` | `true` | Retain metal ions for scoring (Mg²⁺, Zn²⁺, etc.) |
 | `keep_structural_waters` | `true` | Retain ordered crystallographic waters |
 | `structural_water_bfactor_max` | `20.0` | B-factor cutoff (Å²) for water selection |
+
+---
+
+## SMILES Input
+
+Pass a SMILES string directly as the ligand argument. ProcessLigand automatically parses the SMILES (OpenSMILES compliant), builds 3D coordinates, assigns SYBYL atom types, and docks:
+
+```bash
+# Dock aspirin from SMILES
+./FlexAIDdS receptor.pdb "CC(=O)Oc1ccccc1C(=O)O"
+
+# Dock caffeine from SMILES with config
+./FlexAIDdS receptor.pdb "Cn1c(=O)c2c(ncn2C)n(C)c1=O" -c config.json
+```
+
+ProcessLigand diagnostics are printed automatically: ring count, aromaticity detection, rotatable bond count, and atom type assignments. These help verify that the SMILES was parsed correctly.
+
+---
+
+## CIF/mmCIF Input
+
+CIF/mmCIF is the mandatory PDB deposition format since 2019. Use `.cif` or `.mmcif` files directly — FlexAID∆S auto-detects the `_atom_site` column order:
+
+```bash
+# CIF receptor with MOL2 ligand
+./FlexAIDdS receptor.cif ligand.mol2
+
+# CIF receptor with SMILES ligand
+./FlexAIDdS receptor.cif "CCO"
+```
+
+CIF files work for both receptor and ligand records. No conversion to PDB format is needed.
+
+---
+
+## Argument Order & Auto-Detection
+
+FlexAID∆S auto-detects receptor vs. ligand from file content, not argument position:
+
+```bash
+# These are equivalent
+./FlexAIDdS receptor.pdb ligand.mol2
+./FlexAIDdS ligand.mol2 receptor.pdb
+
+# Mixed formats work too
+./FlexAIDdS ligand.sdf receptor.cif -c config.json
+```
+
+Clear error messages are provided for every failure mode (missing files, unsupported formats, invalid SMILES, etc.).
+
+---
+
+## ProcessLigand Diagnostics
+
+When a ligand is processed (from any format including SMILES), ProcessLigand automatically reports:
+
+- **Ring count** — SSSR (Smallest Set of Smallest Rings) via Horton's algorithm
+- **Aromaticity** — Hückel 4n+2 detection for each ring
+- **Rotatable bonds** — identified for conformational sampling
+- **Valence check** — validates atomic valences
+- **SYBYL atom types** — 256-type encoding assignment
+- **3D coordinates** — built from SMILES topology when no 3D input is provided
+
+---
+
+## ROCm/HIP GPU Setup
+
+For AMD GPU acceleration (MI100, MI200, MI300):
+
+1. Install ROCm: follow [AMD ROCm installation guide](https://rocm.docs.amd.com/)
+2. Build with ROCm enabled:
+
+```bash
+cmake .. -DCMAKE_BUILD_TYPE=Release -DFLEXAIDS_USE_ROCM=ON
+cmake --build . -j $(nproc)
+```
+
+Supported architectures: gfx908 (MI100), gfx90a (MI200), gfx942 (MI300). The runtime dispatch priority is: CUDA > ROCm > Metal > AVX-512 > AVX-2 > OpenMP > scalar.
 
 ---
 
@@ -419,8 +499,10 @@ Fleet distributes docking workloads across Apple devices via iCloud Drive coordi
 | Format | Extension | Notes |
 |:-------|:----------|:------|
 | PDB | `.pdb` | Receptor and reference structures |
+| CIF/mmCIF | `.cif`, `.mmcif` | Receptor and ligand (mandatory PDB format since 2019) |
 | MOL2 (Tripos) | `.mol2` | Ligand (preferred) |
 | SDF/MOL V2000 | `.sdf`, `.mol` | Ligand (alternative) |
+| SMILES | string argument | Ligand — 3D coordinates built automatically via ProcessLigand |
 | INP (legacy) | `.inp` | Legacy FlexAID ligand format |
 
 ---

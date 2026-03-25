@@ -186,7 +186,8 @@
               <li>Full flexibility — ligand torsions, ring conformers, chirality</li>
               <li>Non-aromatic ring conformer sampling and sugar pucker</li>
               <li>Explicit R/S stereocenter discrimination</li>
-              <li>MOL2, SDF/MOL V2000, and legacy INP formats</li>
+              <li>PDB, CIF/mmCIF, MOL2, SDF/MOL, SMILES input with auto 3D generation</li>
+              <li>Idiotproof CLI &mdash; auto-detects receptor vs. ligand, any argument order</li>
             </ul>
           </div>
           <div class="feature-card">
@@ -195,10 +196,11 @@
             </div>
             <h3>Hardware Acceleration</h3>
             <ul>
-              <li>Unified hardware dispatch &mdash; automatic backend selection (CUDA &gt; Metal &gt; AVX-512 &gt; AVX2 &gt; OpenMP &gt; scalar)</li>
+              <li>Unified hardware dispatch &mdash; CUDA &gt; ROCm/HIP &gt; Metal &gt; AVX-512 &gt; AVX2 &gt; OpenMP &gt; scalar</li>
+              <li>ROCm/HIP support for AMD Instinct MI100, MI200, MI300 GPUs</li>
               <li>SIMD primitives: AVX-512 and AVX2 vectorized geometric computations</li>
               <li>Ultra-fast HPC binaries with LTO + <code>-march=native</code></li>
-              <li>Automatic cavity detection (SURFNET with Metal GPU)</li>
+              <li>TurboQuant vector quantization &mdash; near-optimal compression of 256-dim contact vectors</li>
             </ul>
           </div>
           <div class="feature-card feature-card-wide">
@@ -221,9 +223,9 @@
             <h3>Analysis & Integration</h3>
             <ul class="feature-list-grid">
               <li>Python package <code>flexaidds</code> — API, CLI, PyMOL plugin</li>
+              <li>ProcessLigand &mdash; pure C++20 SMILES parser, 3D builder, atom typing (no RDKit/Boost)</li>
               <li>NATURaL co-translational assembly</li>
-              <li>FastOPTICS + Density Peak clustering</li>
-              <li>Single JSON config for all parameters</li>
+              <li>50,000+ LOC codebase &mdash; FastOPTICS + Density Peak clustering</li>
             </ul>
           </div>
         </div>
@@ -350,7 +352,7 @@
             <div class="arch-step-num">1</div>
             <div class="arch-step-content">
               <h4>Input</h4>
-              <p>PDB + MOL2</p>
+              <p>PDB/CIF + MOL2/SDF/SMILES</p>
             </div>
           </div>
           <div class="arch-arrow" aria-hidden="true">
@@ -358,6 +360,16 @@
           </div>
           <div class="arch-step">
             <div class="arch-step-num">2</div>
+            <div class="arch-step-content">
+              <h4>ProcessLigand</h4>
+              <p>SMILES parse, 3D build, atom typing</p>
+            </div>
+          </div>
+          <div class="arch-arrow" aria-hidden="true">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </div>
+          <div class="arch-step">
+            <div class="arch-step-num">3</div>
             <div class="arch-step-content">
               <h4>Genetic Algorithm</h4>
               <p>gaboom engine</p>
@@ -367,7 +379,7 @@
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
           </div>
           <div class="arch-step">
-            <div class="arch-step-num">3</div>
+            <div class="arch-step-num">4</div>
             <div class="arch-step-content">
               <h4>Scoring</h4>
               <p>Voronoi CF + DEE</p>
@@ -377,7 +389,7 @@
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
           </div>
           <div class="arch-step">
-            <div class="arch-step-num">4</div>
+            <div class="arch-step-num">5</div>
             <div class="arch-step-content">
               <h4>Thermodynamics</h4>
               <p>StatMech + Entropy</p>
@@ -427,7 +439,7 @@ cmake .. -DCMAKE_BUILD_TYPE=Release && cmake --build . -j $(nproc)</code></pre>
               </div>
               <div class="req-item">
                 <span class="req-label req-label-opt">Optional</span>
-                <span>Eigen3, OpenMP, CUDA, Metal (macOS), pybind11</span>
+                <span>Eigen3, OpenMP, CUDA, ROCm/HIP, Metal (macOS), pybind11</span>
               </div>
             </div>
             <h3 class="mt-6">Output Binaries</h3>
@@ -446,6 +458,7 @@ cmake .. -DCMAKE_BUILD_TYPE=Release && cmake --build . -j $(nproc)</code></pre>
               <tbody>
                 <tr><td><code>BUILD_FLEXAIDDS_FAST</code></td><td>ON</td><td>Ultra-fast binary (LTO + native)</td></tr>
                 <tr><td><code>FLEXAIDS_USE_CUDA</code></td><td>OFF</td><td>CUDA GPU batch evaluation</td></tr>
+                <tr><td><code>FLEXAIDS_USE_ROCM</code></td><td>OFF</td><td>ROCm/HIP GPU (AMD MI100/MI200/MI300)</td></tr>
                 <tr><td><code>FLEXAIDS_USE_METAL</code></td><td>OFF</td><td>Metal GPU (macOS)</td></tr>
                 <tr><td><code>FLEXAIDS_USE_AVX2</code></td><td>ON</td><td>AVX2 SIMD acceleration</td></tr>
                 <tr><td><code>FLEXAIDS_USE_AVX512</code></td><td>OFF</td><td>AVX-512 SIMD</td></tr>
@@ -489,14 +502,20 @@ cmake .. -DCMAKE_BUILD_TYPE=Release && cmake --build . -j $(nproc)</code></pre>
             <pre><code><span class="code-comment"># Full flexibility dock — entropy at 300K</span>
 ./FlexAIDdS receptor.pdb ligand.mol2
 
+<span class="code-comment"># Argument order doesn't matter — auto-detected from content</span>
+./FlexAIDdS ligand.mol2 receptor.pdb
+
+<span class="code-comment"># Dock from SMILES — 3D coordinates built automatically</span>
+./FlexAIDdS receptor.pdb "CC(=O)Oc1ccccc1C(=O)O"
+
+<span class="code-comment"># CIF/mmCIF receptor input</span>
+./FlexAIDdS receptor.cif ligand.sdf
+
 <span class="code-comment"># Override parameters via JSON config</span>
 ./FlexAIDdS receptor.pdb ligand.mol2 -c config.json
 
 <span class="code-comment"># Fast rigid screening</span>
-./FlexAIDdS receptor.pdb ligand.mol2 --rigid
-
-<span class="code-comment"># Custom output prefix</span>
-./FlexAIDdS receptor.pdb ligand.mol2 -o my_results</code></pre>
+./FlexAIDdS receptor.pdb ligand.mol2 --rigid</code></pre>
           </div>
         </div>
 

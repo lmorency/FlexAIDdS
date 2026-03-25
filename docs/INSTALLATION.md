@@ -21,9 +21,12 @@ Complete build and installation instructions for FlexAID∆S on all supported pl
 | Eigen3 | Vectorised linear algebra | `apt install libeigen3-dev` / `brew install eigen` |
 | OpenMP | Thread parallelism | `apt install libomp-dev` / `brew install libomp` |
 | CUDA Toolkit | NVIDIA GPU acceleration | [developer.nvidia.com](https://developer.nvidia.com/cuda-toolkit) |
+| ROCm/HIP | AMD GPU acceleration (MI100/MI200/MI300) | [rocm.docs.amd.com](https://rocm.docs.amd.com/) |
 | Metal framework | Apple GPU acceleration | Included with Xcode on macOS |
 | pybind11 | Python ↔ C++ bindings | `pip install pybind11[global]` |
 | Ninja | Faster builds | `apt install ninja-build` / `brew install ninja` |
+
+> **Note**: No RDKit or Boost dependency is required. The ProcessLigand module (SMILES parsing, ring perception, aromaticity detection, 3D coordinate building) is implemented in pure C++20 + Eigen.
 
 ---
 
@@ -45,6 +48,7 @@ This produces three binaries in `build/`:
 | `FlexAID` | Standard docking executable |
 | `FlexAIDdS` | Optimized docking (LTO + `-march=native`) |
 | `tENCoM` | Vibrational entropy differential tool |
+| `flexaidds_process_ligand` | Standalone ligand preprocessing (SMILES → 3D, atom typing) |
 
 ### Python Package
 
@@ -109,6 +113,7 @@ All CMake options with defaults:
 | `BUILD_FLEXAIDDS_FAST` | **ON** | LTO-optimized FlexAIDdS binary |
 | `ENABLE_TENCOM_TOOL` | **ON** | tENCoM vibrational entropy tool |
 | `FLEXAIDS_USE_CUDA` | OFF | NVIDIA GPU acceleration (Volta → Hopper) |
+| `FLEXAIDS_USE_ROCM` | OFF | AMD GPU acceleration (MI100/MI200/MI300) |
 | `FLEXAIDS_USE_METAL` | OFF | Apple GPU acceleration (macOS only) |
 | `FLEXAIDS_USE_AVX2` | **ON** | AVX2 SIMD (auto-disabled on ARM) |
 | `FLEXAIDS_USE_AVX512` | OFF | AVX-512 SIMD acceleration |
@@ -162,6 +167,15 @@ cmake --build . -j $(nproc)
 ```
 
 Requires: macOS with Xcode installed.
+
+### ROCm/HIP GPU Acceleration (AMD)
+
+```bash
+cmake .. -DCMAKE_BUILD_TYPE=Release -DFLEXAIDS_USE_ROCM=ON
+cmake --build . -j $(nproc)
+```
+
+Requires: ROCm toolkit installed. Supports AMD Instinct MI100 (gfx908), MI200 (gfx90a), and MI300 (gfx942). The runtime dispatch priority is: CUDA > ROCm > Metal > AVX-512 > AVX-2 > OpenMP > scalar.
 
 ### HPC Deployment (maximum performance)
 
@@ -233,6 +247,16 @@ Ensure `nvcc` is in your PATH:
 export PATH=/usr/local/cuda/bin:$PATH
 cmake .. -DFLEXAIDS_USE_CUDA=ON
 ```
+
+### ROCm not detected
+
+Ensure the ROCm toolkit is installed and `hipcc` is in your PATH:
+```bash
+export PATH=/opt/rocm/bin:$PATH
+cmake .. -DFLEXAIDS_USE_ROCM=ON
+```
+
+Verify your GPU is supported: `rocminfo | grep gfx`. Supported targets: gfx908, gfx90a, gfx942.
 
 ### Python bindings import error
 
