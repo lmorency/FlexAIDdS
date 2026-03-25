@@ -25,3 +25,13 @@ int read_cif_receptor(FA_Global* FA, atom** atoms, resid** residue,
 // Returns 1 on success, 0 on failure.
 int read_cif_ligand(FA_Global* FA, atom** atoms, resid** residue,
                     const char* cif_file);
+
+// ═══ CCBM: Multi-model CIF/PDB reader ═══
+// Extract all MODEL records from a PDB or mmCIF file into separate
+// coordinate arrays. Each model shares topology but has its own coordinates.
+// Populates FA->model_coords[model_idx][atom_idx*3+{0,1,2}] and
+// sets FA->n_models. Returns the number of models found (≥1).
+int read_multi_model_pdb(FA_Global* FA, atom** atoms, resid** residue,
+                         const char* pdb_file);
+int read_multi_model_cif(FA_Global* FA, atom** atoms, resid** residue,
+                         const char* cif_file);

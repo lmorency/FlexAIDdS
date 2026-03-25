@@ -274,6 +274,7 @@ target_sources(FlexAID PRIVATE
         LIB/ProcessLigand/ROCmDispatch.cpp
         LIB/ProcessLigand/CoordBuilder.cpp
         LIB/CifReader.cpp
+        LIB/MultiModelDock.cpp
         LIB/LibrarySplitter.cpp
         LIB/ReferenceEntropy.cpp
         LIB/ParallelCampaign.cpp
@@ -369,6 +370,7 @@ if(FLEXAIDS_USE_CUDA)
         LIB/ShannonThermoStack/shannon_cuda.cu    # Shannon entropy histogram kernel
 LIB/tENCoM/tencm_cuda.cu                  # TENCoM contact discovery + Hessian assembly
         LIB/gpu_fast_optics.cu                    # GPU-accelerated FastOPTICS neighbour search
+        LIB/TurboQuant.cu                          # TurboQuant batch quantize/dequantize kernels
     )
     target_compile_definitions(FlexAID PRIVATE FLEXAIDS_USE_CUDA)
     if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
@@ -437,6 +439,35 @@ if(FLEXAIDS_USE_METAL)
     add_dependencies(FlexAID CavityDetectMetal)
     target_compile_definitions(FlexAID PRIVATE
         CAVITY_METALLIB_PATH="${CAVITY_METALLIB}"
+    )
+    # TurboQuant Metal bridge (TurboQuant.metal batch quantize/dequantize)
+    target_sources(FlexAID PRIVATE LIB/TurboQuantMetalBridge.mm)
+    set_source_files_properties(LIB/TurboQuantMetalBridge.mm PROPERTIES
+        LANGUAGE OBJCXX
+        COMPILE_FLAGS "-std=c++20 -fno-objc-arc"
+    )
+    # Compile TurboQuant.metal shader → .metallib
+    set(TQ_METAL_SRC  "${CMAKE_CURRENT_SOURCE_DIR}/LIB/TurboQuant.metal")
+    set(TQ_AIR        "${CMAKE_CURRENT_BINARY_DIR}/TurboQuant.air")
+    set(TQ_METALLIB   "${CMAKE_CURRENT_BINARY_DIR}/TurboQuant.metallib")
+    add_custom_command(
+        OUTPUT  "${TQ_AIR}"
+        COMMAND xcrun -sdk macosx metal -c "${TQ_METAL_SRC}" -o "${TQ_AIR}"
+        DEPENDS "${TQ_METAL_SRC}"
+        COMMENT "Compiling TurboQuant Metal shader"
+        VERBATIM
+    )
+    add_custom_command(
+        OUTPUT  "${TQ_METALLIB}"
+        COMMAND xcrun -sdk macosx metallib "${TQ_AIR}" -o "${TQ_METALLIB}"
+        DEPENDS "${TQ_AIR}"
+        COMMENT "Linking TurboQuant.metallib"
+        VERBATIM
+    )
+    add_custom_target(TurboQuantMetal DEPENDS "${TQ_METALLIB}")
+    add_dependencies(FlexAID TurboQuantMetal)
+    target_compile_definitions(FlexAID PRIVATE
+        TURBOQUANT_METALLIB_PATH="${TQ_METALLIB}"
     )
 endif()
 
@@ -703,6 +734,34 @@ if(ENABLE_DISPATCH_BENCHMARK)
         target_compile_definitions(benchmark_dispatch PRIVATE FLEXAIDS_HAS_EIGEN)
     endif()
     message(STATUS "Dispatch benchmark enabled — build target: benchmark_dispatch")
+endif()
+
+# ─── Benchmark Dataset Runner ──────────────────────────────────────────────
+option(ENABLE_BENCHMARK_DATASETS "Build benchmark dataset runner" ON)
+if(ENABLE_BENCHMARK_DATASETS)
+    find_package(CURL QUIET)
+
+    add_executable(benchmark_datasets
+        LIB/benchmark_datasets.cpp
+        LIB/DatasetRunner.cpp
+    )
+    target_include_directories(benchmark_datasets PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    if(MSVC)
+        target_compile_options(benchmark_datasets PRIVATE /O2 /fp:fast)
+        target_compile_definitions(benchmark_datasets PRIVATE
+            _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES NOMINMAX)
+    else()
+        target_compile_options(benchmark_datasets PRIVATE -O3 -ffast-math)
+    endif()
+    flexaids_configure_simd(benchmark_datasets)
+    if(CURL_FOUND)
+        target_link_libraries(benchmark_datasets PRIVATE CURL::libcurl)
+        target_compile_definitions(benchmark_datasets PRIVATE FLEXAIDS_HAS_LIBCURL)
+    endif()
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(benchmark_datasets PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    message(STATUS "Benchmark dataset runner enabled — build target: benchmark_datasets")
 endif()
 
 # ─── Unit Tests (GoogleTest) ───────────────────────────────────────────────
@@ -1171,6 +1230,50 @@ flexaids_configure_simd(test_cavity_detect)
     flexaids_configure_msvc_test(test_binding_mode_statmech)
     add_test(NAME BindingModeStatMechTests COMMAND test_binding_mode_statmech)
 
+    # test_ccbm — Conformer-Coupled Binding Modes (CCBM) unit tests
+    add_executable(test_ccbm
+        tests/test_ccbm.cpp
+        tests/stubs.cpp
+        LIB/gaboom.cpp
+        LIB/Vcontacts.cpp
+        LIB/statmech.cpp
+        LIB/TurboQuant.cpp
+        LIB/geometry.cpp
+        LIB/tENCoM/tencm.cpp
+        LIB/encom.cpp
+        LIB/BindingMode.cpp
+        LIB/fast_optics.cpp
+        LIB/ShannonThermoStack/ShannonThermoStack.cpp
+        LIB/CleftDetector.cpp
+        LIB/NATURaL/NATURaLDualAssembly.cpp
+        LIB/NATURaL/RibosomeElongation.cpp
+        LIB/NATURaL/TransloconInsertion.cpp
+        LIB/hardware_dispatch.cpp
+        LIB/hardware_detect.cpp
+    )
+    target_include_directories(test_ccbm PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/tENCoM
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ShannonThermoStack
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect
+    )
+    target_link_libraries(test_ccbm PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_ccbm PRIVATE /O2)
+    else()
+        target_compile_options(test_ccbm PRIVATE -O2)
+    endif()
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(test_ccbm PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
+        target_link_libraries(test_ccbm PRIVATE Eigen3::Eigen)
+        target_compile_definitions(test_ccbm PRIVATE FLEXAIDS_HAS_EIGEN)
+    endif()
+    flexaids_configure_msvc_test(test_ccbm)
+    add_test(NAME CCBMTests COMMAND test_ccbm)
+
     # test_binding_mode_advanced — BindingMode advanced methods (delta_G, WHAM, representative)
     add_executable(test_binding_mode_advanced
         tests/test_binding_mode_advanced.cpp
@@ -1444,7 +1547,50 @@ flexaids_configure_simd(test_cavity_detect)
     flexaids_configure_msvc_test(test_mol2_sdf_reader)
     add_test(NAME Mol2SdfReaderTests COMMAND test_mol2_sdf_reader)
 
-    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_hardware_detect_dispatch, test_tencom_diff, test_ptm_attachment, test_gaboom, test_vcontacts, test_cleft_cavity, test_encom, test_ring_conformer_library, test_sugar_pucker, test_chiral_center, test_cavity_detect, test_binding_mode_statmech, test_binding_mode_advanced, test_ga_core, test_ga_validation, test_fast_optics, test_entropy_ga, test_soft_contact_matrix, test_cube_grid, test_parallel_dock, test_mol2_sdf_reader")
+    # test_turboquant — TurboQuant quantisation library unit tests
+    add_executable(test_turboquant
+        tests/test_turboquant.cpp
+        LIB/TurboQuant.cpp
+    )
+    target_include_directories(test_turboquant PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_turboquant PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_turboquant PRIVATE /O2)
+    else()
+        target_compile_options(test_turboquant PRIVATE -O2)
+    endif()
+    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
+        target_link_libraries(test_turboquant PRIVATE Eigen3::Eigen)
+        target_compile_definitions(test_turboquant PRIVATE FLEXAIDS_HAS_EIGEN)
+    elseif(FLEXAIDS_USE_EIGEN AND EIGEN3_FOUND)
+        target_include_directories(test_turboquant PRIVATE ${EIGEN3_INCLUDE_DIRS})
+        target_compile_definitions(test_turboquant PRIVATE FLEXAIDS_HAS_EIGEN)
+    endif()
+    flexaids_configure_msvc_test(test_turboquant)
+    add_test(NAME TurboQuantTests COMMAND test_turboquant)
+
+    # test_dataset_runner — benchmark dataset runner tests
+    add_executable(test_dataset_runner
+        tests/test_dataset_runner.cpp
+        LIB/DatasetRunner.cpp
+    )
+    target_include_directories(test_dataset_runner PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_dataset_runner PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_dataset_runner PRIVATE /O2)
+        target_compile_definitions(test_dataset_runner PRIVATE
+            _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES NOMINMAX)
+    else()
+        target_compile_options(test_dataset_runner PRIVATE -O2)
+    endif()
+    if(CURL_FOUND)
+        target_link_libraries(test_dataset_runner PRIVATE CURL::libcurl)
+        target_compile_definitions(test_dataset_runner PRIVATE FLEXAIDS_HAS_LIBCURL)
+    endif()
+    flexaids_configure_msvc_test(test_dataset_runner)
+    add_test(NAME DatasetRunnerTests COMMAND test_dataset_runner)
+
+    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_hardware_detect_dispatch, test_tencom_diff, test_ptm_attachment, test_gaboom, test_vcontacts, test_cleft_cavity, test_encom, test_ring_conformer_library, test_sugar_pucker, test_chiral_center, test_cavity_detect, test_binding_mode_statmech, test_binding_mode_advanced, test_ga_core, test_ga_validation, test_fast_optics, test_entropy_ga, test_soft_contact_matrix, test_cube_grid, test_parallel_dock, test_mol2_sdf_reader, test_turboquant, test_dataset_runner")
 endif()
 
 # ─── Swift Bridge (macOS only) ────────────────────────────────────────────
