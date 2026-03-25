@@ -274,6 +274,7 @@ target_sources(FlexAID PRIVATE
         LIB/ProcessLigand/ROCmDispatch.cpp
         LIB/ProcessLigand/CoordBuilder.cpp
         LIB/CifReader.cpp
+        LIB/MultiModelDock.cpp
         LIB/LibrarySplitter.cpp
         LIB/ReferenceEntropy.cpp
         LIB/ParallelCampaign.cpp
@@ -366,6 +367,7 @@ if(FLEXAIDS_USE_CUDA)
         LIB/ShannonThermoStack/shannon_cuda.cu    # Shannon entropy histogram kernel
 LIB/tENCoM/tencm_cuda.cu                  # TENCoM contact discovery + Hessian assembly
         LIB/gpu_fast_optics.cu                    # GPU-accelerated FastOPTICS neighbour search
+        LIB/TurboQuant.cu                          # TurboQuant batch quantize/dequantize kernels
     )
     target_compile_definitions(FlexAID PRIVATE FLEXAIDS_USE_CUDA)
     if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
@@ -434,6 +436,35 @@ if(FLEXAIDS_USE_METAL)
     add_dependencies(FlexAID CavityDetectMetal)
     target_compile_definitions(FlexAID PRIVATE
         CAVITY_METALLIB_PATH="${CAVITY_METALLIB}"
+    )
+    # TurboQuant Metal bridge (TurboQuant.metal batch quantize/dequantize)
+    target_sources(FlexAID PRIVATE LIB/TurboQuantMetalBridge.mm)
+    set_source_files_properties(LIB/TurboQuantMetalBridge.mm PROPERTIES
+        LANGUAGE OBJCXX
+        COMPILE_FLAGS "-std=c++20 -fno-objc-arc"
+    )
+    # Compile TurboQuant.metal shader → .metallib
+    set(TQ_METAL_SRC  "${CMAKE_CURRENT_SOURCE_DIR}/LIB/TurboQuant.metal")
+    set(TQ_AIR        "${CMAKE_CURRENT_BINARY_DIR}/TurboQuant.air")
+    set(TQ_METALLIB   "${CMAKE_CURRENT_BINARY_DIR}/TurboQuant.metallib")
+    add_custom_command(
+        OUTPUT  "${TQ_AIR}"
+        COMMAND xcrun -sdk macosx metal -c "${TQ_METAL_SRC}" -o "${TQ_AIR}"
+        DEPENDS "${TQ_METAL_SRC}"
+        COMMENT "Compiling TurboQuant Metal shader"
+        VERBATIM
+    )
+    add_custom_command(
+        OUTPUT  "${TQ_METALLIB}"
+        COMMAND xcrun -sdk macosx metallib "${TQ_AIR}" -o "${TQ_METALLIB}"
+        DEPENDS "${TQ_AIR}"
+        COMMENT "Linking TurboQuant.metallib"
+        VERBATIM
+    )
+    add_custom_target(TurboQuantMetal DEPENDS "${TQ_METALLIB}")
+    add_dependencies(FlexAID TurboQuantMetal)
+    target_compile_definitions(FlexAID PRIVATE
+        TURBOQUANT_METALLIB_PATH="${TQ_METALLIB}"
     )
 endif()
 
@@ -1167,6 +1198,50 @@ flexaids_configure_simd(test_cavity_detect)
     endif()
     flexaids_configure_msvc_test(test_binding_mode_statmech)
     add_test(NAME BindingModeStatMechTests COMMAND test_binding_mode_statmech)
+
+    # test_ccbm — Conformer-Coupled Binding Modes (CCBM) unit tests
+    add_executable(test_ccbm
+        tests/test_ccbm.cpp
+        tests/stubs.cpp
+        LIB/gaboom.cpp
+        LIB/Vcontacts.cpp
+        LIB/statmech.cpp
+        LIB/TurboQuant.cpp
+        LIB/geometry.cpp
+        LIB/tENCoM/tencm.cpp
+        LIB/encom.cpp
+        LIB/BindingMode.cpp
+        LIB/fast_optics.cpp
+        LIB/ShannonThermoStack/ShannonThermoStack.cpp
+        LIB/CleftDetector.cpp
+        LIB/NATURaL/NATURaLDualAssembly.cpp
+        LIB/NATURaL/RibosomeElongation.cpp
+        LIB/NATURaL/TransloconInsertion.cpp
+        LIB/hardware_dispatch.cpp
+        LIB/hardware_detect.cpp
+    )
+    target_include_directories(test_ccbm PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/tENCoM
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ShannonThermoStack
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect
+    )
+    target_link_libraries(test_ccbm PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_ccbm PRIVATE /O2)
+    else()
+        target_compile_options(test_ccbm PRIVATE -O2)
+    endif()
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(test_ccbm PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
+        target_link_libraries(test_ccbm PRIVATE Eigen3::Eigen)
+        target_compile_definitions(test_ccbm PRIVATE FLEXAIDS_HAS_EIGEN)
+    endif()
+    flexaids_configure_msvc_test(test_ccbm)
+    add_test(NAME CCBMTests COMMAND test_ccbm)
 
     # test_binding_mode_advanced — BindingMode advanced methods (delta_G, WHAM, representative)
     add_executable(test_binding_mode_advanced

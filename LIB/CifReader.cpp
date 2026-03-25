@@ -26,6 +26,7 @@
 #include "CifReader.h"
 #include "fileio.h"
 
+#include <array>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -445,4 +446,294 @@ int read_cif_ligand(FA_Global* FA, atom** atoms, resid** residue,
     return parse_cif_atom_site(FA, atoms, residue, cif_file,
                                /*read_atom=*/false, /*read_hetatm=*/true,
                                /*model_num=*/1);
+}
+
+
+// =============================================================================
+// CCBM: Multi-model PDB reader
+// =============================================================================
+// Reads a PDB file with MODEL/ENDMDL records and extracts coordinates for
+// each model into FA->model_coords. The first model is loaded fully via
+// read_pdb(), then subsequent models have their coordinates extracted.
+
+int read_multi_model_pdb(FA_Global* FA, atom** atoms, resid** residue,
+                         const char* pdb_file) {
+    // Phase 1: Count models and collect per-model ATOM coordinate lines
+    FILE* fp = fopen(pdb_file, "r");
+    if (!fp) {
+        fprintf(stderr, "ERROR: Cannot open PDB file for multi-model: %s\n", pdb_file);
+        return 0;
+    }
+
+    // Collect all coordinates per model
+    struct ModelCoord {
+        int    model_num;
+        std::vector<std::array<float,3>> coords;
+    };
+    std::vector<ModelCoord> models;
+    int current_model = 1;  // default model if no MODEL records
+    bool has_model_records = false;
+    bool first_model_started = false;
+
+    char buf[256];
+    while (fgets(buf, sizeof(buf), fp)) {
+        if (strncmp(buf, "MODEL", 5) == 0) {
+            has_model_records = true;
+            sscanf(buf + 5, "%d", &current_model);
+            models.push_back({current_model, {}});
+            first_model_started = true;
+            continue;
+        }
+        if (strncmp(buf, "ENDMDL", 6) == 0) {
+            continue;
+        }
+        if (strncmp(buf, "ATOM", 4) == 0 || strncmp(buf, "HETATM", 6) == 0) {
+            // Parse coordinates from columns 31-54 (PDB standard)
+            if (strlen(buf) < 54) continue;
+            float x, y, z;
+            char xbuf[9], ybuf[9], zbuf[9];
+            strncpy(xbuf, buf + 30, 8); xbuf[8] = '\0';
+            strncpy(ybuf, buf + 38, 8); ybuf[8] = '\0';
+            strncpy(zbuf, buf + 46, 8); zbuf[8] = '\0';
+            x = static_cast<float>(atof(xbuf));
+            y = static_cast<float>(atof(ybuf));
+            z = static_cast<float>(atof(zbuf));
+
+            if (!has_model_records && models.empty()) {
+                models.push_back({1, {}});
+            }
+            if (!models.empty()) {
+                models.back().coords.push_back({x, y, z});
+            }
+        }
+    }
+    fclose(fp);
+
+    if (models.empty()) {
+        // No atoms found — fall back to single-model
+        fprintf(stderr, "WARNING: No ATOM records found in %s, attempting single-model read\n", pdb_file);
+        FA->n_models = 1;
+        FA->model_coords.clear();
+        FA->model_strain.clear();
+        FA->model_strain.push_back(0.0);
+        return 1;
+    }
+
+    // Phase 2: Load first model via standard read_pdb for full topology
+    // Create a temp PDB with only the first model's atoms
+    char tmp_pdb[MAX_PATH__];
+    snprintf(tmp_pdb, MAX_PATH__, "/tmp/flexaid_mm_%d.pdb", rand() % 900000 + 100000);
+    FILE* out = fopen(tmp_pdb, "w");
+    if (!out) {
+        fprintf(stderr, "ERROR: Cannot create temp PDB for multi-model\n");
+        return 0;
+    }
+
+    // Re-read and write only the first model
+    fp = fopen(pdb_file, "r");
+    if (!fp) { fclose(out); return 0; }
+
+    int write_model = -1;
+    bool writing = !has_model_records;  // if no MODEL records, write everything
+    while (fgets(buf, sizeof(buf), fp)) {
+        if (strncmp(buf, "MODEL", 5) == 0) {
+            int m = 0;
+            sscanf(buf + 5, "%d", &m);
+            if (write_model < 0) {
+                write_model = m;
+                writing = true;
+            } else {
+                writing = false;
+            }
+            continue;
+        }
+        if (strncmp(buf, "ENDMDL", 6) == 0) {
+            if (writing) {
+                writing = false;
+            }
+            continue;
+        }
+        if (writing) {
+            fputs(buf, out);
+        }
+    }
+    fprintf(out, "END\n");
+    fclose(fp);
+    fclose(out);
+
+    // Load the first model with full FlexAID infrastructure
+    read_pdb(FA, atoms, residue, tmp_pdb);
+    remove(tmp_pdb);
+
+    // Phase 3: Build model_coords arrays
+    int n_atoms_ref = static_cast<int>(models[0].coords.size());
+    FA->n_models = static_cast<int>(models.size());
+    FA->model_coords.resize(FA->n_models);
+    FA->model_strain.resize(FA->n_models, 0.0);  // default: all strains = 0
+
+    for (int m = 0; m < FA->n_models; ++m) {
+        int n_atoms_m = static_cast<int>(models[m].coords.size());
+        int n_copy = std::min(n_atoms_ref, n_atoms_m);
+        FA->model_coords[m].resize(n_copy * 3, 0.0f);
+        for (int a = 0; a < n_copy; ++a) {
+            FA->model_coords[m][a * 3 + 0] = models[m].coords[a][0];
+            FA->model_coords[m][a * 3 + 1] = models[m].coords[a][1];
+            FA->model_coords[m][a * 3 + 2] = models[m].coords[a][2];
+        }
+    }
+
+    printf("CCBM: parsed %d models from %s (%d atoms each)\n",
+           FA->n_models, pdb_file, n_atoms_ref);
+
+    return FA->n_models;
+}
+
+
+// =============================================================================
+// CCBM: Multi-model CIF reader
+// =============================================================================
+// Reads a CIF file and groups atoms by pdbx_PDB_model_num into separate
+// coordinate arrays in FA->model_coords.
+
+int read_multi_model_cif(FA_Global* FA, atom** atoms, resid** residue,
+                         const char* cif_file) {
+    // Phase 1: Parse all atoms with their model numbers
+    FILE* fp = fopen(cif_file, "r");
+    if (!fp) {
+        fprintf(stderr, "ERROR: Cannot open CIF file for multi-model: %s\n", cif_file);
+        return 0;
+    }
+
+    CifAtomSiteColumns cols;
+    char buf[2048];
+    bool in_atom_site_loop = false;
+    bool reading_headers = false;
+    int col_count = 0;
+
+    while (fgets(buf, sizeof(buf), fp)) {
+        std::string line(buf);
+        while (!line.empty() && std::isspace(static_cast<unsigned char>(line.back())))
+            line.pop_back();
+
+        if (line == "loop_") {
+            in_atom_site_loop = false;
+            reading_headers = true;
+            col_count = 0;
+            continue;
+        }
+
+        if (reading_headers) {
+            if (line.find("_atom_site.") == 0) {
+                in_atom_site_loop = true;
+                map_column(cols, line, col_count);
+                col_count++;
+                continue;
+            } else if (in_atom_site_loop) {
+                reading_headers = false;
+                cols.num_columns = col_count;
+                break;
+            } else {
+                reading_headers = false;
+                continue;
+            }
+        }
+    }
+
+    if (!in_atom_site_loop || cols.num_columns == 0) {
+        fprintf(stderr, "ERROR: No _atom_site loop in CIF: %s\n", cif_file);
+        fclose(fp);
+        return 0;
+    }
+
+    // Collect atoms grouped by model number
+    struct CifModelAtom {
+        int    model;
+        float  x, y, z;
+    };
+    std::vector<CifModelAtom> all_atoms;
+    std::map<int, int> model_map;  // model_num -> sequential index
+
+    auto process = [&](const std::string& line) -> bool {
+        if (line.empty() || line[0] == '#' || line[0] == '_' || line == "loop_")
+            return false;
+        auto toks = tokenize_cif_line(line);
+        if (toks.empty() || static_cast<int>(toks.size()) < cols.num_columns)
+            return false;
+        std::string group = get_val(toks, cols.group_PDB);
+        if (group != "ATOM" && group != "HETATM")
+            return false;
+
+        // Filter alt locations
+        std::string alt = get_val(toks, cols.label_alt_id);
+        if (alt != "." && alt != "?" && alt != "A") return true;
+
+        CifModelAtom a;
+        a.model = get_int(toks, cols.pdbx_PDB_model_num);
+        if (a.model <= 0) a.model = 1;
+        a.x = get_float(toks, cols.Cartn_x);
+        a.y = get_float(toks, cols.Cartn_y);
+        a.z = get_float(toks, cols.Cartn_z);
+        all_atoms.push_back(a);
+
+        if (model_map.find(a.model) == model_map.end()) {
+            int idx = static_cast<int>(model_map.size());
+            model_map[a.model] = idx;
+        }
+        return true;
+    };
+
+    // Process first data line in buf
+    {
+        std::string line(buf);
+        while (!line.empty() && std::isspace(static_cast<unsigned char>(line.back())))
+            line.pop_back();
+        process(line);
+    }
+
+    while (fgets(buf, sizeof(buf), fp)) {
+        std::string line(buf);
+        while (!line.empty() && std::isspace(static_cast<unsigned char>(line.back())))
+            line.pop_back();
+        if (!process(line)) break;
+    }
+    fclose(fp);
+
+    int n_models = static_cast<int>(model_map.size());
+    if (n_models == 0) {
+        fprintf(stderr, "WARNING: No atoms found in CIF multi-model: %s\n", cif_file);
+        FA->n_models = 1;
+        return 0;
+    }
+
+    // Load first model via standard reader for topology
+    int first_model = model_map.begin()->first;
+    read_cif_receptor(FA, atoms, residue, cif_file);
+
+    // Group coordinates by model
+    std::vector<std::vector<std::array<float,3>>> model_coords(n_models);
+    for (const auto& a : all_atoms) {
+        int idx = model_map[a.model];
+        model_coords[idx].push_back({a.x, a.y, a.z});
+    }
+
+    // Build FA->model_coords
+    int n_atoms_ref = model_coords.empty() ? 0 : static_cast<int>(model_coords[0].size());
+    FA->n_models = n_models;
+    FA->model_coords.resize(n_models);
+    FA->model_strain.resize(n_models, 0.0);
+
+    for (int m = 0; m < n_models; ++m) {
+        int n_copy = std::min(n_atoms_ref, static_cast<int>(model_coords[m].size()));
+        FA->model_coords[m].resize(n_copy * 3, 0.0f);
+        for (int a = 0; a < n_copy; ++a) {
+            FA->model_coords[m][a * 3 + 0] = model_coords[m][a][0];
+            FA->model_coords[m][a * 3 + 1] = model_coords[m][a][1];
+            FA->model_coords[m][a * 3 + 2] = model_coords[m][a][2];
+        }
+    }
+
+    printf("CCBM: parsed %d models from CIF %s (%d atoms each)\n",
+           n_models, cif_file, n_atoms_ref);
+
+    return n_models;
 }

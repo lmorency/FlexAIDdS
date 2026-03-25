@@ -9,6 +9,8 @@
 #include <fstream>
 #include <queue>
 #include <cmath>
+#include <memory>
+#include "TurboQuant.h"
 
 
 int roll_die();
@@ -84,6 +86,8 @@ class FastOPTICS
 		int minPoints;	// minPts : minimal number of neighbors (only parameter in FOPTICS)
 		int nDimensions;
 		bool useGPU;	// true when CUDA-accelerated neighbour search is active
+		bool useTQNN;	// true when TurboQuant compressed NN is active
+		std::unique_ptr<turboquant::NearestNeighborIndex> tqnn_index_;
 		
 		// FOPTICS algorithm attributes
 		int iOrder;

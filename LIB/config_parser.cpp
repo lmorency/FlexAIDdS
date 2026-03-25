@@ -92,6 +92,9 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB) {
         }
         FA->cluster_rmsd = jflt(config, "thermodynamics", "cluster_rmsd", 2.0f);
         FA->use_super_cluster = jbool(config, "thermodynamics", "use_super_cluster", false);
+        FA->use_tqcm  = jbool(config, "turboquant", "compressed_contact_matrix", false);
+        FA->use_tqens = jbool(config, "turboquant", "ensemble_compression", false);
+        FA->use_tqnn  = jbool(config, "turboquant", "compressed_nn", false);
 
         auto ca = jstr(config, "thermodynamics", "clustering_algorithm", "CF");
         std::strncpy(FA->clustering_algorithm, ca.c_str(), sizeof(FA->clustering_algorithm) - 1);

@@ -351,6 +351,9 @@ struct FA_Global_struct{
 	float cluster_rmsd;                  // rmsd between poses when clustering
 	char  clustering_algorithm[3];
 	bool  use_super_cluster;             // use SUPER_CLUSTER_ONLY mode for faster clustering
+	bool  use_tqcm;                      // TurboQuant compressed contact matrix scoring
+	bool  use_tqens;                     // TurboQuant ensemble compression for partition function
+	bool  use_tqnn;                      // TurboQuant compressed NN for FastOPTICS
 	uint temperature;					 // temperature parameter 
 	double beta;						 // Metropolis ß parament == 1/T *may be worth trying 1/kT*
 	float permeability;                  // allow permeability or not between atoms
@@ -523,6 +526,13 @@ struct FA_Global_struct{
 	// ── Auto-Flex Binding Residues ──
 	int     autoflex_enabled;        // 1 = auto-flex key binding residues (default 1)
 	int     autoflex_max;            // max residues to auto-flex (default 5)
+
+	// ── Multi-Model / Conformer-Coupled Binding Modes (CCBM) ──
+	bool    multi_model;             // true when MULTIMODEL ON
+	int     n_models;                // number of receptor conformer models (≥1)
+	int     model_gene_index;        // index of the model-selection gene in chromosome
+	std::vector<std::vector<float>> model_coords;  // model_coords[model_idx][atom_idx*3+{0,1,2}]
+	std::vector<double>             model_strain;  // strain energy per model (kcal/mol)
 };
 typedef struct FA_Global_struct FA_Global;
 
