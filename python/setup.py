@@ -44,14 +44,7 @@ if _matrix_bindings.exists():
 ext_modules = [
     Extension(
         "flexaidds._core",
-        sources=[
-            "flexaidds/_core.cpp",
-            f"{_rel_lib}/statmech.cpp",
-            f"{_rel_lib}/encom.cpp",
-            f"{_rel_lib}/tENCoM/tencm.cpp",
-            f"{_rel_lib}/ShannonThermoStack/ShannonThermoStack.cpp",
-            f"{_rel_lib}/fast_optics.cpp",
-        ],
+        sources=_core_sources + [f"{_rel_lib}/fast_optics.cpp"],
         include_dirs=[
             str(LIB_DIR),
             str(LIB_DIR / "tENCoM"),
@@ -72,15 +65,6 @@ ext_modules = [
             ["/O2", "/std:c++20", "/EHsc"]
             if os.name == "nt"
             else ["-std=c++20", "-O3"]
-        ),
-        define_macros=(
-            [
-                ("_CRT_SECURE_NO_WARNINGS", "1"),
-                ("_USE_MATH_DEFINES", "1"),
-                ("NOMINMAX", "1"),
-            ]
-            if os.name == "nt"
-            else []
         ),
     ),
 ]

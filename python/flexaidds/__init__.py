@@ -147,6 +147,43 @@ def dock(
 
     docking = Docking(str(cfg_path))
     return docking.run(binary=binary, timeout=timeout)
+
+
+__all__ = [
+    # Version
+    "__version__",
+    # Data models
+    "PoseResult",
+    "BindingModeResult",
+    "DockingResult",
+    # Result loading
+    "load_results",
+    # Ion utilities
+    "is_ion",
+    "_ION_RESNAMES",
+    # Docking
+    "Docking",
+    "BindingMode",
+    "BindingPopulation",
+    "Pose",
+    "dock",
+    # ENCoM
+    "ENCoMEngine",
+    "NormalMode",
+    "VibrationalEntropy",
+    # Torsional ENCoM
+    "TorsionalENM",
+    "TorsionalNormalMode",
+    "Conformer",
+    "FullThermoResult",
+    "compute_shannon_entropy",
+    "compute_torsional_vibrational_entropy",
+    "run_shannon_thermo_stack",
+    # Thermodynamics (pure-Python or C++ override)
+    "StatMechEngine",
+    "Thermodynamics",
+    "kB_kcal",
+    "kB_SI",
     # Availability flag
     "HAS_CORE_BINDINGS",
     # Core types (C++ when available, pure-Python fallback otherwise)
@@ -155,6 +192,34 @@ def dock(
     "Replica",
     "WHAMBin",
     "TIPoint",
+    # Updater
+    "check_for_updates",
+    "UpdateInfo",
+    # Boltz2
+    "Boltz2Client",
+    "Boltz2PredictionResult",
+    "Boltz2AffinityResult",
+    "Boltz2Polymer",
+    "Boltz2Ligand",
+    "PocketConstraint",
+    "PocketContact",
+    "Boltz2Error",
+    # Benchmark
+    "BenchmarkSystem",
+    "MethodResult",
+    "SystemBenchmarkResult",
+    "BenchmarkResult",
+    "BenchmarkSummary",
+    "run_benchmark",
+    "load_benchmark_dataset",
+    "save_benchmark_dataset",
+    # SuperCluster
+    "SuperCluster",
+    # tENCoM results
+    "FlexModeResult",
+    "FlexPopulationResult",
+    "parse_tencom_pdb",
+    "parse_tencom_json",
     # Energy matrix I/O and 256-type encoding (always available — pure Python)
     "EnergyMatrix",
     "MatrixEntry",
@@ -168,13 +233,3 @@ def dock(
     "SYBYL_TYPE_NAMES",
     "SYBYL_RADII",
 ]
-
-# C++ core extras (only available when compiled)
-if HAS_CORE_BINDINGS:
-    __all__.extend([
-        "State",
-        "BoltzmannLUT",
-        "Replica",
-        "WHAMBin",
-        "TIPoint",
-    ])

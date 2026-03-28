@@ -994,12 +994,7 @@ int main(int argc, char **argv){
 		}
 	}  
 	
-	//FA->deelig_root_node = (struct deelig_node_struct*)malloc(sizeof(struct deelig_node_struct));
 	FA->deelig_root_node = new struct deelig_node_struct;
-	if(!FA->deelig_root_node){
-		fprintf(stderr, "ERROR: memory allocation error for deelig_root_node\n");
-		Terminate(2);
-	}
 	FA->deelig_root_node->parent = NULL;
 	
 	FA->contributions = (float*)malloc(FA->ntypes*FA->ntypes*sizeof(float));
