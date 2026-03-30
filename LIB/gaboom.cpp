@@ -13,6 +13,7 @@
 #include <array>
 #include <memory>
 #include <span>
+#include <unordered_set>
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -661,13 +662,32 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 					printf("  Final ΔG (co-translational) = %10.4f kcal/mol\n",
 					       engine.final_deltaG());
 					FA->natural_deltaG = engine.final_deltaG();
-					int n_pause = 0, n_tm = 0;
+
+					int  n_pause        = 0;
+					int  n_tm           = 0;
+					int  n_burst_events = 0;
+					int  max_burst_size = 0;
+					int  n_nuc_seeds    = 0;
+					std::unordered_set<int> seen_bursts, seen_seeds;
+
 					for (const auto& step : trajectory) {
 						if (step.is_pause_site) ++n_pause;
 						if (step.tm_inserted)   ++n_tm;
+						if (step.burst_unit_id >= 0 &&
+						    seen_bursts.insert(step.burst_unit_id).second) {
+							++n_burst_events;
+							if (step.burst_size > max_burst_size)
+								max_burst_size = step.burst_size;
+						}
+						if (step.nucleation_seed_id >= 0 &&
+						    seen_seeds.insert(step.nucleation_seed_id).second)
+							++n_nuc_seeds;
 					}
-					printf("  Pause sites detected        = %d\n", n_pause);
-					printf("  TM insertions               = %d\n", n_tm);
+					printf("  Pause sites detected        = %d\n",    n_pause);
+					printf("  TM insertions               = %d\n",    n_tm);
+					printf("  Burst elongation events     = %d (max %d residues/burst)\n",
+					       n_burst_events, max_burst_size);
+					printf("  Nucleation seeds detected   = %d\n",    n_nuc_seeds);
 				}
 			}
 		}

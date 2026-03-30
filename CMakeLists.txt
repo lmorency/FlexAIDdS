@@ -288,6 +288,7 @@ target_sources(FlexAID PRIVATE
         LIB/NATURaL/NATURaLDualAssembly.cpp
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
+        LIB/NATURaL/NucleationDetector.cpp
         LIB/ChiralCenter/ChiralCenterGene.cpp
         # ── CleftDetector + Mol2Reader + SdfReader ──
         LIB/CleftDetector.cpp
@@ -683,6 +684,7 @@ if(ENABLE_NATURAL_HAMMERHEAD)
         tools/natural_hammerhead.cpp
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
+        LIB/NATURaL/NucleationDetector.cpp
     )
     target_include_directories(natural_hammerhead PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB
@@ -958,6 +960,7 @@ if(BUILD_TESTING)
         LIB/NATURaL/NATURaLDualAssembly.cpp
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
+        LIB/NATURaL/NucleationDetector.cpp
         LIB/hardware_dispatch.cpp
         LIB/hardware_detect.cpp
     )
@@ -1204,6 +1207,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/NATURaLDualAssembly.cpp
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
+        LIB/NATURaL/NucleationDetector.cpp
         LIB/hardware_dispatch.cpp
         LIB/hardware_detect.cpp
     )
@@ -1248,6 +1252,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/NATURaLDualAssembly.cpp
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
+        LIB/NATURaL/NucleationDetector.cpp
         LIB/hardware_dispatch.cpp
         LIB/hardware_detect.cpp
     )
@@ -1292,6 +1297,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/NATURaLDualAssembly.cpp
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
+        LIB/NATURaL/NucleationDetector.cpp
         LIB/hardware_dispatch.cpp
         LIB/hardware_detect.cpp
     )
@@ -1336,6 +1342,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/NATURaLDualAssembly.cpp
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
+        LIB/NATURaL/NucleationDetector.cpp
         LIB/hardware_dispatch.cpp
         LIB/hardware_detect.cpp
     )
@@ -1380,6 +1387,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/NATURaLDualAssembly.cpp
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
+        LIB/NATURaL/NucleationDetector.cpp
         LIB/hardware_dispatch.cpp
         LIB/hardware_detect.cpp
     )
@@ -1473,6 +1481,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/NATURaLDualAssembly.cpp
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
+        LIB/NATURaL/NucleationDetector.cpp
         LIB/hardware_dispatch.cpp
         LIB/hardware_detect.cpp
     )

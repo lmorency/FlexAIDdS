@@ -69,6 +69,19 @@ inline constexpr double RNAP_PAUSE_THRESHOLD = 0.15;
 // ─── organism context ─────────────────────────────────────────────────────────
 enum class Organism { EcoliK12, HumanHEK293 };
 
+// ─── burst elongation unit ────────────────────────────────────────────────────
+// A burst unit is a maximal run of consecutive fast codons (k_el > threshold×mean)
+// after tunnel exit. Multiple residues in a burst elongate quasi-simultaneously
+// before co-translational folding can compete (dwell_i << 1/k_fold).
+struct BurstUnit {
+    int    start_residue;    // 0-based first residue of burst
+    int    end_residue;      // 0-based last residue (inclusive)
+    int    n_residues;       // monomers effectively added "at once"
+    double total_dwell;      // Σ 1/k_el[i] for i in burst (s)
+    double mean_k;           // harmonic mean elongation rate in burst (s⁻¹)
+    bool   follows_pause;    // true if immediately preceded by a pause site
+};
+
 // ─── codon rate table ─────────────────────────────────────────────────────────
 // Maps 3-letter codon string → elongation rate (s⁻¹).
 // Rates are calibrated from tRNA abundance × ribosome A-site occupancy times
@@ -96,6 +109,12 @@ public:
     std::vector<int> pause_sites(const std::vector<std::string>& codons,
                                   double threshold = 0.3) const;
 
+    // Most-Frequent Codon (MFC) mapping: amino-acid 1-letter code → dominant codon.
+    // Derived from the highest-rate codon per AA in each organism's rate table.
+    // Enables per-residue elongation rates for protein chains without explicit
+    // DNA sequence (replaces uniform mean-rate fallback).
+    static std::unordered_map<char, std::string> aa_to_mfc(Organism org);
+
     Organism organism;
     double   mean_rate_aa_per_s;
 
@@ -115,10 +134,11 @@ struct MasterEqState {
     int                 n_residues;
     double              t_current;           // s
     std::vector<double> P;                   // P[n] = probability at position n
-    std::vector<double> t_arrival;           // mean first-passage time to each n (s)
+    std::vector<double> t_arrival;           // leading-edge time (P[n] first > 1e-3) (s)
     std::vector<double> k_el;               // elongation rates (s⁻¹)
     double              k_ini;
     double              k_ter;
+    double              t_median_terminal = -1.0; // time when P[N] ≥ 0.5 (median)
 
     // Fraction of ribosomes that have reached position n at time t_current
     double fraction_reached(int n) const;
