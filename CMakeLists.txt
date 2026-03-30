@@ -308,6 +308,11 @@ target_sources(FlexAID PRIVATE
         # ── CoarseScreen: NRGRank coarse-grained screening ──
         LIB/CoarseScreen.cpp
         LIB/TwoStageScreen.cpp
+        # ── TargetServer: target-centric docking architecture ──
+        LIB/TargetValidation.cpp
+        LIB/GrandPartitionFunction.cpp
+        LIB/TargetKnowledgeBase.cpp
+        LIB/TargetServer.cpp
 )
 
 target_include_directories(FlexAID PRIVATE
@@ -1674,7 +1679,86 @@ flexaids_configure_simd(test_cavity_detect)
     flexaids_configure_msvc_test(test_tencom_entropy_diff)
     add_test(NAME TencomEntropyDiffTests COMMAND test_tencom_entropy_diff)
 
-    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_hardware_detect_dispatch, test_tencom_diff, test_ptm_attachment, test_gaboom, test_vcontacts, test_cleft_cavity, test_encom, test_ring_conformer_library, test_sugar_pucker, test_chiral_center, test_cavity_detect, test_binding_mode_statmech, test_binding_mode_advanced, test_binding_mode_vibrational, test_ga_core, test_ga_validation, test_fast_optics, test_tencom_entropy_diff, test_entropy_ga, test_soft_contact_matrix, test_cube_grid, test_parallel_dock, test_mol2_sdf_reader, test_turboquant, test_dataset_runner")
+    # ── TargetValidation tests ──────────────────────────────────────────
+    add_executable(test_target_validation
+        tests/test_target_validation.cpp
+        LIB/TargetValidation.cpp
+    )
+    target_include_directories(test_target_validation PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_target_validation PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_target_validation PRIVATE /O2)
+    else()
+        target_compile_options(test_target_validation PRIVATE -O2)
+    endif()
+    flexaids_configure_msvc_test(test_target_validation)
+    add_test(NAME TargetValidationTests COMMAND test_target_validation)
+
+    # ── GrandPartitionFunction tests ──────────────────────────────────────
+    add_executable(test_grand_partition
+        tests/test_grand_partition.cpp
+        LIB/GrandPartitionFunction.cpp
+        LIB/statmech.cpp
+        LIB/hardware_dispatch.cpp
+        LIB/hardware_detect.cpp
+    )
+    target_include_directories(test_grand_partition PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_grand_partition PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_grand_partition PRIVATE /O2)
+    else()
+        target_compile_options(test_grand_partition PRIVATE -O2)
+    endif()
+    flexaids_configure_simd(test_grand_partition)
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(test_grand_partition PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
+        target_link_libraries(test_grand_partition PRIVATE Eigen3::Eigen)
+        target_compile_definitions(test_grand_partition PRIVATE FLEXAIDS_HAS_EIGEN)
+    elseif(FLEXAIDS_USE_EIGEN AND EIGEN3_FOUND)
+        target_include_directories(test_grand_partition PRIVATE ${EIGEN3_INCLUDE_DIRS})
+        target_compile_definitions(test_grand_partition PRIVATE FLEXAIDS_HAS_EIGEN)
+    endif()
+    flexaids_configure_msvc_test(test_grand_partition)
+    add_test(NAME GrandPartitionTests COMMAND test_grand_partition)
+
+    # ── TargetServer integration tests ────────────────────────────────────
+    add_executable(test_target_server
+        tests/test_target_server.cpp
+        LIB/TargetServer.cpp
+        LIB/TargetValidation.cpp
+        LIB/GrandPartitionFunction.cpp
+        LIB/TargetKnowledgeBase.cpp
+        LIB/statmech.cpp
+        LIB/hardware_dispatch.cpp
+        LIB/hardware_detect.cpp
+    )
+    target_include_directories(test_target_server PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_target_server PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_target_server PRIVATE /O2)
+    else()
+        target_compile_options(test_target_server PRIVATE -O2)
+    endif()
+    flexaids_configure_simd(test_target_server)
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(test_target_server PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
+        target_link_libraries(test_target_server PRIVATE Eigen3::Eigen)
+        target_compile_definitions(test_target_server PRIVATE FLEXAIDS_HAS_EIGEN)
+    elseif(FLEXAIDS_USE_EIGEN AND EIGEN3_FOUND)
+        target_include_directories(test_target_server PRIVATE ${EIGEN3_INCLUDE_DIRS})
+        target_compile_definitions(test_target_server PRIVATE FLEXAIDS_HAS_EIGEN)
+    endif()
+    flexaids_configure_msvc_test(test_target_server)
+    add_test(NAME TargetServerTests COMMAND test_target_server)
+
+    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_tencom_diff, test_target_validation, test_grand_partition, test_target_server")
 endif()
 
 # ─── Swift Bridge (macOS only) ────────────────────────────────────────────
@@ -1764,6 +1848,4 @@ if(BUILD_SWIFT_BRIDGE)
     endif()
     flexaids_configure_msvc_test(test_coarse_screen)
     add_test(NAME CoarseScreenTests COMMAND test_coarse_screen)
-
-    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_tencom_diff, test_unified_dispatch, test_coarse_screen")
 endif()
