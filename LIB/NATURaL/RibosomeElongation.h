@@ -62,6 +62,9 @@ inline constexpr double MEAN_NT_RATE_ECOLI   = 25.0;  // nt/s mRNA in vivo (Sci.
 inline constexpr double MEAN_NT_RATE_HUMAN   = 25.0;  // nt/s (Jonkers 2014)
 inline constexpr double K_RNAP_INI_DEFAULT   = 0.05;  // initiation rate (s⁻¹)
 inline constexpr double K_RNAP_TERM_DEFAULT  = 5.0;   // termination rate (s⁻¹)
+// Pause threshold for ribosome: rate < mean × 0.30 → co-translational folding window
+// (Pechmann & Frydman 2013 Nat. Struct. Mol. Biol.)
+inline constexpr double RIBOSOME_PAUSE_THRESHOLD = 0.30;
 // Pause threshold for RNAP: rate < mean × 0.15 → co-transcriptional folding window
 // (RNAP pauses are more extreme than ribosome pauses; Neuman 2003 Science 298:1152)
 inline constexpr double RNAP_PAUSE_THRESHOLD = 0.15;
@@ -94,7 +97,7 @@ public:
 
     // Identify "pause sites": codons with rate < mean_rate × threshold
     std::vector<int> pause_sites(const std::vector<std::string>& codons,
-                                  double threshold = 0.3) const;
+                                  double threshold = RIBOSOME_PAUSE_THRESHOLD) const;
 
     Organism organism;
     double   mean_rate_aa_per_s;
@@ -156,7 +159,7 @@ public:
         double t_available;    // time available for folding (s) = 1/k_el(n)
         double k_fold;         // estimated folding rate at this window (s⁻¹)
         double p_folded_cotrans; // k_fold / (k_fold + k_el)
-        bool   is_pause_site;   // rate < mean × 0.3
+        bool   is_pause_site;   // rate < mean × RIBOSOME_PAUSE_THRESHOLD
     };
     std::vector<FoldingWindow> folding_windows(double k_fold_base = K_FOLD_DEFAULT) const;
 
@@ -176,7 +179,7 @@ private:
     std::vector<double> k_el_;         // k_el_[n] = elongation rate for residue n
     double              k_ini_;
     double              k_ter_;
-    std::vector<int>    pause_sites_;  // indices where k_el < 0.3 * mean
+    std::vector<int>    pause_sites_;  // indices where k_el < RIBOSOME_PAUSE_THRESHOLD * mean
     double              mean_rate_;
 };
 

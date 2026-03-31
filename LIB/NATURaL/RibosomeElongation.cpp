@@ -310,11 +310,19 @@ RibosomeElongation::RibosomeElongation(
 
     mean_rate_ = 0.0;
     double inv_sum = 0.0;
-    for (double k : k_el_) inv_sum += (k > 1e-9 ? 1.0 / k : 0.0);
-    mean_rate_ = (inv_sum > 0) ? N / inv_sum : rate_table.mean_rate_aa_per_s;
+    int valid_count = 0;
+    for (double k : k_el_) {
+        if (std::isfinite(k) && k > 1e-9) {
+            inv_sum += 1.0 / k;
+            ++valid_count;
+        }
+    }
+    mean_rate_ = (valid_count > 0 && inv_sum > 1e-15)
+                 ? static_cast<double>(valid_count) / inv_sum
+                 : rate_table.mean_rate_aa_per_s;
 
-    // Flag pause sites: rate < 30% of mean
-    double threshold = 0.3 * mean_rate_;
+    // Flag pause sites: rate < RIBOSOME_PAUSE_THRESHOLD of mean
+    double threshold = RIBOSOME_PAUSE_THRESHOLD * mean_rate_;
     for (int n = 0; n < N; ++n)
         if (k_el_[n] < threshold)
             pause_sites_.push_back(n);
@@ -324,8 +332,10 @@ RibosomeElongation::RibosomeElongation(
 // <T_n> = 1/k_ini + Σ_{i=0}^{n-1} 1/k_el[i]
 double RibosomeElongation::mean_arrival_time(int n) const {
     double t = 1.0 / k_ini_;
-    for (int i = 0; i < n && i < (int)k_el_.size(); ++i)
-        t += 1.0 / k_el_[i];
+    for (int i = 0; i < n && i < (int)k_el_.size(); ++i) {
+        double ki = k_el_[i];
+        t += (std::isfinite(ki) && ki > 1e-9) ? 1.0 / ki : 1.0 / mean_rate_;
+    }
     return t;
 }
 
@@ -454,12 +464,14 @@ RibosomeElongation::folding_windows(double k_fold_base) const
         if (n < static_cast<int>(TUNNEL_LENGTH_AA)) continue; // still in tunnel
 
         double k_el_n = k_el_[n];
-        double dwell  = 1.0 / k_el_n; // time available at this codon (s)
+        double dwell  = (std::isfinite(k_el_n) && k_el_n > 1e-9)
+                        ? 1.0 / k_el_n
+                        : 1.0 / mean_rate_;  // fallback to mean dwell time
 
         // Scale folding rate by secondary structure propensity (simple heuristic:
         // folding is faster at pause sites where the chain has time to equilibrate)
         double k_fold = k_fold_base;
-        bool is_pause = (k_el_n < 0.3 * mean_rate_);
+        bool is_pause = (std::isfinite(k_el_n) && k_el_n < RIBOSOME_PAUSE_THRESHOLD * mean_rate_);
         if (is_pause) k_fold *= 3.0; // pause sites have 3× folding rate (Pechmann 2013)
 
         double p_cotrans = k_fold / (k_fold + k_el_n);
@@ -487,7 +499,8 @@ double RibosomeElongation::time_weighted_score(
     double weighted_sum = 0.0;
     int N = static_cast<int>(k_el_.size());
     for (int n = 0; n < N; ++n) {
-        double dwell = 1.0 / k_el_[n]; // s
+        double ki = k_el_[n];
+        double dwell = (std::isfinite(ki) && ki > 1e-9) ? 1.0 / ki : 1.0 / mean_rate_;
         weighted_sum += score_fn(n) * dwell;
     }
     return weighted_sum / T_total; // dimensionless time-weighted average
