@@ -12,6 +12,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <random>
 
 // ── external prototypes (declared in flexaid.h) ──
 // read_pdb, modify_pdb, calc_center, residue_conect, assign_types,
@@ -72,8 +73,7 @@ int setup_direct_input(FA_Global* FA, GB_Global* GB, VC_Global* VC,
 
     // ─── 4. Read receptor PDB ─────────────────────────────────────────
     // modify_pdb cleans and reorders the PDB; write to a temp file.
-    srand(static_cast<unsigned int>(time(NULL)));
-    int random_num = rand() % 900000 + 100000;
+    int random_num = static_cast<int>(std::random_device{}() % 900000 + 100000);
     snprintf(tmpprotname, MAX_PATH__, "/tmp/flexaid_tmp_%d.pdb", random_num);
 
     printf("read PDB file <%s>\n", receptor_pdb);

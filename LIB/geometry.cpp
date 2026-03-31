@@ -4,29 +4,17 @@ double GetValueFromGaussian(double x,double max,double zero) {
 	return pow( -(x-zero) * (x-(2*max-zero)) / (pow(zero-max,2.0)), 50.0 );
 }
 
-#ifdef _WIN32
- void vec_sub(float *a, const float *b, const float *c) {
-#else
- void vec_sub(float *a, const float *b, const float *c) {
-#endif
+inline void vec_sub(float * __restrict__ a, const float * __restrict__ b, const float * __restrict__ c) {
    a[0]=b[0]-c[0];
    a[1]=b[1]-c[1];
    a[2]=b[2]-c[2];
  }
 
-#ifdef _WIN32
- float dot_prod(const float *v1, const float *v2) {
-#else
- float dot_prod(const float *v1, const float *v2) {
-#endif
+inline float dot_prod(const float * __restrict__ v1, const float * __restrict__ v2) {
    return v1[0]* v2[0] + v1[1]* v2[1] + v1[2] * v2[2];
  }
 
-#ifdef _WIN32
- float distance2(const float *a, const float *b) {
-#else
- float distance2(const float *a, const float *b){
-#endif
+inline float distance2(const float * __restrict__ a, const float * __restrict__ b){
   float delta = a[0] - b[0];
   float r2 = delta*delta;
   delta = a[1] - b[1];
@@ -35,18 +23,18 @@ double GetValueFromGaussian(double x,double max,double zero) {
   return r2 + delta*delta;
 }
 
-float * cross_prod(float *x1, const float *x2, const float *x3) {
+inline float * cross_prod(float * __restrict__ x1, const float * __restrict__ x2, const float * __restrict__ x3) {
   x1[0] =  x2[1]*x3[2] - x3[1]*x2[2];
   x1[1] = -x2[0]*x3[2] + x3[0]*x2[2];
   x1[2] =  x2[0]*x3[1] - x3[0]*x2[1];
   return x1;
 }
 
-float distance(const float *a, const float *b) {
+inline float distance(const float * __restrict__ a, const float * __restrict__ b) {
   return sqrtf(distance2(a,b));
 }
 
-float angle(const float *a, const float *b, const float *c) {
+inline float angle(const float *a, const float *b, const float *c) {
   float v1[3], v2[3];
   float ab[3];
   float psin, pcos;
@@ -58,7 +46,7 @@ float angle(const float *a, const float *b, const float *c) {
   return 57.2958f * atan2(psin, pcos);
 }
 
-float dihedral(const float *a1,const float *a2,const float *a3,const float *a4) {
+inline float dihedral(const float *a1,const float *a2,const float *a3,const float *a4) {
   float r1[3], r2[3], r3[3], n1[3], n2[3];
   float psin, pcos;
   vec_sub(r1, a2, a1);
@@ -78,14 +66,11 @@ float dihedral(const float *a1,const float *a2,const float *a3,const float *a4) 
  * SUBROUTINE zeros calculates the zeros of a quadratic function
  * the function returns the positive zero
  ******************************************************************************/
-float zero(float a, float b, float c){
-	
-	return (
-		( -b + sqrtf( b*b - 4*a*c ) / ( 2 * a ) ) > 0 ?
-		( -b + sqrtf( b*b - 4*a*c ) / ( 2 * a ) ) :
-		( -b - sqrtf( b*b - 4*a*c ) / ( 2 * a ) )
-		);
-
+inline float zero(float a, float b, float c){
+	float disc = sqrtf( b*b - 4*a*c );
+	float inv2a = 1.0f / ( 2 * a );
+	float r1 = ( -b + disc ) * inv2a;
+	return r1 > 0 ? r1 : ( -b - disc ) * inv2a;
 }
 
 /******************************************************************************
@@ -108,33 +93,20 @@ float distance_n(float a[], float b[], int n){
 /******************************************************************************
  * SUBROUTINE sqrdist calculates the square distance between two points in d=3.
  ******************************************************************************/
-float sqrdist(float a[], float b[])
+inline float sqrdist(const float * __restrict__ a, const float * __restrict__ b)
  {
-  float d;
-  int i;
-
-  d=0.0;
-  for(i=0;i<=2;i++){
-    d += (a[i]-b[i])*(a[i]-b[i]); 
-  }
-  return (d);
+  float d0 = a[0]-b[0];
+  float d1 = a[1]-b[1];
+  float d2 = a[2]-b[2];
+  return d0*d0 + d1*d1 + d2*d2;
 }
 
 /******************************************************************************
  * SUBROUTINE distance calculates the cartesian distance between two point in 
  * 3 dimensions.
  ******************************************************************************/
-float dist(float a[], float b[]){
-  float d;
-  int i;
-  
-  d=0.0;
-  for(i=0;i<=2;i++){
-    d += (a[i]-b[i])*(a[i]-b[i]); 
-  }
-  d = sqrt(d);
-
-  return (d);
+inline float dist(const float * __restrict__ a, const float * __restrict__ b){
+  return sqrtf(sqrdist(a, b));
 }
 
 /*******************************************************************************

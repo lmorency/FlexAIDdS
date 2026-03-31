@@ -69,7 +69,7 @@ void DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome
 			pChrom->DP = NULL;
 			pChrom->Distance = 0.0;
 			memset(pChrom->Coord, 0, 3*MAX_ATM_HET);
-			if(Entropic) { partition_function += pow( E, ((-1.0) * FA->beta * pChrom->Chromosome->app_evalue) ); }
+			if(Entropic) { partition_function += exp((-1.0) * FA->beta * pChrom->Chromosome->app_evalue); }
 		}
 	}
 
@@ -103,7 +103,7 @@ void DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome
 		iChrom = &Chrom[i];
 		if(Entropic)
 		{
-			Pi = pow( E, ((-1.0) * (1/FA->temperature) * iChrom->Chromosome->app_evalue) ) / partition_function;
+			Pi = exp((-1.0) * (1/FA->temperature) * iChrom->Chromosome->app_evalue) / partition_function;
 			iChrom->CF = (double) ( Pi * iChrom->Chromosome->app_evalue) + (FA->temperature * Pi * log(Pi));
 		}
 		else iChrom->CF = iChrom->Chromosome->app_evalue;

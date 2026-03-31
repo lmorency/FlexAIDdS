@@ -1,5 +1,6 @@
 #include "Vcontacts.h"
 #include "fileio.h"
+#include <random>
 
 // Vcontacts calculates the SAS only for the residue sent in argument
 int Vcontacts(FA_Global* FA,atom* atoms,resid* residue,VC_Global* VC,
@@ -379,10 +380,12 @@ RESTART:
 				origcoor[1] = VC->Calc[atomzero].atom->coor[1];
 				origcoor[2] = VC->Calc[atomzero].atom->coor[2];
 				
-				// perturb atom coordinates
-				VC->Calc[atomzero].atom->coor[0] += 0.005f*(float)(2*rand()-RAND_MAX)/(float)RAND_MAX;
-				VC->Calc[atomzero].atom->coor[1] += 0.005f*(float)(2*rand()-RAND_MAX)/(float)RAND_MAX;
-				VC->Calc[atomzero].atom->coor[2] += 0.005f*(float)(2*rand()-RAND_MAX)/(float)RAND_MAX;
+				// perturb atom coordinates (thread-safe RNG)
+				thread_local std::mt19937 vc_rng(std::random_device{}());
+				thread_local std::uniform_real_distribution<float> vc_dist(-0.005f, 0.005f);
+				VC->Calc[atomzero].atom->coor[0] += vc_dist(vc_rng);
+				VC->Calc[atomzero].atom->coor[1] += vc_dist(vc_rng);
+				VC->Calc[atomzero].atom->coor[2] += vc_dist(vc_rng);
                 
 				// *** NEW ***
                 

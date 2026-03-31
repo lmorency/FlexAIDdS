@@ -641,7 +641,7 @@ Pose::Pose(chromosome* chrom, int index, int iorder, float dist, uint temperatur
 	  model_coords(nullptr),
 	  receptor_strain(0.0)
 {
-	this->boltzmann_weight = pow(E, ((-1.0) * (1 / static_cast<double>(temperature)) * chrom->app_evalue));
+	this->boltzmann_weight = exp((-1.0) * (1 / static_cast<double>(temperature)) * chrom->app_evalue);
 }
 
 

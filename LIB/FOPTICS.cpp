@@ -11,7 +11,8 @@ std::mt19937 gen(rd());
 struct RNG
 {
     int operator() (int n) {
-        return std::rand() / (1.0 + RAND_MAX) * n;
+        std::uniform_int_distribution<int> dist(0, n - 1);
+        return dist(gen);
     }
 };
 
@@ -1136,5 +1137,5 @@ int roll_die()
 }
 int roll_rand_die()
 {
-	return rand();
+	return roll_die();
 }
