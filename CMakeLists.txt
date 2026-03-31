@@ -1414,7 +1414,7 @@ flexaids_configure_simd(test_cavity_detect)
             LIB/statmech.cpp
         LIB/TurboQuant.cpp
             LIB/encom.cpp
-            LIB/tencm.cpp
+            LIB/tENCoM/tencm.cpp
             LIB/hardware_dispatch.cpp
             LIB/hardware_detect.cpp
         )
@@ -1446,7 +1446,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/assign_radii.cpp
         LIB/assign_types.cpp
         LIB/fileio.cpp
-        LIB/tencm.cpp)
+        LIB/tENCoM/tencm.cpp)
     target_include_directories(test_ion_handling PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
     target_link_libraries(test_ion_handling PRIVATE GTest::gtest GTest::gtest_main)
     if(MSVC)
@@ -1465,7 +1465,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/statmech.cpp
         LIB/TurboQuant.cpp
         LIB/geometry.cpp
-        LIB/tencm.cpp
+        LIB/tENCoM/tencm.cpp
         LIB/encom.cpp
         LIB/BindingMode.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
@@ -1590,7 +1590,91 @@ flexaids_configure_simd(test_cavity_detect)
     flexaids_configure_msvc_test(test_dataset_runner)
     add_test(NAME DatasetRunnerTests COMMAND test_dataset_runner)
 
-    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_hardware_detect_dispatch, test_tencom_diff, test_ptm_attachment, test_gaboom, test_vcontacts, test_cleft_cavity, test_encom, test_ring_conformer_library, test_sugar_pucker, test_chiral_center, test_cavity_detect, test_binding_mode_statmech, test_binding_mode_advanced, test_ga_core, test_ga_validation, test_fast_optics, test_entropy_ga, test_soft_contact_matrix, test_cube_grid, test_parallel_dock, test_mol2_sdf_reader, test_turboquant, test_dataset_runner")
+    # test_binding_mode_vibrational — Phase 3 ENCoM vibrational entropy integration
+    add_executable(test_binding_mode_vibrational
+        tests/test_binding_mode_vibrational.cpp
+        tests/stubs.cpp
+        LIB/gaboom.cpp
+        LIB/Vcontacts.cpp
+        LIB/statmech.cpp
+        LIB/TurboQuant.cpp
+        LIB/geometry.cpp
+        LIB/tENCoM/tencm.cpp
+        LIB/encom.cpp
+        LIB/BindingMode.cpp
+        LIB/fast_optics.cpp
+        LIB/ShannonThermoStack/ShannonThermoStack.cpp
+        LIB/CleftDetector.cpp
+        LIB/NATURaL/NATURaLDualAssembly.cpp
+        LIB/NATURaL/RibosomeElongation.cpp
+        LIB/NATURaL/TransloconInsertion.cpp
+        LIB/hardware_dispatch.cpp
+        LIB/hardware_detect.cpp
+    )
+    target_include_directories(test_binding_mode_vibrational PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/tENCoM
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ShannonThermoStack
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect
+    )
+    target_link_libraries(test_binding_mode_vibrational PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_binding_mode_vibrational PRIVATE /O2)
+    else()
+        target_compile_options(test_binding_mode_vibrational PRIVATE -O2)
+    endif()
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(test_binding_mode_vibrational PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
+        target_link_libraries(test_binding_mode_vibrational PRIVATE Eigen3::Eigen)
+        target_compile_definitions(test_binding_mode_vibrational PRIVATE FLEXAIDS_HAS_EIGEN)
+    endif()
+    flexaids_configure_msvc_test(test_binding_mode_vibrational)
+    add_test(NAME BindingModeVibrationalTests COMMAND test_binding_mode_vibrational)
+
+    # test_fast_optics — FastOPTICS clustering algorithm
+    add_executable(test_fast_optics
+        tests/test_fast_optics.cpp
+        LIB/fast_optics.cpp
+    )
+    target_include_directories(test_fast_optics PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_fast_optics PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_fast_optics PRIVATE /O2)
+    else()
+        target_compile_options(test_fast_optics PRIVATE -O2)
+    endif()
+    flexaids_configure_msvc_test(test_fast_optics)
+    add_test(NAME FastOPTICSTests COMMAND test_fast_optics)
+
+    # test_tencom_entropy_diff — tENCoM entropy differential
+    add_executable(test_tencom_entropy_diff
+        tests/test_tencom_entropy_diff.cpp
+        LIB/tENCoM/tencom_diff.cpp
+        LIB/tENCoM/pdb_calpha.cpp
+        LIB/tENCoM/tencm.cpp
+        LIB/statmech.cpp
+        LIB/TurboQuant.cpp
+        LIB/hardware_dispatch.cpp
+        LIB/hardware_detect.cpp
+        LIB/encom.cpp
+    )
+    target_include_directories(test_tencom_entropy_diff PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/tENCoM)
+    target_link_libraries(test_tencom_entropy_diff PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_tencom_entropy_diff PRIVATE /O2)
+    else()
+        target_compile_options(test_tencom_entropy_diff PRIVATE -O2)
+    endif()
+    flexaids_configure_simd(test_tencom_entropy_diff)
+    flexaids_configure_msvc_test(test_tencom_entropy_diff)
+    add_test(NAME TencomEntropyDiffTests COMMAND test_tencom_entropy_diff)
+
+    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_hardware_detect_dispatch, test_tencom_diff, test_ptm_attachment, test_gaboom, test_vcontacts, test_cleft_cavity, test_encom, test_ring_conformer_library, test_sugar_pucker, test_chiral_center, test_cavity_detect, test_binding_mode_statmech, test_binding_mode_advanced, test_binding_mode_vibrational, test_ga_core, test_ga_validation, test_fast_optics, test_tencom_entropy_diff, test_entropy_ga, test_soft_contact_matrix, test_cube_grid, test_parallel_dock, test_mol2_sdf_reader, test_turboquant, test_dataset_runner")
 endif()
 
 # ─── Swift Bridge (macOS only) ────────────────────────────────────────────

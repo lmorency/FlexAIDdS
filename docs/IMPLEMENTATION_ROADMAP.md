@@ -465,7 +465,7 @@ option(BUILD_SWIFT_BRIDGE   "Swift bridge (macOS only)"           OFF)
 
 ## Cross-Cutting: Apple/Swift Integration
 
-**Status**: ✅ **COMPLETE** (March 23, 2026) — 28 Swift source files, 9,730 lines
+**Status**: ✅ **COMPLETE** (March 23, 2026) — 35 Swift source files, 9,730 lines
 
 ### Swift Modules (`swift/Sources/`)
 
