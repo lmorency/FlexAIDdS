@@ -170,6 +170,7 @@ Python Software Foundation License Version 2
 | **OpenMP** | Runtime exception | ✅ Linking exception | Compiler built-in |
 | **CUDA** | NVIDIA EULA | ⚠️ Proprietary (free) | User installs separately |
 | **Metal** | Apple | ⚠️ Proprietary (free) | macOS built-in |
+| **libcurl** | curl (MIT/X-inspired) | ✅ Permissive | Optional dependency (dataset runner) |
 | **NRGRank** | GPL-3.0 | ❌ **NOT A DEPENDENCY** | Cited as scientific inspiration only |
 
 **Legend:**

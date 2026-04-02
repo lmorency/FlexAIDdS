@@ -555,8 +555,8 @@ float  distance2(const float *, const float *);
 float  zero(float, float, float);
 float  dihang(float a[],float b[], float c[], float d[]);  // calculates dihedral angles
 float  bndang(float a[],float b[], float c[]);             // calculates bond angles
-float  sqrdist(float a[], float b[]);                      // calculates square distance
-float  dist(float a[], float b[]);                     // calculates distance
+float  sqrdist(const float * __restrict__ a, const float * __restrict__ b);  // calculates square distance
+float  dist(const float * __restrict__ a, const float * __restrict__ b);    // calculates distance
 float  distance_n(float a[], float b[], int n);            // calculates distance, n-dimensional
 int    spfunction(FA_Global* FA,atom* atoms,resid*);                                // CF-SPHERE function
 

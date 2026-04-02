@@ -15,6 +15,7 @@
 #include <cstring>
 #include <cstdlib>
 #include <fstream>
+#include <random>
 #include <sstream>
 #include <algorithm>
 #include <cctype>
@@ -146,7 +147,7 @@ LibraryInfo split_library(const std::string& path) {
 
         // Multi-molecule — split at $$$$
         lib.temp_dir = fs::temp_directory_path().string() + "/flexaid_lib_" +
-                       std::to_string(rand() % 900000 + 100000);
+                       std::to_string(std::random_device{}() % 900000 + 100000);
         fs::create_directories(lib.temp_dir);
 
         std::ifstream in(path);
@@ -247,7 +248,7 @@ LibraryInfo split_library(const std::string& path) {
 
         // Multi-model — split at MODEL/ENDMDL boundaries
         lib.temp_dir = fs::temp_directory_path().string() + "/flexaid_models_" +
-                       std::to_string(rand() % 900000 + 100000);
+                       std::to_string(std::random_device{}() % 900000 + 100000);
         fs::create_directories(lib.temp_dir);
 
         std::ifstream in(path);

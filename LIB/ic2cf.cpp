@@ -200,10 +200,6 @@ cfstr ic2cf(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue,
 						
 						if(it == node->childs.end()){
 							struct deelig_node_struct* deelig_child_node = new struct deelig_node_struct;
-							if(!deelig_child_node){
-								fprintf(stderr, "ERROR: memory allocation error for deelig_child_node\n");
-								Terminate(2);
-							}
 							
 							//if(k==1) cout << "new node added " << deelig_list[k] << endl;
 							node->childs[deelig_list[k]] = deelig_child_node;

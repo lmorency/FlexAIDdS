@@ -59,6 +59,7 @@ python/__pycache__
 python/**/*.egg-info
 python/**/*.egg-info/**
 python/**/*.so
+python/data/training_runs
 # dependencies files
 !*.def
 !*.dat
