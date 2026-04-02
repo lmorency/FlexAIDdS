@@ -5,10 +5,12 @@ Bridges between:
   - 256×256 binary blob format (SHNN magic header, float32)
   - NumPy 2D array representation
 
-The 256-type encoding uses 8 bits: bits 0–4 = base type (32 classes extending
-SYBYL), bits 5–6 = AM1-BCC charge bin (4 levels), bit 7 = H-bond donor/acceptor
-flag.  The ``project_to_40()`` method collapses a 256×256 matrix back to the
-40-type SYBYL system used by the C++ Voronoi contact function.
+The 256-type encoding uses 8 bits: bits 0–5 = base type (64 classes extending
+SYBYL — every SYBYL type gets a distinct base, no Solvent fallback),
+bit 6 = charge polarity (0 = negative, 1 = positive), bit 7 = H-bond
+donor/acceptor flag.  The ``project_to_40()`` method collapses a 256×256
+matrix back to the 40-type SYBYL system used by the C++ Voronoi contact
+function.
 
 Example:
     >>> mat = EnergyMatrix.from_dat_file("WRK/nrg_mat_BEST_012012.dat")

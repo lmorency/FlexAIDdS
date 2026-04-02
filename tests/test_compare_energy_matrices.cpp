@@ -157,8 +157,8 @@ TEST(CompareEnergyMatrices, SoftContact256x256Structure) {
 
     EXPECT_GT(nonzero, 0);
     // 256×256 should have MORE non-zero entries because each SYBYL type
-    // fans out into multiple 256-codes (up to 8: 4 charge bins × 2 hbond)
-    printf("  Expansion:   each SYBYL type → up to 8 256-codes\n");
+    // fans out into multiple 256-codes (up to 4: 2 charge bins × 2 hbond)
+    printf("  Expansion:   each SYBYL type → up to 4 256-codes\n");
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
