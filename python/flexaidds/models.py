@@ -70,6 +70,15 @@ class PoseResult:
         parts.append(f"path={self.path.name!r}")
         return f"<PoseResult {' '.join(parts)}>"
 
+    def __lt__(self, other: "PoseResult") -> bool:
+        """Sort by CF score (lower is better). Falls back to cf_app."""
+        s = self.cf if self.cf is not None else (self.cf_app if self.cf_app is not None else float("inf"))
+        o = other.cf if other.cf is not None else (other.cf_app if other.cf_app is not None else float("inf"))
+        return s < o
+
+    def __le__(self, other: "PoseResult") -> bool:
+        return self == other or self < other
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "PoseResult":
         """Reconstruct a PoseResult from a dictionary.
@@ -151,14 +160,6 @@ class BindingModeResult:
         """Number of poses in this binding mode."""
         return len(self.poses)
 
-    def __repr__(self) -> str:
-        parts = [f"mode_id={self.mode_id}", f"n_poses={self.n_poses}"]
-        if self.free_energy is not None:
-            parts.append(f"F={self.free_energy:.2f}")
-        if self.best_cf is not None:
-            parts.append(f"best_cf={self.best_cf:.2f}")
-        return f"<BindingModeResult {' '.join(parts)}>"
-
     def best_pose(self) -> Optional[PoseResult]:
         """Return the pose with the lowest CF (or cf_app) score.
 
@@ -181,11 +182,21 @@ class BindingModeResult:
         return self.poses[0] if self.poses else None
 
     def __repr__(self) -> str:
-        fe_str = f" F={self.free_energy:.3f}" if self.free_energy is not None else ""
-        return (
-            f"<BindingModeResult mode={self.mode_id} rank={self.rank} "
-            f"n_poses={self.n_poses}{fe_str}>"
-        )
+        parts = [f"mode_id={self.mode_id}", f"n_poses={self.n_poses}"]
+        if self.free_energy is not None:
+            parts.append(f"F={self.free_energy:.2f}")
+        if self.best_cf is not None:
+            parts.append(f"best_cf={self.best_cf:.2f}")
+        return f"<BindingModeResult {' '.join(parts)}>"
+
+    def __lt__(self, other: "BindingModeResult") -> bool:
+        """Sort by free energy (lower is better), fall back to rank."""
+        if self.free_energy is not None and other.free_energy is not None:
+            return self.free_energy < other.free_energy
+        return self.rank < other.rank
+
+    def __le__(self, other: "BindingModeResult") -> bool:
+        return self == other or self < other
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "BindingModeResult":

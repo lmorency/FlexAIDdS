@@ -2,7 +2,7 @@
 
 from .models import BindingModeResult, DockingResult, PoseResult
 from .results import load_results
-from .io import is_ion, _ION_RESNAMES
+from .io import is_ion, _ION_RESNAMES, Atom, PDBStructure, read_pdb, write_pdb
 from .docking import Docking, BindingMode, BindingPopulation, Pose
 from .encom import ENCoMEngine, NormalMode, VibrationalEntropy
 from .tencm import (
@@ -158,9 +158,13 @@ __all__ = [
     "DockingResult",
     # Result loading
     "load_results",
-    # Ion utilities
+    # I/O utilities
     "is_ion",
     "_ION_RESNAMES",
+    "Atom",
+    "PDBStructure",
+    "read_pdb",
+    "write_pdb",
     # Docking
     "Docking",
     "BindingMode",

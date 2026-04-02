@@ -578,8 +578,7 @@ int main(int argc, char **argv){
 
 			// Find filename portion and create temp name
 			char* dot = strrchr(tmpprotname, '.');
-			srand((unsigned int)time(NULL));
-			int random_num = rand() % 900000 + 100000;
+			int random_num = static_cast<int>(std::random_device{}() % 900000 + 100000);
 			char random_str[32];
 			sprintf(random_str, "_tmp_%d.pdb", random_num);
 			if (dot) {
@@ -668,7 +667,7 @@ int main(int argc, char **argv){
 				// Write temporary MOL2 from BonMol and read back through standard path
 				char tmp_mol2[MAX_PATH__];
 				snprintf(tmp_mol2, MAX_PATH__, "/tmp/flexaid_smiles_%d.mol2",
-				         rand() % 900000 + 100000);
+				         static_cast<int>(std::random_device{}() % 900000 + 100000));
 
 				{
 					FILE* fp = fopen(tmp_mol2, "w");

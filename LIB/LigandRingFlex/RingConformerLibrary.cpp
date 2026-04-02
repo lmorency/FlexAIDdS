@@ -64,11 +64,13 @@ void RingConformerLibrary::build_five_conformers() {
 }
 
 int RingConformerLibrary::random_six_index() const {
-    return rand() % n_six();
+    thread_local std::mt19937 rng(std::random_device{}());
+    return std::uniform_int_distribution<int>(0, n_six() - 1)(rng);
 }
 
 int RingConformerLibrary::random_five_index() const {
-    return rand() % n_five();
+    thread_local std::mt19937 rng(std::random_device{}());
+    return std::uniform_int_distribution<int>(0, n_five() - 1)(rng);
 }
 
 // ─── detect_non_aromatic_rings ───────────────────────────────────────────────
