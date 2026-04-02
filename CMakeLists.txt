@@ -260,6 +260,9 @@ target_sources(FlexAID PRIVATE
         LIB/tENCoM/tencm.cpp
         LIB/statmech.cpp
         LIB/encom.cpp             # ← NEW: ENCoM vibrational entropy
+        # ── GIST water displacement + directional H-bond scoring ──
+        LIB/GISTEvaluator.cpp
+        LIB/HBondEvaluator.cpp
         # ── TurboQuant vector quantization (Zandieh et al. 2025) ──
         LIB/TurboQuant.cpp
         # ── ProcessLigand (Phase 3: standalone ligand preprocessing) ──
@@ -1757,6 +1760,19 @@ flexaids_configure_simd(test_cavity_detect)
     endif()
     flexaids_configure_msvc_test(test_target_server)
     add_test(NAME TargetServerTests COMMAND test_target_server)
+
+    # test_gist_hbond — GIST evaluator + directional H-bond scoring
+    add_executable(test_gist_hbond tests/test_gist_hbond.cpp
+                   LIB/GISTEvaluator.cpp LIB/HBondEvaluator.cpp)
+    target_include_directories(test_gist_hbond PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_gist_hbond PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_gist_hbond PRIVATE /O2)
+    else()
+        target_compile_options(test_gist_hbond PRIVATE -O2)
+    endif()
+    flexaids_configure_msvc_test(test_gist_hbond)
+    add_test(NAME GISTHBondTests COMMAND test_gist_hbond)
 
     message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_tencom_diff, test_target_validation, test_grand_partition, test_target_server")
 endif()

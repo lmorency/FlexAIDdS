@@ -118,6 +118,8 @@ struct cf_str{  // Complementarity Function value structure
 	double wal;    // wall term
 	double sas;    // solvent accessibility surface
 	double elec;   // electrostatic (Coulomb) energy
+	double gist;   // GIST water displacement score
+	double hbond;  // directional H-bond angular correction
 	double totsas; // overall sas of molecule
 	int   rclash; // flag that shows whether the residue is making steric clashes
 };
@@ -365,6 +367,17 @@ struct FA_Global_struct{
 	int   use_elec;                      // enable Coulomb electrostatic scoring
 	float dielectric;                    // distance-dependent dielectric constant (default 4.0)
 
+	int   use_gist;                      // enable GIST water displacement scoring
+	char  gist_dg_file[MAX_PATH__];      // path to GIST free-energy .dx file
+	char  gist_dens_file[MAX_PATH__];    // path to GIST density .dx file
+	float gist_weight;                   // weight for GIST term (default 1.0)
+	float gist_dg_cutoff;                // free-energy cutoff (kcal/mol, default 1.0)
+	float gist_rho_cutoff;               // density cutoff (relative to bulk, default 4.8)
+	float gist_divisor;                  // Gaussian sigma = radius/divisor (default 2.0)
+
+	int   use_hbond;                     // enable directional H-bond scoring
+	float hbond_weight;                  // weight for H-bond angular correction (default 1.0)
+
 	constraint* constraints;             // list of constraints
 	int num_constraints;                 // constraints counter
 	float interaction_factor;            // interaction constraint factor
@@ -533,6 +546,9 @@ struct FA_Global_struct{
 	int     model_gene_index;        // index of the model-selection gene in chromosome
 	std::vector<std::vector<float>> model_coords;  // model_coords[model_idx][atom_idx*3+{0,1,2}]
 	std::vector<double>             model_strain;  // strain energy per model (kcal/mol)
+
+	// ── GIST evaluator (opaque pointer, allocated when use_gist=1) ──
+	void*   gist_evaluator;          // GISTEvaluator* (cast in vcfunction.cpp)
 };
 typedef struct FA_Global_struct FA_Global;
 

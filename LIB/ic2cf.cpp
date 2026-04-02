@@ -385,13 +385,13 @@ double get_apparent_cf_evalue(cfstr* cf) {
 #else
 	double get_apparent_cf_evalue(cfstr* cf) {
 #endif
-		return cf->com + cf->wal + cf->sas + cf->elec;
+		return cf->com + cf->wal + cf->sas + cf->elec + cf->gist + cf->hbond;
 	}
-    
+
 #ifdef _WIN32
 	double get_cf_evalue(cfstr* cf) {
 #else
 		double get_cf_evalue(cfstr* cf) {
 #endif
-			return cf->com + cf->wal + cf->sas + cf->con + cf->elec;
+			return cf->com + cf->wal + cf->sas + cf->con + cf->elec + cf->gist + cf->hbond;
 		}

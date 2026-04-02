@@ -14,6 +14,7 @@
 #include "ReferenceEntropy.h"
 #include "CoarseScreen.h"
 #include "TwoStageScreen.h"
+#include "GISTEvaluator.h"
 
 #include <cstring>
 #include <string>
@@ -294,6 +295,18 @@ int main(int argc, char **argv){
 	FA->solventterm=0.0f;
 	FA->use_elec=0;
 	FA->dielectric=4.0f;
+
+	FA->use_gist=0;
+	FA->gist_dg_file[0]='\0';
+	FA->gist_dens_file[0]='\0';
+	FA->gist_weight=1.0f;
+	FA->gist_dg_cutoff=1.0f;
+	FA->gist_rho_cutoff=4.8f;
+	FA->gist_divisor=2.0f;
+	FA->gist_evaluator=NULL;
+
+	FA->use_hbond=0;
+	FA->hbond_weight=1.0f;
 
 	FA->useflexdee=0;
 	FA->num_constraints=0;
@@ -993,9 +1006,30 @@ int main(int argc, char **argv){
 		}
 	}  
 	
+	// ── GIST evaluator initialization ──
+	if(FA->use_gist && FA->gist_dg_file[0] != '\0' && FA->gist_dens_file[0] != '\0'){
+		GISTEvaluator* gist = new GISTEvaluator();
+		gist->delta_G_cutoff = FA->gist_dg_cutoff;
+		gist->rho_cutoff     = FA->gist_rho_cutoff;
+		gist->divisor        = FA->gist_divisor;
+		gist->weight         = FA->gist_weight;
+		if(gist->load_dx(FA->gist_dg_file, FA->gist_dens_file)){
+			FA->gist_evaluator = gist;
+			printf("GIST water displacement scoring enabled\n");
+		}else{
+			fprintf(stderr,"WARNING: GIST grid loading failed, disabling GIST scoring\n");
+			delete gist;
+			FA->use_gist = 0;
+		}
+	}
+
+	if(FA->use_hbond){
+		printf("Directional H-bond scoring enabled (weight=%.2f)\n", FA->hbond_weight);
+	}
+
 	FA->deelig_root_node = new struct deelig_node_struct;
 	FA->deelig_root_node->parent = NULL;
-	
+
 	FA->contributions = (float*)malloc(FA->ntypes*FA->ntypes*sizeof(float));
 	if(!FA->contributions){
 		fprintf(stderr,"ERROR: memory allocation error for contributions\n");
@@ -1044,6 +1078,10 @@ int main(int argc, char **argv){
 		snprintf(tmpremark,MAX_REMARK,"REMARK CF.wal=%8.5f\n",cf_ptr->wal);
 		safe_remark_cat(remark,tmpremark,&remark_len);
 		snprintf(tmpremark,MAX_REMARK,"REMARK CF.con=%8.5f\n",cf_ptr->con);
+		safe_remark_cat(remark,tmpremark,&remark_len);
+		snprintf(tmpremark,MAX_REMARK,"REMARK CF.gist=%8.5f\n",cf_ptr->gist);
+		safe_remark_cat(remark,tmpremark,&remark_len);
+		snprintf(tmpremark,MAX_REMARK,"REMARK CF.hbond=%8.5f\n",cf_ptr->hbond);
 		safe_remark_cat(remark,tmpremark,&remark_len);
 		snprintf(tmpremark,MAX_REMARK,"REMARK Residue has an overall SAS of %.3f\n",cf_ptr->totsas);
 		safe_remark_cat(remark,tmpremark,&remark_len);

@@ -1255,6 +1255,8 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 				chrom[c].cf.wal    = h_wal[c];
 				chrom[c].cf.sas    = h_sas[c];
 				chrom[c].cf.con    = 0.0;
+				chrom[c].cf.gist   = 0.0;
+				chrom[c].cf.hbond  = 0.0;
 				chrom[c].cf.totsas = 0.0;
 				chrom[c].cf.rclash = (h_wal[c] > 1e4) ? 1 : 0;
 				chrom[c].evalue     = get_cf_evalue(&chrom[c].cf);
@@ -1554,6 +1556,8 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 				tl_optres[tid][o].cf.sas    = 0.0;
 				tl_optres[tid][o].cf.totsas = 0.0;
 				tl_optres[tid][o].cf.con    = 0.0;
+				tl_optres[tid][o].cf.gist   = 0.0;
+				tl_optres[tid][o].cf.hbond  = 0.0;
 				tl_optres[tid][o].cf.rclash = 0;
 			}
 			tl_vc[tid].numcarec = 0;
@@ -2101,6 +2105,8 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 				p_optres[tid][o].cf.sas    = 0.0;
 				p_optres[tid][o].cf.totsas = 0.0;
 				p_optres[tid][o].cf.con    = 0.0;
+				p_optres[tid][o].cf.gist   = 0.0;
+				p_optres[tid][o].cf.hbond  = 0.0;
 				p_optres[tid][o].cf.rclash = 0;
 			}
 			p_vc[tid].numcarec = 0;
