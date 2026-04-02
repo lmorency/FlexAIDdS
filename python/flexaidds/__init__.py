@@ -248,4 +248,13 @@ __all__ = [
     "write_dat_file",
     "SYBYL_TYPE_NAMES",
     "SYBYL_RADII",
+    # GA hyperparameter optimizer
+    "GAOptimizer",
+    "OptimizationResult",
+    # ML rescoring bridge
+    "VoronoiGraphExtractor",
+    "ShannonProfileExtractor",
+    "FeatureBuilder",
+    "ThermoFeatures",
+    "MLRescorer",
 ]
