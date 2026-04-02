@@ -1,0 +1,48 @@
+name: Performance Regression
+
+on:
+  workflow_dispatch:
+    inputs:
+      baseline_sha:
+        description: 'Git SHA of baseline commit for comparison'
+        required: false
+        default: 'main'
+
+jobs:
+  benchmark:
+    name: Performance benchmark
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build libeigen3-dev libomp-dev
+
+      - name: Build with benchmarks
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTING=ON \
+            -DENABLE_TENCOM_BENCHMARK=ON \
+            -DENABLE_VCFBATCH_BENCHMARK=ON \
+            -DFLEXAIDS_USE_CUDA=OFF \
+            -DFLEXAIDS_USE_METAL=OFF
+          cmake --build build -j $(nproc)
+
+      - name: Run benchmarks
+        run: |
+          cd build
+          if [ -f benchmark_tencom ]; then
+            ./benchmark_tencom | tee tencom_bench.txt
+          fi
+          if [ -f benchmark_vcfbatch ]; then
+            ./benchmark_vcfbatch | tee vcfbatch_bench.txt
+          fi
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: build/*_bench.txt

@@ -124,6 +124,13 @@ struct GB_Global_struct{
 	int          entropy_interval;    // compute ensemble thermo every N generations (0 = off)
 	int          use_shannon;         // include Shannon configurational entropy in fitness
 
+	// ── Diversity monitoring (entropy collapse mitigation) ──
+	int          diversity_monitoring;            // 0=off (default), 1=on
+	int          diversity_check_interval;        // check every N generations (default: 10)
+	double       diversity_collapse_threshold;    // normalized allele entropy threshold (default: 0.3)
+	double       catastrophic_mutation_fraction;  // fraction of population to re-randomize (default: 0.2)
+	int          catastrophic_mutation_count;     // counter: how many times triggered
+
 };
 typedef struct GB_Global_struct GB_Global;
 

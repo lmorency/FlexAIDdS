@@ -33,6 +33,7 @@
 #include "statmech.h"
 #include "tENCoM/tencm.h"
 #include "ShannonThermoStack/ShannonThermoStack.h"
+#include "ga_diversity.h"
 #include "TurboQuant.h"
 #include "fast_optics.hpp"
 #include "NATURaL/NATURaLDualAssembly.h"
@@ -442,6 +443,25 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 				       i + 1, H, GB->entropy_window);
 				entropy_converged = true;
 				break;
+			}
+		}
+
+		// Diversity monitoring: detect and mitigate premature entropy collapse
+		if (GB->diversity_monitoring &&
+		    ((i + 1) % GB->diversity_check_interval == 0)) {
+			auto dm = ga_diversity::compute_diversity(
+				*chrom, GB->num_chrom, GB->num_genes, *gene_lim,
+				GB->diversity_collapse_threshold);
+			if (dm.collapse_detected && (i + 1) < GB->max_generations / 2) {
+				// Only trigger catastrophic mutation in the first half of generations
+				ga_diversity::catastrophic_mutation(
+					*chrom, GB->num_chrom, GB->num_genes, *gene_lim,
+					GB->catastrophic_mutation_fraction, rng);
+				GB->catastrophic_mutation_count++;
+				fprintf(stderr, "[DIVERSITY] Catastrophic mutation #%d at gen %d "
+				        "(H_allele=%.3f, min_gene=%.3f)\n",
+				        GB->catastrophic_mutation_count, i + 1,
+				        dm.allele_entropy, dm.min_gene_entropy);
 			}
 		}
 
@@ -1554,6 +1574,9 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 				tl_optres[tid][o].cf.sas    = 0.0;
 				tl_optres[tid][o].cf.totsas = 0.0;
 				tl_optres[tid][o].cf.con    = 0.0;
+				tl_optres[tid][o].cf.elec   = 0.0;
+				tl_optres[tid][o].cf.hbond  = 0.0;
+				tl_optres[tid][o].cf.gist_desolv = 0.0;
 				tl_optres[tid][o].cf.rclash = 0;
 			}
 			tl_vc[tid].numcarec = 0;
@@ -2101,6 +2124,9 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 				p_optres[tid][o].cf.sas    = 0.0;
 				p_optres[tid][o].cf.totsas = 0.0;
 				p_optres[tid][o].cf.con    = 0.0;
+				p_optres[tid][o].cf.elec   = 0.0;
+				p_optres[tid][o].cf.hbond  = 0.0;
+				p_optres[tid][o].cf.gist_desolv = 0.0;
 				p_optres[tid][o].cf.rclash = 0;
 			}
 			p_vc[tid].numcarec = 0;

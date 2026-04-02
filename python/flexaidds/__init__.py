@@ -61,6 +61,18 @@ except ImportError:
     kB_SI = 1.380649e-23    # J K⁻¹
     HAS_CORE_BINDINGS = False
 
+# GA hyperparameter optimizer
+from .optimize import GAOptimizer, OptimizationResult
+
+# ML rescoring bridge
+from .ml_rescore import (
+    VoronoiGraphExtractor,
+    ShannonProfileExtractor,
+    FeatureBuilder,
+    ThermoFeatures,
+    MLRescorer,
+)
+
 from .supercluster import SuperCluster
 from .tencom_results import FlexModeResult, FlexPopulationResult, parse_tencom_pdb, parse_tencom_json
 from .energy_matrix import (
