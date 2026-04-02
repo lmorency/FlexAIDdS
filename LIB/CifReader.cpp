@@ -31,6 +31,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <cctype>
+#include <random>
 #include <string>
 #include <vector>
 #include <map>
@@ -363,7 +364,7 @@ static int parse_cif_atom_site(
     // residue connectivity, type assignment, and all the FlexAID-specific
     // bookkeeping. Writing a temp PDB is the most robust approach.
     char tmp_pdb[MAX_PATH__];
-    snprintf(tmp_pdb, MAX_PATH__, "/tmp/flexaid_cif_%d.pdb", rand() % 900000 + 100000);
+    snprintf(tmp_pdb, MAX_PATH__, "/tmp/flexaid_cif_%d.pdb", static_cast<int>(std::random_device{}() % 900000 + 100000));
 
     FILE* out = fopen(tmp_pdb, "w");
     if (!out) {
@@ -522,7 +523,7 @@ int read_multi_model_pdb(FA_Global* FA, atom** atoms, resid** residue,
     // Phase 2: Load first model via standard read_pdb for full topology
     // Create a temp PDB with only the first model's atoms
     char tmp_pdb[MAX_PATH__];
-    snprintf(tmp_pdb, MAX_PATH__, "/tmp/flexaid_mm_%d.pdb", rand() % 900000 + 100000);
+    snprintf(tmp_pdb, MAX_PATH__, "/tmp/flexaid_mm_%d.pdb", static_cast<int>(std::random_device{}() % 900000 + 100000));
     FILE* out = fopen(tmp_pdb, "w");
     if (!out) {
         fprintf(stderr, "ERROR: Cannot create temp PDB for multi-model\n");
