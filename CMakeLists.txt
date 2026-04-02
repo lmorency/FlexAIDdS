@@ -1444,6 +1444,32 @@ flexaids_configure_simd(test_cavity_detect)
         add_test(NAME SoftContactMatrixTests COMMAND test_soft_contact_matrix)
     endif()
 
+    # test_compare_energy_matrices — compare 256×256 vs 40×40 energy matrices
+    if(FLEXAIDS_USE_256_MATRIX)
+        add_executable(test_compare_energy_matrices
+            tests/test_compare_energy_matrices.cpp
+        )
+        target_include_directories(test_compare_energy_matrices PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+            ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ShannonThermoStack
+        )
+        target_link_libraries(test_compare_energy_matrices PRIVATE GTest::gtest GTest::gtest_main)
+        target_compile_definitions(test_compare_energy_matrices PRIVATE FLEXAIDS_USE_256_MATRIX)
+        if(MSVC)
+            target_compile_options(test_compare_energy_matrices PRIVATE /O2)
+        else()
+            target_compile_options(test_compare_energy_matrices PRIVATE -O2)
+        endif()
+        if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+            target_link_libraries(test_compare_energy_matrices PRIVATE OpenMP::OpenMP_CXX)
+        endif()
+        if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
+            target_link_libraries(test_compare_energy_matrices PRIVATE Eigen3::Eigen)
+            target_compile_definitions(test_compare_energy_matrices PRIVATE FLEXAIDS_HAS_EIGEN)
+        endif()
+        add_test(NAME CompareEnergyMatricesTests COMMAND test_compare_energy_matrices)
+    endif()
+
     # test_ion_handling — assign_radii / assign_types HETATM + ion coverage
     #                     + tENCoM ion contact surface (TmContSct) tests
     add_executable(test_ion_handling
