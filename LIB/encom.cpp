@@ -123,12 +123,19 @@ VibrationalEntropy ENCoMEngine::compute_vibrational_entropy(
     // need proper force constant → frequency conversion with mass weighting.
     // Here we assume eigenvalues are already in frequency² units (rad/s)².
     result.omega_eff = std::sqrt(geom_mean_eigenvalue);
-    
+
+    if (result.omega_eff <= 0.0) {
+        // All eigenvalues below cutoff → zero vibrational entropy
+        result.S_vib_kcal_mol_K = 0.0;
+        result.S_vib_J_mol_K = 0.0;
+        return result;
+    }
+
     // Quasi-harmonic entropy (Schlitter formula variant):
     // S_vib = (3N - 6) × k_B × [1 + ln(2π k_B T / (ħ ω_eff))]
     const double kBT = kB_SI * temperature_K;         // J
     const double arg = (2.0 * M_PI * kBT) / (hbar_SI * result.omega_eff);
-    
+
     if (arg <= 0.0) {
         // Invalid frequency → zero entropy
         result.S_vib_kcal_mol_K = 0.0;
