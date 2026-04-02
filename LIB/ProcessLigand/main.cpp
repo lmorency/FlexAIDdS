@@ -232,8 +232,8 @@ static void print_type256(const BonMol& mol) {
     for (int i = 0; i < mol.num_atoms(); ++i) {
         const Atom& a = mol.atoms[i];
         uint8_t t    = a.type_256;
-        uint8_t base = t & 0x1Fu;
-        uint8_t cbin = (t >> 5) & 0x03u;
+        uint8_t base = t & 0x3Fu;
+        uint8_t cbin = (t >> 6) & 0x01u;
         uint8_t hb   = (t >> 7) & 0x01u;
         std::cout << std::setw(6) << (i + 1) << " "
                   << std::setw(8) << static_cast<int>(t)

@@ -224,17 +224,14 @@ TEST(CompareEnergyMatrices, RoundTripProjectionFidelity) {
            n_matching_sign, n_both_nonzero,
            n_both_nonzero > 0 ? 100.0 * n_matching_sign / n_both_nonzero : 0.0);
 
-    // Round-trip is NOT perfect because 10 SYBYL types (SE, MG, SR, CU, MN,
-    // HG, CD, NI, CO.OH, DUMMY) all collapse to Solvent in the 256-type
-    // system (atom_typing_256.h). When projecting back, their energies get
-    // averaged into the Solvent bucket, and their original distinct rows
-    // are lost.  This is by design: the 256 system trades rare-metal
-    // granularity for charge/H-bond differentiation on common types.
-    EXPECT_GT(r, 0.95)
-        << "High correlation despite Solvent collapse";
-    EXPECT_LT(rmse, 50.0)
-        << "RMSE bounded — deviations only in collapsed types";
-    // Sign agreement should be perfect: no sign flips
+    // Every SYBYL type now has its own distinct base type — no Solvent collapse.
+    // The round-trip 40→256→40 should be perfect.
+    EXPECT_NEAR(r, 1.0, 1e-6)
+        << "Perfect round-trip: r should be 1.0";
+    EXPECT_NEAR(rmse, 0.0, 1e-3)
+        << "Perfect round-trip: RMSE should be 0.0";
+    EXPECT_NEAR(max_abs_diff, 0.0, 1e-3)
+        << "No cell should deviate after uniform expansion + projection";
     EXPECT_EQ(n_matching_sign, n_both_nonzero)
         << "No sign flips in round-trip projection";
 }
@@ -277,6 +274,9 @@ TEST(CompareEnergyMatrices, TypeMappingCoverage) {
     // All 256 codes should map to some SYBYL parent
     EXPECT_EQ(total_mapped, 256)
         << "Every 256-code should map to a SYBYL parent";
+    // Every SYBYL type should have at least one 256-code
+    EXPECT_EQ(types_with_fanout, 40)
+        << "All 40 SYBYL types should have >=1 256-code (no Solvent collapse)";
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -332,11 +332,10 @@ TEST(CompareEnergyMatrices, InformationDensity) {
            nrg_nonzero > 0 ? std::log2(unique_nrg) : 0.0,
            scm_nonzero > 0 ? std::log2(unique_scm) : 0.0);
 
-    // Unique counts differ slightly: 10 SYBYL types (metals, SE, DUMMY)
-    // collapse to Solvent in the 256 system, losing some distinct values.
-    // Also, float precision reduces double-precision unique values.
-    EXPECT_NEAR(unique_nrg, unique_scm, 20)
-        << "Similar unique value counts (small loss from Solvent collapse + float precision)";
+    // With no Solvent collapse, unique value counts should match
+    // (minor difference possible from double→float precision).
+    EXPECT_NEAR(unique_nrg, unique_scm, 15)
+        << "Unique value counts should be very close with no Solvent collapse";
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -404,16 +403,14 @@ TEST(CompareEnergyMatrices, RowVectorComparison) {
             }
         }
 
-        // Tolerance is loose because the 256→40 projection averages across
-        // codes that may include Solvent-collapsed types with different
-        // NRGRank energies. Types with all-zero NRGRank rows (like N.3)
-        // match exactly; common types diverge due to metal/rare-type collapse.
-        double tol = 500.0;  // generous: captures Solvent collapse effects
+        // With distinct base types for every SYBYL type, the round-trip
+        // should be exact (within float precision).
+        double tol = 0.1;
         bool match = std::fabs(nrg_sum - scm_row_sum) < tol;
         printf("  %-22s %12.2f %12.2f %s\n",
                tc.name, nrg_sum, scm_row_sum, match ? "OK" : "MISMATCH");
         EXPECT_NEAR(nrg_sum, scm_row_sum, tol)
-            << "Row sum deviation too large for " << tc.name;
+            << "Row sum mismatch for " << tc.name;
     }
 }
 
@@ -446,8 +443,8 @@ TEST(CompareEnergyMatrices, CapacityComparison) {
     // e.g. anionic C.AR with H-bond vs cationic C.AR without
     printf("  Summary of additional discriminative power:\n");
     printf("    40×40:  1 entry per SYBYL pair → charge-blind, H-bond-blind\n");
-    printf("    256×256: up to 64 entries per SYBYL pair\n");
-    printf("            (8 codes/type × 8 codes/type for each SYBYL pair)\n");
+    printf("    256×256: up to 16 entries per SYBYL pair\n");
+    printf("            (4 codes/type × 4 codes/type for each SYBYL pair)\n");
     printf("    Theoretical expansion: %dx more parameters\n",
            (256 * 256) / (40 * 40));
     printf("    Memory cost: %zu bytes (256×256) vs %zu bytes (41×41)\n",

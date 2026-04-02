@@ -67,6 +67,7 @@ _ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X",
 
 def encode_256_type(base_type: int, charge_bin: int = 0,
                     hbond_flag: bool = False) -> int:
+    # NOTE: Layout is [H:1][Q:1][B:6] = 2 × 2 × 64 = 256 codes.
     """Encode a 256-type atom index from components.
 
     Args:
@@ -78,16 +79,16 @@ def encode_256_type(base_type: int, charge_bin: int = 0,
     Returns:
         8-bit integer (0–255).
     """
-    base_type = max(0, min(31, int(base_type)))
-    charge_bin = max(0, min(3, int(charge_bin)))
-    return (int(hbond_flag) << 7) | (charge_bin << 5) | base_type
+    base_type = max(0, min(63, int(base_type)))
+    charge_bin = max(0, min(1, int(charge_bin)))
+    return (int(hbond_flag) << 7) | (charge_bin << 6) | base_type
 
 
 def decode_256_type(code: int) -> Tuple[int, int, bool]:
     """Decode a 256-type code into (base_type, charge_bin, hbond_flag)."""
     code = int(code) & 0xFF
-    base_type = code & 0x1F
-    charge_bin = (code >> 5) & 0x03
+    base_type = code & 0x3F
+    charge_bin = (code >> 6) & 0x01
     hbond_flag = bool((code >> 7) & 0x01)
     return base_type, charge_bin, hbond_flag
 
@@ -134,34 +135,58 @@ _BASE_TO_SYBYL: List[int] = [
     # 26–27: extended carbon (NATURaL-critical π-system refinements)
     4,   # 26: C_ar_hetadj → C.AR (aromatic C adjacent to heteroatom)
     2,   # 27: C_pi_bridging → C.2 (π-bridging carbon, tryptamine/indole)
-    # 28–30: metals (collapsed)
+    # 28–30: metals
     35,  # 28: Zn → ZN
     36,  # 29: Ca → CA
     37,  # 30: Fe → FE
-    # 31: solvent / dummy
-    40,  # 31: solvent → SOLVENT
+    # 31: solvent
+    40,  # 31: Solvent → SOLVENT
+    # 32–41: extended types (no more Solvent fallback)
+    27,  # 32: HAL_Se → SE
+    28,  # 33: Metal_Mg → MG
+    29,  # 34: Metal_Sr → SR
+    30,  # 35: Metal_Cu → CU
+    31,  # 36: Metal_Mn → MN
+    32,  # 37: Metal_Hg → HG
+    33,  # 38: Metal_Cd → CD
+    34,  # 39: Metal_Ni → NI
+    38,  # 40: Metal_Co → CO.OH
+    39,  # 41: Dummy → DUMMY
+    # 42–63: reserved (→ DUMMY)
+    39, 39, 39, 39, 39, 39, 39, 39, 39, 39,
+    39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39,
 ]
 
 
 def base_to_sybyl(base_type: int) -> int:
-    """Map a base type (0–31) to its SYBYL parent (1–40)."""
+    """Map a base type (0–63) to its SYBYL parent (1–40)."""
     if 0 <= base_type < len(_BASE_TO_SYBYL):
         return _BASE_TO_SYBYL[base_type]
     return 39  # DUMMY fallback
 
 
 def sybyl_to_base(sybyl_type: int) -> int:
-    """Map a SYBYL type (1–40) to the canonical base type (0–31).
+    """Map a SYBYL type (1–40) to the canonical base type (0–63).
 
-    This is a many-to-one inverse of base_to_sybyl; context-aware
-    refinements (C_ar_hetadj, C_pi_bridging) are NOT applied here —
-    they require structural context.  Use ``refine_base_type()`` for that.
+    Every SYBYL type maps to a distinct base type — no Solvent fallback.
+    Context-aware refinements (C_ar_hetadj, C_pi_bridging) are NOT applied
+    here — they require structural context.  Use ``refine_base_type()`` for that.
     """
-    # Build reverse mapping (first match)
-    for i, s in enumerate(_BASE_TO_SYBYL):
-        if s == sybyl_type:
-            return i
-    return 31  # solvent fallback
+    # Explicit mapping — every SYBYL type gets its own base type
+    _sybyl_to_base_table = {
+         1: 0,   2: 1,   3: 2,   4: 3,   5: 4,      # C types
+         6: 5,   7: 6,   8: 7,   9: 8,  10: 9,       # N types
+        11: 10, 12: 11,
+        13: 12, 14: 13, 15: 14, 16: 15,               # O types
+        17: 16, 18: 17, 19: 18, 20: 19, 21: 20,       # S types
+        22: 21,                                         # P.3
+        23: 22, 24: 23, 25: 24, 26: 25,               # halogens
+        27: 32, 28: 33, 29: 34, 30: 35,               # SE, MG, SR, CU
+        31: 36, 32: 37, 33: 38, 34: 39,               # MN, HG, CD, NI
+        35: 28, 36: 29, 37: 30,                        # ZN, CA, FE
+        38: 40, 39: 41, 40: 31,                        # CO.OH, DUMMY, SOL
+    }
+    return _sybyl_to_base_table.get(sybyl_type, 41)  # Dummy fallback
 
 
 # ── Boltzmann constant (kcal/mol/K) ─────────────────────────────────────────
