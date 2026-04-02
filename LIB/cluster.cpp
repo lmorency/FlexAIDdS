@@ -73,7 +73,7 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 		Clus_TOP[j]=0;
 		Clus_FRE[j]=0;
 		if(FA->temperature){
-			partition_function += pow( E, ((-1.0) * FA->beta * chrom[j].app_evalue) );
+			partition_function += exp((-1.0) * FA->beta * chrom[j].app_evalue);
 		}
 	}
     //printf("n_unclus=%d\n",n_unclus);
@@ -99,7 +99,7 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 		// Clus_TCF[num_of_clusters]=chrom[j].app_evalue;
 		if(FA->temperature > 0)
 		{
-			double Pj = pow( E, ((-1.0) * FA->beta * chrom[j].app_evalue) ) / partition_function;
+			double Pj = exp((-1.0) * FA->beta * chrom[j].app_evalue) / partition_function;
 			Clus_ACF[num_of_clusters] = (double)( ( Pj * chrom[j].app_evalue) - (FA->temperature * Pj * log(Pj)) );
 			Clus_TCF[num_of_clusters] = (double)( ( Pj * chrom[j].app_evalue) - (FA->temperature * Pj * log(Pj)) );
 		}
@@ -127,7 +127,7 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 					// printf("i=%d belongs to cluster of j=%d because rmsd=%.3f\n", i, j, rmsd);
 					n_unclus--;
 					if(FA->temperature){
-						double Pi = pow( E, ((-1.0) * FA->beta * chrom[i].app_evalue) ) / partition_function;
+						double Pi = exp((-1.0) * FA->beta * chrom[i].app_evalue) / partition_function;
 						Clus_ACF[num_of_clusters] += (double)( (Pi * chrom[i].app_evalue) + (FA->temperature * Pi * log(Pi)) );
 					}else{
 						Clus_ACF[num_of_clusters] += chrom[i].app_evalue;

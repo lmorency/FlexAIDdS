@@ -8,6 +8,7 @@
 #include "BindingResidues.h"
 #include <vector>
 #include <algorithm>
+#include <random>
 
 /*****************************************************************************
  * compute_mif_and_reflig — MIF computation, grid prioritization, RefLig seeding
@@ -354,8 +355,7 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 	}
 
 	// Generate random 6-digit number
-	srand((unsigned int)time(NULL));
-	int random_num = rand() % 900000 + 100000; // Ensures 6 digits
+	int random_num = static_cast<int>(std::random_device{}() % 900000 + 100000);
 
 	// If we had a dot, restore the string terminator to its original position
 	if (dot != NULL) {
