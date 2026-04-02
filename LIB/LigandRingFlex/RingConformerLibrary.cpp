@@ -3,6 +3,7 @@
 #include "../flexaid.h"   // atom_struct (bond graph), MBNDS
 #include <cstdlib>
 #include <cstring>
+#include <random>
 #include <stdexcept>
 #include <unordered_set>
 #include <unordered_map>

@@ -4,17 +4,17 @@ double GetValueFromGaussian(double x,double max,double zero) {
 	return pow( -(x-zero) * (x-(2*max-zero)) / (pow(zero-max,2.0)), 50.0 );
 }
 
-inline void vec_sub(float * __restrict__ a, const float * __restrict__ b, const float * __restrict__ c) {
+void vec_sub(float * __restrict__ a, const float * __restrict__ b, const float * __restrict__ c) {
    a[0]=b[0]-c[0];
    a[1]=b[1]-c[1];
    a[2]=b[2]-c[2];
  }
 
-inline float dot_prod(const float * __restrict__ v1, const float * __restrict__ v2) {
+float dot_prod(const float * __restrict__ v1, const float * __restrict__ v2) {
    return v1[0]* v2[0] + v1[1]* v2[1] + v1[2] * v2[2];
  }
 
-inline float distance2(const float * __restrict__ a, const float * __restrict__ b){
+float distance2(const float * __restrict__ a, const float * __restrict__ b){
   float delta = a[0] - b[0];
   float r2 = delta*delta;
   delta = a[1] - b[1];
@@ -23,18 +23,18 @@ inline float distance2(const float * __restrict__ a, const float * __restrict__ 
   return r2 + delta*delta;
 }
 
-inline float * cross_prod(float * __restrict__ x1, const float * __restrict__ x2, const float * __restrict__ x3) {
+float * cross_prod(float * __restrict__ x1, const float * __restrict__ x2, const float * __restrict__ x3) {
   x1[0] =  x2[1]*x3[2] - x3[1]*x2[2];
   x1[1] = -x2[0]*x3[2] + x3[0]*x2[2];
   x1[2] =  x2[0]*x3[1] - x3[0]*x2[1];
   return x1;
 }
 
-inline float distance(const float * __restrict__ a, const float * __restrict__ b) {
+float distance(const float * __restrict__ a, const float * __restrict__ b) {
   return sqrtf(distance2(a,b));
 }
 
-inline float angle(const float *a, const float *b, const float *c) {
+float angle(const float *a, const float *b, const float *c) {
   float v1[3], v2[3];
   float ab[3];
   float psin, pcos;
@@ -46,7 +46,7 @@ inline float angle(const float *a, const float *b, const float *c) {
   return 57.2958f * atan2(psin, pcos);
 }
 
-inline float dihedral(const float *a1,const float *a2,const float *a3,const float *a4) {
+float dihedral(const float *a1,const float *a2,const float *a3,const float *a4) {
   float r1[3], r2[3], r3[3], n1[3], n2[3];
   float psin, pcos;
   vec_sub(r1, a2, a1);
@@ -66,7 +66,7 @@ inline float dihedral(const float *a1,const float *a2,const float *a3,const floa
  * SUBROUTINE zeros calculates the zeros of a quadratic function
  * the function returns the positive zero
  ******************************************************************************/
-inline float zero(float a, float b, float c){
+float zero(float a, float b, float c){
 	float disc = sqrtf( b*b - 4*a*c );
 	float inv2a = 1.0f / ( 2 * a );
 	float r1 = ( -b + disc ) * inv2a;
@@ -93,7 +93,7 @@ float distance_n(float a[], float b[], int n){
 /******************************************************************************
  * SUBROUTINE sqrdist calculates the square distance between two points in d=3.
  ******************************************************************************/
-inline float sqrdist(const float * __restrict__ a, const float * __restrict__ b)
+float sqrdist(const float * __restrict__ a, const float * __restrict__ b)
  {
   float d0 = a[0]-b[0];
   float d1 = a[1]-b[1];
@@ -105,7 +105,7 @@ inline float sqrdist(const float * __restrict__ a, const float * __restrict__ b)
  * SUBROUTINE distance calculates the cartesian distance between two point in 
  * 3 dimensions.
  ******************************************************************************/
-inline float dist(const float * __restrict__ a, const float * __restrict__ b){
+float dist(const float * __restrict__ a, const float * __restrict__ b){
   return sqrtf(sqrdist(a, b));
 }
 
