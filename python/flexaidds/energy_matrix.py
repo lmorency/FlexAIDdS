@@ -17,6 +17,7 @@ Example:
     >>> mat.to_dat_file("/tmp/roundtrip.dat")
 """
 
+import json
 import math
 import struct
 from dataclasses import dataclass, field
@@ -161,6 +162,98 @@ def sybyl_to_base(sybyl_type: int) -> int:
         if s == sybyl_type:
             return i
     return 31  # solvent fallback
+
+
+# ── Boltzmann constant (kcal/mol/K) ─────────────────────────────────────────
+
+_kB_kcal: float = 0.0019872041
+
+
+# ── contact table ───────────────────────────────────────────────────────────
+
+@dataclass
+class ContactTable:
+    """Observed atom-type contact counts from a set of protein-ligand complexes.
+
+    Used as input for knowledge-based potential derivation (Sippl reference
+    ratio method).
+    """
+
+    ntypes: int
+    counts: "np.ndarray"
+    type_totals: "np.ndarray"
+    n_structures: int
+    distance_cutoff: float
+
+    def save(self, path: str) -> None:
+        """Serialize to JSON."""
+        data = {
+            "ntypes": self.ntypes,
+            "counts": self.counts.tolist(),
+            "type_totals": self.type_totals.tolist(),
+            "n_structures": self.n_structures,
+            "distance_cutoff": self.distance_cutoff,
+        }
+        with open(path, "w") as fh:
+            json.dump(data, fh)
+
+    @classmethod
+    def load(cls, path: str) -> "ContactTable":
+        """Deserialize from JSON."""
+        with open(path) as fh:
+            data = json.load(fh)
+        return cls(
+            ntypes=data["ntypes"],
+            counts=np.array(data["counts"]),
+            type_totals=np.array(data["type_totals"]),
+            n_structures=data["n_structures"],
+            distance_cutoff=data["distance_cutoff"],
+        )
+
+
+# ── knowledge-based trainer ─────────────────────────────────────────────────
+
+class KnowledgeBasedTrainer:
+    """Derive a knowledge-based potential from observed contact statistics.
+
+    Implements the Sippl reference-ratio method: for each atom-type pair
+    (i, j), the potential is ``-kBT * ln(N_obs / N_ref)`` where *N_ref* is
+    the expected count under a uniform mixing assumption.
+    """
+
+    def __init__(self, ntypes: int, temperature: float = 300.0,
+                 pseudocount: float = 1.0):
+        self.ntypes = ntypes
+        self.temperature = temperature
+        self.pseudocount = pseudocount
+        self._counts: Optional["np.ndarray"] = None
+        self._type_totals: Optional["np.ndarray"] = None
+
+    def add_contact_table(self, table: ContactTable) -> None:
+        """Accumulate contacts from a :class:`ContactTable`."""
+        if self._counts is None:
+            self._counts = table.counts.astype(np.float64).copy()
+            self._type_totals = table.type_totals.astype(np.float64).copy()
+        else:
+            self._counts += table.counts
+            self._type_totals += table.type_totals
+
+    def derive_potential(self) -> "EnergyMatrix":
+        """Return an :class:`EnergyMatrix` with the derived potential."""
+        if self._counts is None:
+            raise RuntimeError("No contact tables added")
+        total = self._type_totals.sum()
+        freq = ((self._type_totals + self.pseudocount)
+                / (total + self.pseudocount * self.ntypes))
+        ref = np.outer(freq, freq)
+        ref *= self._counts.sum()
+        obs = self._counts + self.pseudocount
+        ref_safe = np.where(ref > 0, ref, 1.0)
+        ratio = obs / ref_safe
+        kBT = _kB_kcal * self.temperature
+        matrix = -kBT * np.log(ratio)
+        matrix = (matrix + matrix.T) / 2.0
+        return EnergyMatrix(self.ntypes, matrix)
 
 
 # ── density function entry ───────────────────────────────────────────────────
