@@ -58,6 +58,22 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB) {
         FA->useacs          = jbool(config, "scoring", "accessible_surface", false) ? 1 : 0;
         FA->acsweight       = jflt(config, "scoring", "acs_weight", 1.0f);
         FA->solventterm     = jflt(config, "scoring", "solvent_penalty", 0.0f);
+
+        // Angular-dependent hydrogen bond potential
+        FA->use_hbond              = jbool(config, "scoring", "hbond_enabled", false) ? 1 : 0;
+        FA->hbond_optimal_dist     = jdbl(config, "scoring", "hbond_optimal_distance", 2.8);
+        FA->hbond_optimal_angle    = jdbl(config, "scoring", "hbond_optimal_angle", 180.0);
+        FA->hbond_sigma_dist       = jdbl(config, "scoring", "hbond_sigma_distance", 0.4);
+        FA->hbond_sigma_angle      = jdbl(config, "scoring", "hbond_sigma_angle", 30.0);
+        FA->hbond_weight           = jdbl(config, "scoring", "hbond_weight", -2.5);
+        FA->hbond_salt_bridge_weight = jdbl(config, "scoring", "hbond_salt_bridge_weight", -5.0);
+
+        // GIST desolvation grid
+        FA->use_gist    = jbool(config, "scoring", "gist_enabled", false) ? 1 : 0;
+        FA->gist_weight = jdbl(config, "scoring", "gist_weight", 1.0);
+        FA->gist_grid   = nullptr;
+        // Note: GIST grid loading is handled by the caller after apply_config()
+        // when FA->use_gist is enabled and gist_dx_file is non-empty.
     }
 
     // ── Optimization ──
@@ -141,6 +157,13 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB) {
         GB->entropy_weight   = jdbl(config, "ga", "entropy_weight", 0.5);
         GB->entropy_interval = jint(config, "ga", "entropy_interval", 0);
         GB->use_shannon      = jbool(config, "ga", "use_shannon", false) ? 1 : 0;
+
+        // Diversity monitoring (entropy collapse mitigation)
+        GB->diversity_monitoring          = jbool(config, "ga", "diversity_monitoring", false) ? 1 : 0;
+        GB->diversity_check_interval      = jint(config, "ga", "diversity_check_interval", 10);
+        GB->diversity_collapse_threshold  = jdbl(config, "ga", "diversity_collapse_threshold", 0.3);
+        GB->catastrophic_mutation_fraction = jdbl(config, "ga", "catastrophic_mutation_fraction", 0.2);
+        GB->catastrophic_mutation_count   = 0;
     }
 
     // ── Output ──

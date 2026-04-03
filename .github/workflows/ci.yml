@@ -64,19 +64,31 @@ jobs:
             os: macos-latest
             cc: clang
             cxx: clang++
-          # windows-msvc disabled: core engine sources need MSVC porting work
-          # (POSIX APIs, C++20 module compatibility). Tracked for future fix.
-          # - name: windows-msvc
-          #   os: windows-latest
-          #   cc: cl
-          #   cxx: cl
+          - name: linux-gcc-avx512
+            os: ubuntu-latest
+            cc: gcc
+            cxx: g++
+            cmake_extra: "-DFLEXAIDS_USE_AVX512=ON"
+          - name: linux-gcc-mpi
+            os: ubuntu-latest
+            cc: gcc
+            cxx: g++
+            cmake_extra: "-DFLEXAIDS_USE_MPI=ON"
+          - name: windows-msvc
+            os: windows-latest
+            cc: cl
+            cxx: cl
     steps:
       - uses: actions/checkout@v6
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build libeigen3-dev libomp-dev
+          PKGS="cmake ninja-build libeigen3-dev libomp-dev"
+          if [ "${{ matrix.name }}" = "linux-gcc-mpi" ]; then
+            PKGS="$PKGS libopenmpi-dev openmpi-bin"
+          fi
+          sudo apt-get install -y $PKGS
       - name: Install macOS dependencies
         if: runner.os == 'macOS'
         run: |
@@ -99,9 +111,7 @@ jobs:
             -DFLEXAIDS_USE_METAL=OFF
             -DBUILD_PYTHON_BINDINGS=OFF
             -DBUILD_TESTING=ON
-            -DENABLE_TENCOM_TOOL=OFF
-            -DBUILD_FLEXAIDDS_FAST=OFF
-            -DENABLE_BENCHMARK_DATASETS=OFF
+            ${{ matrix.cmake_extra }}
           )
           # Homebrew on Apple Silicon installs to /opt/homebrew
           if [ "$RUNNER_OS" = "macOS" ]; then

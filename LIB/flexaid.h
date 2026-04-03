@@ -27,6 +27,7 @@
 #include <algorithm>
 #include <utility>
 #include <map>
+#include <cstdint>
 
 //const int endian_t = 1;
 //#define IS_BIG_ENDIAN() ( ( *(char *) &endian_t ) == 0 ) // cross-platform development
@@ -118,6 +119,8 @@ struct cf_str{  // Complementarity Function value structure
 	double wal;    // wall term
 	double sas;    // solvent accessibility surface
 	double elec;   // electrostatic (Coulomb) energy
+	double hbond;  // angular-dependent hydrogen bond energy
+	double gist_desolv; // GIST grid-based desolvation energy
 	double totsas; // overall sas of molecule
 	int   rclash; // flag that shows whether the residue is making steric clashes
 };
@@ -205,6 +208,7 @@ struct atom_struct{  // atom structure
 	int    ncons;   // number of constraint for atoms
 	int    isbb;    // atom is a backbone atom
 	int    graph;   // id of graph atom belongs to (ligands only)
+	uint8_t type256; // 256-class atom type (atom_typing_256.h encoding)
 
 	optmap* par;    // if this atom defines a variable (translational/rotational or dihedrals)
 	constraint** cons; // points to constraint , if NULL no constraint to atom
@@ -533,6 +537,20 @@ struct FA_Global_struct{
 	int     model_gene_index;        // index of the model-selection gene in chromosome
 	std::vector<std::vector<float>> model_coords;  // model_coords[model_idx][atom_idx*3+{0,1,2}]
 	std::vector<double>             model_strain;  // strain energy per model (kcal/mol)
+
+	// ── Angular-Dependent H-Bond Scoring ──
+	int     use_hbond;               // 0=off (default), 1=on
+	double  hbond_optimal_dist;      // D-A distance (Å), default 2.8
+	double  hbond_optimal_angle;     // D-H...A angle (°), default 180
+	double  hbond_sigma_dist;        // Gaussian width distance (Å), default 0.4
+	double  hbond_sigma_angle;       // Gaussian width angle (°), default 30
+	double  hbond_weight;            // energy weight (kcal/mol), default -2.5
+	double  hbond_salt_bridge_weight;// salt bridge weight (kcal/mol), default -5.0
+
+	// ── GIST Desolvation Scoring ──
+	int     use_gist;                // 0=off (default), 1=on
+	double  gist_weight;             // weighting coefficient (default 1.0)
+	void*   gist_grid;               // pointer to gist::GISTGrid (opaque, NULL when disabled)
 };
 typedef struct FA_Global_struct FA_Global;
 

@@ -1,0 +1,49 @@
+site_name: FlexAIDΔS Documentation
+site_description: Entropy-driven molecular docking engine
+site_author: Louis-Philippe Morency / NRGlab
+
+theme:
+  name: material
+  palette:
+    primary: blue
+    accent: cyan
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - search.suggest
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Configuration: configuration.md
+  - Scoring Functions:
+    - Overview: scoring/overview.md
+    - H-Bond Potential: scoring/hbond.md
+    - GIST Desolvation: scoring/gist.md
+  - Genetic Algorithm:
+    - Overview: ga/overview.md
+    - Diversity Monitoring: ga/diversity.md
+    - Hyperparameter Tuning: ga/optimize.md
+  - Python API: api/python.md
+  - Benchmarks:
+    - CASF-2016: benchmarks/casf2016.md
+    - LIT-PCBA: benchmarks/litpcba.md
+    - Cross-Docking: benchmarks/crossdock.md
+  - ML Rescoring: ml-rescore.md
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - codehilite
+  - toc:
+      permalink: true
+  - pymdownx.arithmatex:
+      generic: true
+
+extra_javascript:
+  - https://polyfill.io/v3/polyfill.min.js?features=es6
+  - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
+
+copyright: Copyright &copy; 2024-2026 Louis-Philippe Morency / NRGlab, Universite de Montreal
