@@ -20,8 +20,8 @@
 // ─── atom_typing_256 tests ──────────────────────────────────────────────────
 
 TEST(AtomTyping256, EncodeDecodeRoundtrip) {
-    for (int base = 0; base < 32; ++base) {
-        for (int qbin = 0; qbin < 4; ++qbin) {
+    for (int base = 0; base < 64; ++base) {
+        for (int qbin = 0; qbin < 2; ++qbin) {
             for (int hb = 0; hb < 2; ++hb) {
                 uint8_t code = atom256::encode(base, qbin, hb);
                 EXPECT_EQ(atom256::get_base(code), base);
@@ -34,8 +34,8 @@ TEST(AtomTyping256, EncodeDecodeRoundtrip) {
 
 TEST(AtomTyping256, All256CodesUnique) {
     std::vector<uint8_t> codes;
-    for (int base = 0; base < 32; ++base)
-        for (int qbin = 0; qbin < 4; ++qbin)
+    for (int base = 0; base < 64; ++base)
+        for (int qbin = 0; qbin < 2; ++qbin)
             for (int hb = 0; hb < 2; ++hb)
                 codes.push_back(atom256::encode(base, qbin, hb));
     EXPECT_EQ(codes.size(), 256u);
@@ -49,13 +49,36 @@ TEST(AtomTyping256, SybylToBaseMapping) {
     for (int s = 1; s <= 40; ++s) {
         uint8_t base = atom256::sybyl_to_base(s);
         EXPECT_GE(base, 0);
-        EXPECT_LT(base, 32) << "SYBYL type " << s << " → base " << (int)base;
+        EXPECT_LT(base, 64) << "SYBYL type " << s << " → base " << (int)base;
     }
+}
+
+TEST(AtomTyping256, NoSolventFallback) {
+    // Previously collapsed types should now have distinct base types
+    // SE(27), MG(28), SR(29), CU(30), MN(31), HG(32), CD(33), NI(34),
+    // CO.OH(38), DUMMY(39) should NOT map to Solvent (31)
+    int collapsed[] = {27, 28, 29, 30, 31, 32, 33, 34, 38, 39};
+    for (int s : collapsed) {
+        uint8_t base = atom256::sybyl_to_base(s);
+        EXPECT_NE(base, atom256::Solvent)
+            << "SYBYL type " << s << " should not collapse to Solvent";
+    }
+    // Only SYBYL 40 (actual solvent) should map to Solvent
+    EXPECT_EQ(atom256::sybyl_to_base(40), atom256::Solvent);
 }
 
 TEST(AtomTyping256, BaseToSybylParent) {
     // First 22 base types should round-trip cleanly
     for (int b = 0; b < 22; ++b) {
+        int sybyl = atom256::base_to_sybyl_parent(b);
+        EXPECT_GE(sybyl, 1);
+        EXPECT_LE(sybyl, 40);
+        uint8_t back = atom256::sybyl_to_base(sybyl);
+        EXPECT_EQ(back, b) << "base=" << b << " → sybyl=" << sybyl
+                           << " → base=" << (int)back;
+    }
+    // Extended types (32-41) should round-trip through SYBYL
+    for (int b = 32; b <= 41; ++b) {
         int sybyl = atom256::base_to_sybyl_parent(b);
         EXPECT_GE(sybyl, 1);
         EXPECT_LE(sybyl, 40);
@@ -78,10 +101,10 @@ TEST(AtomTyping256, ContextRefinement) {
 }
 
 TEST(AtomTyping256, ChargeQuantisation) {
-    EXPECT_EQ(atom256::quantise_charge(-0.5f), atom256::Q_ANIONIC);
-    EXPECT_EQ(atom256::quantise_charge(-0.1f), atom256::Q_WEAK_NEG);
-    EXPECT_EQ(atom256::quantise_charge(0.1f),  atom256::Q_WEAK_POS);
-    EXPECT_EQ(atom256::quantise_charge(0.5f),  atom256::Q_CATIONIC);
+    EXPECT_EQ(atom256::quantise_charge(-0.5f), atom256::Q_NEGATIVE);
+    EXPECT_EQ(atom256::quantise_charge(-0.1f), atom256::Q_NEGATIVE);
+    EXPECT_EQ(atom256::quantise_charge(0.1f),  atom256::Q_POSITIVE);
+    EXPECT_EQ(atom256::quantise_charge(0.5f),  atom256::Q_POSITIVE);
 }
 
 TEST(AtomTyping256, HBondCapability) {
@@ -95,13 +118,18 @@ TEST(AtomTyping256, EncodeFromSybyl) {
     // C.AR with no context → base_type 3
     uint8_t code = atom256::encode_from_sybyl(4, 0.1f, 0);
     EXPECT_EQ(atom256::get_base(code), atom256::C_ar);
-    EXPECT_EQ(atom256::get_charge_bin(code), atom256::Q_WEAK_POS);
+    EXPECT_EQ(atom256::get_charge_bin(code), atom256::Q_POSITIVE);
     EXPECT_FALSE(atom256::get_hbond(code));
 
     // N.3 with positive charge → H-bond capable
     code = atom256::encode_from_sybyl(8, 0.3f, 2);
     EXPECT_EQ(atom256::get_base(code), atom256::N_sp3);
     EXPECT_TRUE(atom256::get_hbond(code));
+
+    // MG (28) → Metal_Mg, not Solvent
+    code = atom256::encode_from_sybyl(28, 0.5f, 0);
+    EXPECT_EQ(atom256::get_base(code), atom256::Metal_Mg);
+    EXPECT_NE(atom256::get_base(code), atom256::Solvent);
 }
 
 // ─── SoftContactMatrix tests ────────────────────────────────────────────────

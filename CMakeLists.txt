@@ -230,6 +230,7 @@ target_sources(FlexAID PRIVATE
         LIB/calc_cleftic.cpp
         LIB/write_pdb.cpp
         LIB/gaboom.cpp
+        LIB/GAContext.cpp
         LIB/calc_center.cpp
         LIB/ic_bounds.cpp
         LIB/buildic_point.cpp
@@ -273,6 +274,9 @@ target_sources(FlexAID PRIVATE
         LIB/tENCoM/tencm.cpp
         LIB/statmech.cpp
         LIB/encom.cpp             # ← NEW: ENCoM vibrational entropy
+        # ── GIST water displacement + directional H-bond scoring ──
+        LIB/GISTEvaluator.cpp
+        LIB/HBondEvaluator.cpp
         # ── TurboQuant vector quantization (Zandieh et al. 2025) ──
         LIB/TurboQuant.cpp
         # ── ProcessLigand (Phase 3: standalone ligand preprocessing) ──
@@ -975,6 +979,7 @@ if(BUILD_TESTING)
         tests/test_gaboom.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/GAContext.cpp
         LIB/Vcontacts.cpp
         LIB/statmech.cpp
         LIB/TurboQuant.cpp
@@ -1221,6 +1226,7 @@ flexaids_configure_simd(test_cavity_detect)
         tests/test_binding_mode_statmech.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/GAContext.cpp
         LIB/Vcontacts.cpp
         LIB/statmech.cpp
         LIB/TurboQuant.cpp
@@ -1265,6 +1271,7 @@ flexaids_configure_simd(test_cavity_detect)
         tests/test_ccbm.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/GAContext.cpp
         LIB/Vcontacts.cpp
         LIB/statmech.cpp
         LIB/TurboQuant.cpp
@@ -1309,6 +1316,7 @@ flexaids_configure_simd(test_cavity_detect)
         tests/test_binding_mode_advanced.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/GAContext.cpp
         LIB/Vcontacts.cpp
         LIB/statmech.cpp
         LIB/TurboQuant.cpp
@@ -1353,6 +1361,7 @@ flexaids_configure_simd(test_cavity_detect)
         tests/test_ga_core.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/GAContext.cpp
         LIB/Vcontacts.cpp
         LIB/statmech.cpp
         LIB/TurboQuant.cpp
@@ -1397,6 +1406,7 @@ flexaids_configure_simd(test_cavity_detect)
         tests/test_ga_validation.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/GAContext.cpp
         LIB/Vcontacts.cpp
         LIB/statmech.cpp
         LIB/TurboQuant.cpp
@@ -1469,6 +1479,32 @@ flexaids_configure_simd(test_cavity_detect)
         add_test(NAME SoftContactMatrixTests COMMAND test_soft_contact_matrix)
     endif()
 
+    # test_compare_energy_matrices — compare 256×256 vs 40×40 energy matrices
+    if(FLEXAIDS_USE_256_MATRIX)
+        add_executable(test_compare_energy_matrices
+            tests/test_compare_energy_matrices.cpp
+        )
+        target_include_directories(test_compare_energy_matrices PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+            ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ShannonThermoStack
+        )
+        target_link_libraries(test_compare_energy_matrices PRIVATE GTest::gtest GTest::gtest_main)
+        target_compile_definitions(test_compare_energy_matrices PRIVATE FLEXAIDS_USE_256_MATRIX)
+        if(MSVC)
+            target_compile_options(test_compare_energy_matrices PRIVATE /O2)
+        else()
+            target_compile_options(test_compare_energy_matrices PRIVATE -O2)
+        endif()
+        if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+            target_link_libraries(test_compare_energy_matrices PRIVATE OpenMP::OpenMP_CXX)
+        endif()
+        if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
+            target_link_libraries(test_compare_energy_matrices PRIVATE Eigen3::Eigen)
+            target_compile_definitions(test_compare_energy_matrices PRIVATE FLEXAIDS_HAS_EIGEN)
+        endif()
+        add_test(NAME CompareEnergyMatricesTests COMMAND test_compare_energy_matrices)
+    endif()
+
     # test_ion_handling — assign_radii / assign_types HETATM + ion coverage
     #                     + tENCoM ion contact surface (TmContSct) tests
     add_executable(test_ion_handling
@@ -1491,6 +1527,7 @@ flexaids_configure_simd(test_cavity_detect)
         tests/test_entropy_ga.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/GAContext.cpp
         LIB/Vcontacts.cpp
         LIB/statmech.cpp
         LIB/TurboQuant.cpp
@@ -1633,6 +1670,7 @@ flexaids_configure_simd(test_cavity_detect)
         tests/test_binding_mode_vibrational.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/GAContext.cpp
         LIB/Vcontacts.cpp
         LIB/statmech.cpp
         LIB/TurboQuant.cpp
@@ -1798,7 +1836,118 @@ flexaids_configure_simd(test_cavity_detect)
     flexaids_configure_msvc_test(test_target_server)
     add_test(NAME TargetServerTests COMMAND test_target_server)
 
+    # test_gist_hbond — GIST evaluator + directional H-bond scoring
+    add_executable(test_gist_hbond tests/test_gist_hbond.cpp
+                   LIB/GISTEvaluator.cpp LIB/HBondEvaluator.cpp)
+    target_include_directories(test_gist_hbond PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_gist_hbond PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_gist_hbond PRIVATE /O2)
+    else()
+        target_compile_options(test_gist_hbond PRIVATE -O2)
+    endif()
+    flexaids_configure_msvc_test(test_gist_hbond)
+    add_test(NAME GISTHBondTests COMMAND test_gist_hbond)
+
     message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_tencom_diff, test_target_validation, test_grand_partition, test_target_server")
+    # test_hbond_potential — Angular-dependent H-bond potential unit tests
+    add_executable(test_hbond_potential
+        tests/test_hbond_potential.cpp
+    )
+    target_include_directories(test_hbond_potential PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_hbond_potential PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_hbond_potential PRIVATE /O2)
+    else()
+        target_compile_options(test_hbond_potential PRIVATE -O2)
+    endif()
+    flexaids_configure_msvc_test(test_hbond_potential)
+    add_test(NAME HBondPotentialTests COMMAND test_hbond_potential)
+
+    # test_gist_grid — GIST desolvation grid unit tests
+    add_executable(test_gist_grid
+        tests/test_gist_grid.cpp
+    )
+    target_include_directories(test_gist_grid PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_gist_grid PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_gist_grid PRIVATE /O2)
+    else()
+        target_compile_options(test_gist_grid PRIVATE -O2)
+    endif()
+    flexaids_configure_msvc_test(test_gist_grid)
+    add_test(NAME GISTGridTests COMMAND test_gist_grid)
+
+    # test_ga_diversity — GA population diversity monitoring unit tests
+    add_executable(test_ga_diversity
+        tests/test_ga_diversity.cpp
+    )
+    target_include_directories(test_ga_diversity PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_ga_diversity PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_ga_diversity PRIVATE /O2)
+    else()
+        target_compile_options(test_ga_diversity PRIVATE -O2)
+    endif()
+    flexaids_configure_msvc_test(test_ga_diversity)
+    add_test(NAME GADiversityTests COMMAND test_ga_diversity)
+
+    # test_soa_conversion — AoS↔SoA atom data conversion unit tests
+    add_executable(test_soa_conversion
+        tests/test_soa_conversion.cpp
+    )
+    target_include_directories(test_soa_conversion PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_soa_conversion PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_soa_conversion PRIVATE /O2)
+    else()
+        target_compile_options(test_soa_conversion PRIVATE -O2)
+    endif()
+    flexaids_configure_simd(test_soa_conversion)
+    flexaids_configure_msvc_test(test_soa_conversion)
+    add_test(NAME SoAConversionTests COMMAND test_soa_conversion)
+
+    # test_distributed_backend — Distributed backend abstraction unit tests
+    add_executable(test_distributed_backend
+        tests/test_distributed_backend.cpp
+    )
+    target_include_directories(test_distributed_backend PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_distributed_backend PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_distributed_backend PRIVATE /O2)
+    else()
+        target_compile_options(test_distributed_backend PRIVATE -O2)
+    endif()
+    flexaids_configure_msvc_test(test_distributed_backend)
+    add_test(NAME DistributedBackendTests COMMAND test_distributed_backend)
+
+    # test_ga_context — GAContext re-entrant state + GPUContextPool singleton
+    add_executable(test_ga_context
+        tests/test_ga_context.cpp
+        LIB/GAContext.cpp
+    )
+    target_include_directories(test_ga_context PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+    )
+    target_link_libraries(test_ga_context PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_ga_context PRIVATE /O2)
+    else()
+        target_compile_options(test_ga_context PRIVATE -O2)
+    endif()
+    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
+        target_link_libraries(test_ga_context PRIVATE Eigen3::Eigen)
+        target_compile_definitions(test_ga_context PRIVATE FLEXAIDS_HAS_EIGEN)
+    endif()
+    flexaids_configure_msvc_test(test_ga_context)
+    add_test(NAME GAContextTests COMMAND test_ga_context)
+
+    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_tencom_diff, test_target_validation, test_grand_partition, test_target_server, test_ga_context")
 endif()
 
 # ─── Swift Bridge (macOS only) ────────────────────────────────────────────

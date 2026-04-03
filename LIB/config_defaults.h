@@ -27,6 +27,18 @@ inline json::Value flexaid_default_config() {
             {"accessible_surface", V(false)},    // ACS weighting
             {"acs_weight",       V(1.0)},
             {"solvent_penalty",  V(0.0)},
+            // Angular-dependent hydrogen bond potential
+            {"hbond_enabled",           V(false)},
+            {"hbond_optimal_distance",  V(2.8)},
+            {"hbond_optimal_angle",     V(180.0)},
+            {"hbond_sigma_distance",    V(0.4)},
+            {"hbond_sigma_angle",       V(30.0)},
+            {"hbond_weight",            V(-2.5)},
+            {"hbond_salt_bridge_weight",V(-5.0)},
+            // GIST desolvation grid
+            {"gist_enabled",  V(false)},
+            {"gist_dx_file",  V("")},
+            {"gist_weight",   V(1.0)},
         })},
 
         // ── Optimization step sizes ──────────────────────────────
@@ -85,6 +97,16 @@ inline json::Value flexaid_default_config() {
             {"entropy_weight",       V(0.5)},   // SMFREE blending: 0=rank-only, 1=pure Boltzmann
             {"entropy_interval",     V(0)},     // log ensemble thermo every N gens (0=auto)
             {"use_shannon",          V(false)},  // include Shannon configurational entropy
+            // Diversity monitoring (entropy collapse mitigation)
+            {"diversity_monitoring",             V(false)},
+            {"diversity_check_interval",         V(10)},
+            {"diversity_collapse_threshold",     V(0.3)},
+            {"catastrophic_mutation_fraction",   V(0.2)},
+        })},
+
+        // ── Distributed Computing ───────────────────────────────
+        {"distributed", V(O{
+            {"backend", V("thread")},  // "thread" (default), "mpi"
         })},
 
         // ── Output ───────────────────────────────────────────────

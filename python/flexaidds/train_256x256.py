@@ -142,7 +142,7 @@ def parse_pdb_atoms(pdb_path: str) -> List[Atom]:
 
             base = _PDB_ELEMENT_MAP.get(element.upper(), 31)
             charge = 0.0
-            t256 = encode_256_type(base, 2, base in {5,6,7,8,9,10,11,12,13,14})
+            t256 = encode_256_type(base, 1, base in {5,6,7,8,9,10,11,12,13,14})
             atoms.append(Atom(idx, name, element, x, y, z, charge, base, t256))
     return atoms
 
@@ -184,11 +184,8 @@ def parse_mol2_atoms(mol2_path: str) -> List[Atom]:
 
 
 def _quantise_charge(charge: float) -> int:
-    """Map partial charge to 2-bit bin."""
-    if charge < -0.25: return 0
-    if charge < 0.0:   return 1
-    if charge < 0.25:  return 2
-    return 3
+    """Map partial charge to 1-bit polarity (0 = negative, 1 = positive)."""
+    return 0 if charge < 0.0 else 1
 
 
 def parse_pdbbind_index(index_path: str) -> Dict[str, float]:

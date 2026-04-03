@@ -207,6 +207,15 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 		if(strcmp(field,"SLVPEN") == 0){sscanf(buffer,"%s %f",field,&FA->solventterm);}
 		if(strcmp(field,"USEELC") == 0){FA->use_elec=1;}
 		if(strcmp(field,"DIELEC") == 0){sscanf(buffer,"%s %f",field,&FA->dielectric);}
+		if(strcmp(field,"USEGIS") == 0){FA->use_gist=1;}
+		if(strcmp(field,"GISTDG") == 0){sscanf(buffer,"%s %s",field,FA->gist_dg_file);}
+		if(strcmp(field,"GISTDN") == 0){sscanf(buffer,"%s %s",field,FA->gist_dens_file);}
+		if(strcmp(field,"GISTWT") == 0){sscanf(buffer,"%s %lf",field,&FA->gist_weight);}
+		if(strcmp(field,"GISTGC") == 0){sscanf(buffer,"%s %f",field,&FA->gist_dg_cutoff);}
+		if(strcmp(field,"GISTRC") == 0){sscanf(buffer,"%s %f",field,&FA->gist_rho_cutoff);}
+		if(strcmp(field,"GISTDV") == 0){sscanf(buffer,"%s %f",field,&FA->gist_divisor);}
+		if(strcmp(field,"USEHBD") == 0){FA->use_hbond=1;}
+		if(strcmp(field,"HBONDW") == 0){sscanf(buffer,"%s %lf",field,&FA->hbond_weight);}
 		if(strcmp(field,"OUTRNG") == 0){FA->output_range=1;}
 		if(strcmp(field,"USEDEE") == 0){FA->useflexdee=1;}
 		if(strcmp(field,"IMATRX") == 0){strncpy(emat_forced,&buffer[7],MAX_PATH__-1);emat_forced[MAX_PATH__-1]='\0';}
