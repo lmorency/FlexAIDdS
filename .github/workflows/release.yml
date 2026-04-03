@@ -1,0 +1,112 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build release artifacts (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-gcc
+            os: ubuntu-latest
+            cc: gcc
+            cxx: g++
+            artifact_name: flexaidds-linux
+          - name: macos-clang
+            os: macos-latest
+            cc: clang
+            cxx: clang++
+            artifact_name: flexaidds-macos
+          - name: windows-msvc
+            os: windows-latest
+            cc: cl
+            cxx: cl
+            artifact_name: flexaidds-windows
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build libeigen3-dev libomp-dev
+
+      - name: Install macOS dependencies
+        if: runner.os == 'macOS'
+        run: |
+          brew install cmake ninja libomp eigen
+
+      - name: Install Windows dependencies
+        if: runner.os == 'Windows'
+        run: |
+          choco install ninja eigen -y
+        shell: cmd
+
+      - name: Configure (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          export CC=${{ matrix.cc }}
+          export CXX=${{ matrix.cxx }}
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DFLEXAIDS_USE_CUDA=OFF \
+            -DFLEXAIDS_USE_METAL=OFF \
+            -DBUILD_PYTHON_BINDINGS=OFF \
+            -DBUILD_TESTING=OFF
+
+      - name: Configure (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          cmake -S . -B build -G Ninja ^
+            -DCMAKE_BUILD_TYPE=Release ^
+            -DFLEXAIDS_USE_CUDA=OFF ^
+            -DFLEXAIDS_USE_METAL=OFF ^
+            -DBUILD_PYTHON_BINDINGS=OFF ^
+            -DBUILD_TESTING=OFF
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Package artifacts (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p dist
+          cp -f build/FlexAID dist/ || true
+          cp -f build/FlexAIDdS dist/ || true
+          cp -f build/tENCoM dist/ || true
+          cp -f LICENSE dist/ || true
+          tar -czf ${{ matrix.artifact_name }}.tar.gz dist
+
+      - name: Package artifacts (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item build\FlexAID.exe dist\ -ErrorAction SilentlyContinue
+          Copy-Item build\FlexAIDdS.exe dist\ -ErrorAction SilentlyContinue
+          Copy-Item build\tENCoM.exe dist\ -ErrorAction SilentlyContinue
+          Copy-Item LICENSE dist\ -ErrorAction SilentlyContinue
+          Compress-Archive -Path dist\* -DestinationPath ${{ matrix.artifact_name }}.zip -Force
+
+      - name: Upload artifact (Unix)
+        if: runner.os != 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_name }}.tar.gz
+
+      - name: Upload artifact (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_name }}.zip

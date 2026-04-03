@@ -191,7 +191,9 @@ RESTART:
 	for(cai=0; cai<NC; ++cai) {
 		ca_ptr = &VC->Calc[contlist[cai].index];
 		atomdist = contlist[cai].dist;
-        
+
+		if(atomdist < 1.0e-10) continue;  // skip degenerate zero-distance contacts
+
 		if(VC->planedef == 'B') {  // bisection - original Voronoi procedure
 			planedist = atomdist/2.0;
 		} else if(VC->planedef == 'R') { // radical plane (Gellatly and Finney) - default.

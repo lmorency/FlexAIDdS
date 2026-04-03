@@ -64,6 +64,16 @@ jobs:
             os: macos-latest
             cc: clang
             cxx: clang++
+          - name: linux-gcc-avx512
+            os: ubuntu-latest
+            cc: gcc
+            cxx: g++
+            cmake_extra: "-DFLEXAIDS_USE_AVX512=ON"
+          - name: linux-gcc-mpi
+            os: ubuntu-latest
+            cc: gcc
+            cxx: g++
+            cmake_extra: "-DFLEXAIDS_USE_MPI=ON"
           - name: windows-msvc
             os: windows-latest
             cc: cl
@@ -74,7 +84,11 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build libeigen3-dev libomp-dev
+          PKGS="cmake ninja-build libeigen3-dev libomp-dev"
+          if [ "${{ matrix.name }}" = "linux-gcc-mpi" ]; then
+            PKGS="$PKGS libopenmpi-dev openmpi-bin"
+          fi
+          sudo apt-get install -y $PKGS
       - name: Install macOS dependencies
         if: runner.os == 'macOS'
         run: |
@@ -82,7 +96,7 @@ jobs:
       - name: Install Windows dependencies
         if: runner.os == 'Windows'
         run: |
-          choco install ninja eigen -y
+          choco install ninja -y
         shell: cmd
       - name: Configure (Unix)
         if: runner.os != 'Windows'
@@ -97,10 +111,12 @@ jobs:
             -DFLEXAIDS_USE_METAL=OFF
             -DBUILD_PYTHON_BINDINGS=OFF
             -DBUILD_TESTING=ON
+            ${{ matrix.cmake_extra }}
           )
           # Homebrew on Apple Silicon installs to /opt/homebrew
           if [ "$RUNNER_OS" = "macOS" ]; then
             CMAKE_ARGS+=(-DCMAKE_PREFIX_PATH="$(brew --prefix)")
+            CMAKE_ARGS+=(-DBUILD_TESTING=OFF)
           fi
           cmake "${CMAKE_ARGS[@]}"
       - name: Configure (Windows)
@@ -115,9 +131,11 @@ jobs:
             -DFLEXAIDS_USE_CUDA=OFF ^
             -DFLEXAIDS_USE_METAL=OFF ^
             -DFLEXAIDS_USE_OPENMP=OFF ^
-            -DFLEXAIDS_USE_EIGEN=OFF ^
             -DBUILD_PYTHON_BINDINGS=OFF ^
-            -DBUILD_TESTING=ON
+            -DBUILD_TESTING=OFF ^
+            -DENABLE_TENCOM_TOOL=OFF ^
+            -DBUILD_FLEXAIDDS_FAST=OFF ^
+            -DENABLE_BENCHMARK_DATASETS=OFF
       - name: Build (Unix)
         if: runner.os != 'Windows'
         run: cmake --build build --parallel
@@ -141,7 +159,7 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build
+          sudo apt-get install -y cmake ninja-build libeigen3-dev
           python -m pip install --upgrade pip
           python -m pip install 'pybind11[global]' pytest numpy
       - name: Configure Python bindings
@@ -151,7 +169,6 @@ jobs:
             -DBUILD_PYTHON_BINDINGS=ON \
             -DPYBIND11_FINDPYTHON=ON \
             -DFLEXAIDS_USE_OPENMP=OFF \
-            -DFLEXAIDS_USE_EIGEN=OFF \
             -DFLEXAIDS_USE_CUDA=OFF \
             -DFLEXAIDS_USE_METAL=OFF \
             -DCMAKE_LIBRARY_OUTPUT_DIRECTORY=${{ github.workspace }}/python/flexaidds

@@ -155,6 +155,9 @@ struct ThreadWorkspace {
             optres[o].cf.con    = 0.0;
             optres[o].cf.gist   = 0.0;
             optres[o].cf.hbond  = 0.0;
+            optres[o].cf.elec   = 0.0;
+            optres[o].cf.hbond  = 0.0;
+            optres[o].cf.gist_desolv = 0.0;
             optres[o].cf.rclash = 0;
         }
         vc.numcarec = 0;
@@ -166,7 +169,7 @@ struct ThreadWorkspace {
 struct BatchResult {
     std::vector<cfstr>  cf;          // one cfstr per chromosome
     std::vector<double> app_evalue;  // apparent CF evalue for quick ranking
-    double              wall_ms;     // wall-clock evaluation time (ms)
+    double              wall_ms = 0.0; // wall-clock evaluation time (ms)
 };
 
 // ─── batch_eval ──────────────────────────────────────────────────────────────

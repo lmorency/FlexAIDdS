@@ -1,6 +1,8 @@
 #include "Vcontacts.h"
 #include "GISTEvaluator.h"
 #include "HBondEvaluator.h"
+#include "hbond_potential.h"
+#include "GISTGrid.h"
 #include <cmath>
 
 #define DEBUG_LEVEL 0
@@ -26,6 +28,7 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 		FA->optres[j].cf.elec=0.0;
 		FA->optres[j].cf.gist=0.0;
 		FA->optres[j].cf.hbond=0.0;
+		FA->optres[j].cf.gist_desolv=0.0;
 		FA->optres[j].cf.sas=0.0;
 		FA->optres[j].cf.totsas=0.0;
 	}
@@ -382,6 +385,17 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 						}
 					}
 
+					// Angular-dependent hydrogen bond potential (Gaussian bell)
+					if (FA->use_hbond) {
+						double dist = VC->ca_rec[currindex].dist;
+						double E_hb = hbond::compute_hbond_energy(
+							atoms, atomzero, atomcont, dist,
+							FA->hbond_optimal_dist, FA->hbond_optimal_angle,
+							FA->hbond_sigma_dist, FA->hbond_sigma_angle,
+							FA->hbond_weight, FA->hbond_salt_bridge_weight);
+						cfs->hbond += E_hb;
+					}
+
 #if DEBUG_LEVEL > 0
 					cfs_atom.com += contribution;
 #endif
@@ -475,14 +489,25 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 		FA->contributions[(FA->ntypes-1)*FA->ntypes + (VC->Calc[i].atom->type-1)] += contribution;
 		
 		FA->contacts[VC->Calc[i].atom->number] = 1;
-		
+
+		// GIST desolvation: accumulate grid-based water displacement energy
+		if (FA->use_gist && FA->gist_grid != NULL) {
+			const auto* grid = static_cast<const gist::GISTGrid*>(FA->gist_grid);
+			double E_gist = FA->gist_weight *
+				grid->desolvation_energy(
+					atoms[atomzero].coor[0],
+					atoms[atomzero].coor[1],
+					atoms[atomzero].coor[2]);
+			cfs->gist_desolv += E_gist;
+		}
+
 #if DEBUG_LEVEL > 1
-		printf("CF.SAS is %.3f for %d contacts with contribution %.3f\n", 
-		       SAS, contnum, contribution); 
+		printf("CF.SAS is %.3f for %d contacts with contribution %.3f\n",
+		       SAS, contnum, contribution);
 #endif
-		
+
 	}
-	
+
 
 	// Penalize Freesurf.
   
