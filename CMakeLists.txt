@@ -132,15 +132,20 @@ if(FLEXAIDS_USE_EIGEN)
             message(STATUS "Eigen3 found via pkg-config")
         else()
             # FetchContent fallback — download header-only Eigen tarball
+            # Use FetchContent_Populate (not MakeAvailable) to avoid pulling
+            # in Eigen's own 15 000 tests/benchmarks via add_subdirectory.
             message(STATUS "Eigen3 not found locally — fetching via FetchContent")
             include(FetchContent)
             FetchContent_Declare(eigen3
                 URL      https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz
                 URL_HASH SHA256=8586084f71f9bde545ee7fa6d00288b264a2b7ac3607b974e54d13e7162c1c72
                 DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
-            FetchContent_MakeAvailable(eigen3)
+            FetchContent_Populate(eigen3)
+            add_library(Eigen3::Eigen INTERFACE IMPORTED)
+            set_target_properties(Eigen3::Eigen PROPERTIES
+                INTERFACE_INCLUDE_DIRECTORIES "${eigen3_SOURCE_DIR}")
             set(Eigen3_FOUND TRUE)
-            message(STATUS "Eigen3 3.4.0 fetched via FetchContent")
+            message(STATUS "Eigen3 3.4.0 fetched via FetchContent (headers only)")
         endif()
     endif()
 endif()
@@ -585,9 +590,13 @@ if(ENABLE_TENCOM_TOOL)
             _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES NOMINMAX)
         target_link_options(tENCoM PRIVATE /LTCG)
     else()
-        target_compile_options(tENCoM PRIVATE
-            -O3 -ffast-math -march=native -flto -DNDEBUG)
-        target_link_options(tENCoM PRIVATE -flto -s)
+        target_compile_options(tENCoM PRIVATE -O3 -ffast-math -flto -DNDEBUG)
+        if(NOT APPLE)
+            target_compile_options(tENCoM PRIVATE -march=native)
+            target_link_options(tENCoM PRIVATE -flto -s)
+        else()
+            target_link_options(tENCoM PRIVATE -flto)
+        endif()
     endif()
     flexaids_configure_simd(tENCoM)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
@@ -663,9 +672,13 @@ if(BUILD_FLEXAIDDS_FAST)
         target_compile_definitions(FlexAIDdS PRIVATE
             _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES NOMINMAX)
     else()
-        target_compile_options(FlexAIDdS PRIVATE
-            -O3 -ffast-math -march=native -flto -DNDEBUG)
-        target_link_options(FlexAIDdS PRIVATE -flto -s)
+        target_compile_options(FlexAIDdS PRIVATE -O3 -ffast-math -flto -DNDEBUG)
+        if(NOT APPLE)
+            target_compile_options(FlexAIDdS PRIVATE -march=native)
+            target_link_options(FlexAIDdS PRIVATE -flto -s)
+        else()
+            target_link_options(FlexAIDdS PRIVATE -flto)
+        endif()
     endif()
 
     flexaids_configure_simd(FlexAIDdS)
