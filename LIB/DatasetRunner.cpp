@@ -220,12 +220,20 @@ int DatasetRunner::exec_cmd(const std::string& cmd) {
 std::string DatasetRunner::exec_cmd_output(const std::string& cmd) {
     std::string result;
     std::array<char, 4096> buffer;
+#ifdef _MSC_VER
+    FILE* pipe = _popen(cmd.c_str(), "r");
+#else
     FILE* pipe = popen(cmd.c_str(), "r");
+#endif
     if (!pipe) return result;
     while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) != nullptr) {
         result += buffer.data();
     }
+#ifdef _MSC_VER
+    _pclose(pipe);
+#else
     pclose(pipe);
+#endif
     return result;
 }
 
