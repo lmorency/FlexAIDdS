@@ -125,8 +125,8 @@ inline double compute_hbond_energy(
     double w = weight;
     uint8_t qbin_a = atom256::get_charge_bin(a.type256);
     uint8_t qbin_b = atom256::get_charge_bin(b.type256);
-    if ((qbin_a == atom256::Q_ANIONIC && qbin_b == atom256::Q_CATIONIC) ||
-        (qbin_a == atom256::Q_CATIONIC && qbin_b == atom256::Q_ANIONIC)) {
+    if ((qbin_a == atom256::Q_NEGATIVE && qbin_b == atom256::Q_POSITIVE) ||
+        (qbin_a == atom256::Q_POSITIVE && qbin_b == atom256::Q_NEGATIVE)) {
         w = salt_bridge_weight;
     }
 

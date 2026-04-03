@@ -491,8 +491,8 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 		FA->contacts[VC->Calc[i].atom->number] = 1;
 
 		// GIST desolvation: accumulate grid-based water displacement energy
-		if (FA->use_gist && FA->gist_grid != NULL) {
-			const auto* grid = static_cast<const gist::GISTGrid*>(FA->gist_grid);
+		if (FA->use_gist && FA->gist_evaluator != NULL) {
+			const auto* grid = static_cast<const gist::GISTGrid*>(FA->gist_evaluator);
 			double E_gist = FA->gist_weight *
 				grid->desolvation_energy(
 					atoms[atomzero].coor[0],

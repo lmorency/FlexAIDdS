@@ -312,7 +312,12 @@ int main(int argc, char **argv){
 	FA->gist_evaluator=NULL;
 
 	FA->use_hbond=0;
-	FA->hbond_weight=1.0f;
+	FA->hbond_weight=-2.5;
+	FA->hbond_optimal_dist=2.8;
+	FA->hbond_optimal_angle=180.0;
+	FA->hbond_sigma_dist=0.4;
+	FA->hbond_sigma_angle=30.0;
+	FA->hbond_salt_bridge_weight=-5.0;
 
 	FA->useflexdee=0;
 	FA->num_constraints=0;
