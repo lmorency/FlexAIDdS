@@ -25,6 +25,7 @@
 #include "../statmech.h"
 #include "RibosomeElongation.h"
 #include "TransloconInsertion.h"
+#include "NucleationDetector.h"
 #include <memory>
 #include <string>
 #include <vector>
@@ -62,6 +63,24 @@ struct NATURaLConfig {
     bool             ion_dependent_folding   = true;  // use Mg²⁺ Hill eq for RNA tertiary
     double           k_fold_rna_secondary    = ribosome::K_FOLD_RNA_SECONDARY; // s⁻¹ hairpin
     double           k_fold_rna_tertiary     = ribosome::K_FOLD_RNA_TERTIARY;  // s⁻¹ at K_d
+
+    // ── Burst elongation detection ─────────────────────────────────────────
+    // Consecutive fast codons produce bursts where no co-translational
+    // folding can compete (dwell_i << 1/k_fold). k_el > burst_threshold×hmean
+    // marks a residue as part of a burst unit.
+    // Reference: Pechmann 2013 Nat Struct Mol Biol 20:237; Thanaraj 1996.
+    double           burst_threshold        = 1.5;   // k_el/hmean ratio → burst member
+
+    // ── Nucleation seed event detection ───────────────────────────────────
+    // Sequence contexts that strongly promote co-translational structure
+    // initiation. Detected seeds apply a folding_rate_boost multiplier on
+    // k_fold at the matching positions in the growth loop.
+    // RNA: Watson-Crick hairpins (Turner 2004 ΔG) + G-quadruplexes.
+    // Protein: Chou-Fasman α-helix propensity + hydrophobic clusters.
+    bool             detect_nucleation_seeds = true;
+    int              min_hairpin_stem_bp     = 4;     // RNA: min stem length (bp)
+    double           helix_propensity_thresh = 1.03;  // protein: Chou-Fasman P_α mean
+    int              hydrophobic_run_min     = 4;     // protein: min ILVFMW run length
 };
 
 // Auto-configure from receptor and ligand properties.
@@ -94,6 +113,15 @@ public:
         double cumulative_deltaG; // kcal/mol (time-weighted)
         bool   tm_inserted;       // true if TM helix has been laterally gated
         double tm_insertion_dG;   // ΔG of translocon-mediated insertion (kcal/mol)
+
+        // ── Burst elongation annotation ──────────────────────────────────
+        int    burst_unit_id;     // ≥0 index into burst table; -1 if not in a burst
+        int    burst_size;        // n_residues in the burst unit (1 if not in burst)
+        bool   follows_pause;     // true if this burst immediately follows a pause site
+
+        // ── Nucleation seed annotation ───────────────────────────────────
+        int    nucleation_seed_id;    // ≥0 index into seed list; -1 if no seed at this pos
+        double nucleation_seed_boost; // k_fold multiplier applied (1.0 if no seed)
     };
     std::vector<GrowthStep> run();
 

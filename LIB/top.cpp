@@ -23,6 +23,7 @@
 #include <string>
 #include <vector>
 #include <filesystem>
+#include <unistd.h>
 
 // ── Idiotproof file role detection ──────────────────────────────────────────
 // Returns: "receptor", "ligand", "config", "smiles", or "unknown"
@@ -260,6 +261,7 @@ int main(int argc, char **argv){
 	FA->refstructure=0;
 	FA->omit_buried=0;
 	FA->assume_folded=0;
+	FA->natural_deltaG=0.0;
 	FA->is_protein=1;
 
 	FA->delta_angstron=0.25;
@@ -849,6 +851,50 @@ int main(int argc, char **argv){
 		assign_radii_types(FA, atoms, residue);
 		printf("radii are now assigned\n");
 
+		// ── 6b. Set up GPA and IC origin for MOL2/SDF ligand ──
+		// generate_grid() requires residue[last].gpa to be non-NULL and
+		// atoms[gpa[0]].dis/ang/dih to be computed (normally done by
+		// read_lig for legacy .inp/.ic format). For direct-mode ligands,
+		// we use the first three heavy atoms and set FA->ori to the
+		// ligand centroid so all IC frames are self-consistent.
+		{
+			int lig_res = FA->res_cnt;
+			if (residue[lig_res].gpa == NULL) {
+				int fa = residue[lig_res].fatm[0];
+				int la = residue[lig_res].latm[0];
+				int n_lig = la - fa + 1;
+
+				// Ligand centroid → FA->ori
+				FA->ori[0] = FA->ori[1] = FA->ori[2] = 0.0f;
+				for (int ai = fa; ai <= la; ai++) {
+					FA->ori[0] += atoms[ai].coor[0];
+					FA->ori[1] += atoms[ai].coor[1];
+					FA->ori[2] += atoms[ai].coor[2];
+				}
+				if (n_lig > 0) {
+					FA->ori[0] /= n_lig;
+					FA->ori[1] /= n_lig;
+					FA->ori[2] /= n_lig;
+				}
+				printf("the protein center of coordinates is: %8.3f %8.3f %8.3f\n",
+				       FA->ori[0], FA->ori[1], FA->ori[2]);
+
+				// Allocate gpa (3 global-positioning atoms)
+				residue[lig_res].gpa = (int*)malloc(3 * sizeof(int));
+				if (!residue[lig_res].gpa) {
+					fprintf(stderr, "ERROR: malloc for residue.gpa\n");
+					Terminate(2);
+				}
+				residue[lig_res].gpa[0] = fa;
+				residue[lig_res].gpa[1] = (n_lig > 1) ? fa + 1 : fa;
+				residue[lig_res].gpa[2] = (n_lig > 2) ? fa + 2 : fa;
+
+				// Compute IC for GPA atom relative to FA->ori
+				buildic_point(FA, atoms[fa].coor,
+				              &atoms[fa].dis, &atoms[fa].ang, &atoms[fa].dih);
+			}
+		}
+
 		// ── 7. Automatic binding site detection ──
 		{
 			printf("AUTO binding-site detection (CleftDetector) ...\n");
@@ -930,11 +976,19 @@ int main(int argc, char **argv){
 		// (receptor, ligand, and cleft grid were already loaded above)
 		ic_bounds(FA, FA->rngopt);
 
-		FA->translational = 1;
-
-		int opt[2] = {0, 0};
+		int opt[2];
 		char chain = ' ';
+
+		// Translation: grid-index gene (typ=-1), picks anchor point from cleft grid
+		opt[0] = FA->resligand->number;
+		opt[1] = -1;
 		add2_optimiz_vec(FA, atoms, residue, opt, chain, "");
+
+		// Rotation: 3 Euler-angle genes (ang + dih + dih of GPA atoms)
+		opt[1] = 0;
+		add2_optimiz_vec(FA, atoms, residue, opt, chain, "");
+
+		// Side-chain and normal-mode extensions
 		add2_optimiz_vec(FA, atoms, residue, opt, chain, "SC");
 		add2_optimiz_vec(FA, atoms, residue, opt, chain, "NM");
 

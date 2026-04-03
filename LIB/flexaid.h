@@ -450,6 +450,7 @@ struct FA_Global_struct{
 	int   clashed;                       // skipped individuals due to steric clashes
 	int   omit_buried;                   // skip buried atoms in the Vcontacts procedure
 	int   assume_folded;                 // assume receptor is fully folded — skip NATURaL co-translational/co-transcriptional chain growth
+	double natural_deltaG;              // NATURaL co-translational ΔG (kcal/mol); 0.0 if not run or assume_folded
 	int   vindex;                        // use indexed boxes and atoms in Vcontacts index_proteins
 
 	//rot    rotamer[MAX_ROTLIBSIZE];       // array of rotamer library rotamers OR observed rotamer list

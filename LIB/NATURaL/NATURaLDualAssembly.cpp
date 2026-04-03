@@ -27,6 +27,7 @@
 #include "NATURaLDualAssembly.h"
 #include "RibosomeElongation.h"
 #include "TransloconInsertion.h"
+#include "NucleationDetector.h"
 #include "../gaboom.h"   // vcfunction / cfstr / get_apparent_cf_evalue
 
 #include <cstring>
@@ -95,22 +96,24 @@ NATURaLConfig auto_configure(const atom*  atoms,
     bool nucl_lig = is_nucleotide_ligand(atoms, n_lig_atoms);
     bool nucl_rec = is_nucleic_acid_receptor(residues, n_residues);
 
-    if (nucl_lig || nucl_rec) {
-        cfg.enabled                = true;
+    // Enable for any receptor with residues.
+    // Protein receptor → ribosomal elongation rates (Zhao 2011 / Dong 1996).
+    // Nucleic acid receptor → RNAP rates (Uptain 1997 / Jonkers 2014).
+    // Callers opt out by setting FA->assume_folded (advanced.assume_folded in config).
+    if (n_residues > 0) {
+        cfg.enabled                 = true;
         cfg.co_translational_growth = true;
         cfg.sugar_pucker_auto       = nucl_lig;
-        // Nucleotide context: use RNAP rates (same master equation, different table)
-        if (nucl_rec && !nucl_lig) {
-            // Pure nucleic acid receptor — co-transcriptional assembly
-            cfg.use_ribosome_speed = false;  // will use RNAP rates
-        }
+        // Pure nucleic acid receptor → RNAP rates; all other cases → ribosome rates
+        cfg.use_ribosome_speed    = !(nucl_rec && !nucl_lig);
+        // Mg²⁺ Hill equation only applies to RNA tertiary folding
+        cfg.ion_dependent_folding = nucl_rec;
 
-        std::cout << "[NATURaL] Auto-detected "
-                  << (nucl_lig ? "nucleotide ligand" : "")
-                  << (nucl_lig && nucl_rec ? " + " : "")
-                  << (nucl_rec ? "nucleic acid receptor" : "")
-                  << " → enabling co-"
-                  << (cfg.use_ribosome_speed ? "translational" : "transcriptional")
+        std::cout << "[NATURaL] "
+                  << (nucl_rec ? "Nucleic acid" : "Protein")
+                  << " receptor detected → co-"
+                  << (cfg.use_ribosome_speed ? "translational (ribosome)"
+                                             : "transcriptional (RNAP)")
                   << " DualAssembly ["
                   << (cfg.organism == ribosome::Organism::EcoliK12 ? "E.coli" : "Human")
                   << "]\n";
@@ -177,7 +180,22 @@ static ribosome::RibosomeElongation build_elongation_model(
                 if (strncmp(rname, code3, 3) == 0) { aa_code = code1; break; }
             }
             seq  += aa_code;
-            codons.emplace_back(); // mean rate used when codon is empty
+            // Use Most-Frequent Codon (MFC) for per-residue elongation rate.
+            // MFC gives the highest-abundance codon per AA for the organism,
+            // matching dominant in-vivo tRNA pool (Dong 1996; Ikemura 1985).
+            // Falls back to empty string (mean rate) for unknown AAs.
+            if (aa_code != 'X') {
+                static const auto mfc_ecoli =
+                    CodonRateTable::aa_to_mfc(Organism::EcoliK12);
+                static const auto mfc_human =
+                    CodonRateTable::aa_to_mfc(Organism::HumanHEK293);
+                const auto& mfc = (cfg.organism == Organism::EcoliK12)
+                                  ? mfc_ecoli : mfc_human;
+                auto it = mfc.find(aa_code);
+                codons.push_back(it != mfc.end() ? it->second : std::string{});
+            } else {
+                codons.emplace_back(); // unknown AA → mean rate fallback
+            }
         }
     }
 
@@ -185,6 +203,89 @@ static ribosome::RibosomeElongation build_elongation_model(
     double k_ter = cfg.use_ribosome_speed ? K_TERM_DEFAULT  : K_RNAP_TERM_DEFAULT;
 
     return RibosomeElongation(seq, codons, table, k_ini, k_ter);
+}
+
+// ─── extract_sequence ────────────────────────────────────────────────────────
+// Builds the 1-letter sequence string from residue array for nucleation-seed
+// detection. For RNA receptors, uses A/G/C/U nucleotide codes; for protein,
+// uses standard 1-letter amino acid codes.
+static std::string extract_sequence(const resid* residues, int n, bool is_rna)
+{
+    std::string seq;
+    seq.reserve(n);
+    for (int i = 0; i < n; ++i) {
+        const char* rname = residues[i].name;
+        if (!rname) { seq += is_rna ? 'N' : 'X'; continue; }
+        if (is_rna) {
+            char nt = 'N';
+            if      (rname[0] == 'A' || strncmp(rname, "ADE", 3) == 0) nt = 'A';
+            else if (rname[0] == 'G' || strncmp(rname, "GUA", 3) == 0) nt = 'G';
+            else if (rname[0] == 'C' || strncmp(rname, "CYT", 3) == 0) nt = 'C';
+            else if (rname[0] == 'U' || strncmp(rname, "URA", 3) == 0) nt = 'U';
+            else if (rname[0] == 'T' || rname[1] == 'T')               nt = 'U'; // DNA T → U for RNA fold
+            seq += nt;
+        } else {
+            static const std::pair<const char*, char> aa_table[] = {
+                {"ALA",'A'}, {"ARG",'R'}, {"ASN",'N'}, {"ASP",'D'},
+                {"CYS",'C'}, {"GLN",'Q'}, {"GLU",'E'}, {"GLY",'G'},
+                {"HIS",'H'}, {"ILE",'I'}, {"LEU",'L'}, {"LYS",'K'},
+                {"MET",'M'}, {"PHE",'F'}, {"PRO",'P'}, {"SER",'S'},
+                {"THR",'T'}, {"TRP",'W'}, {"TYR",'Y'}, {"VAL",'V'},
+                {"HSD",'H'}, {"HSE",'H'}, {"HSP",'H'}, {"HIE",'H'},
+                {"HID",'H'}, {"HIP",'H'}, {"CYX",'C'}, {"ASH",'D'},
+                {"GLH",'E'}, {"SEC",'U'}, {"PYL",'O'},
+            };
+            char aa = 'X';
+            for (const auto& [code3, code1] : aa_table) {
+                if (strncmp(rname, code3, 3) == 0) { aa = code1; break; }
+            }
+            seq += aa;
+        }
+    }
+    return seq;
+}
+
+// ─── detect_burst_units ──────────────────────────────────────────────────────
+// Identifies runs of consecutive fast codons (k_el > burst_threshold × hmean)
+// after the ribosomal/RNAP exit tunnel. These are "burst units" where multiple
+// monomers are added faster than co-translational folding can compete.
+// Reference: Pechmann & Frydman 2013 Nat Struct Mol Biol 20:237.
+static std::vector<ribosome::BurstUnit> detect_burst_units(
+    const std::vector<double>& k_el,
+    double hmean,
+    double tunnel_len,
+    double burst_threshold)
+{
+    std::vector<ribosome::BurstUnit> bursts;
+    const int N = static_cast<int>(k_el.size());
+    const int tunnel_end = static_cast<int>(tunnel_len);
+    const double threshold_k = burst_threshold * hmean;
+
+    int i = tunnel_end; // only detect bursts after tunnel exit
+    while (i < N) {
+        if (k_el[i] > threshold_k) {
+            // Start of a potential burst
+            int   start     = i;
+            double inv_sum  = 0.0;
+            while (i < N && k_el[i] > threshold_k) {
+                inv_sum += 1.0 / k_el[i];
+                ++i;
+            }
+            int n_res = i - start;
+            if (n_res >= 2) { // burst = ≥2 consecutive fast codons
+                double total_dwell  = inv_sum;               // Σ 1/k_el
+                double hmean_burst  = (inv_sum > 1e-15)
+                                      ? n_res / inv_sum : threshold_k;
+                bool   fol_pause    = (start > 0 &&
+                                       k_el[start - 1] < 0.3 * hmean);
+                bursts.push_back({start, i - 1, n_res,
+                                   total_dwell, hmean_burst, fol_pause});
+            }
+        } else {
+            ++i;
+        }
+    }
+    return bursts;
 }
 
 // ─── DualAssemblyEngine ──────────────────────────────────────────────────────
@@ -262,6 +363,97 @@ std::vector<DualAssemblyEngine::GrowthStep> DualAssemblyEngine::run() {
         t_arrival[n] = t_arrival[n - 1] + inv_k;
     }
 
+    // Tunnel length depends on mode
+    const double tunnel_len = config_.use_ribosome_speed
+                              ? ribosome::TUNNEL_LENGTH_AA
+                              : ribosome::RNAP_TUNNEL_NT;
+
+    // Pause threshold
+    const double pause_threshold = config_.use_ribosome_speed ? 0.30 : ribosome::RNAP_PAUSE_THRESHOLD;
+
+    // Harmonic mean rate for pause detection
+    double hmean_rate = elong_model.elongation_rates().empty()
+                        ? 16.5
+                        : [&](){
+                            double inv_sum = 0; int cnt = 0;
+                            for (double k : k_el) { if (k > 1e-9) { inv_sum += 1.0/k; ++cnt; } }
+                            return cnt > 0 ? cnt / inv_sum : 16.5;
+                          }();
+
+    // ── Burst elongation detection ────────────────────────────────────────────
+    // Identifies multi-residue fast-codon runs where folding cannot compete.
+    auto burst_units = detect_burst_units(
+        k_el, hmean_rate, tunnel_len, config_.burst_threshold);
+
+    // Build per-step burst lookup tables
+    std::vector<int> step_burst_id  (max_steps, -1);
+    std::vector<int> step_burst_size(max_steps,  1);
+    std::vector<bool> step_burst_follows_pause(max_steps, false);
+    for (int bi = 0; bi < static_cast<int>(burst_units.size()); ++bi) {
+        const auto& bu = burst_units[bi];
+        for (int s = bu.start_residue;
+             s <= bu.end_residue && s < max_steps; ++s) {
+            step_burst_id  [s] = bi;
+            step_burst_size[s] = bu.n_residues;
+            step_burst_follows_pause[s] = bu.follows_pause;
+        }
+    }
+
+    // ── Nucleation seed detection ─────────────────────────────────────────────
+    // Detect RNA hairpin/G-quad or protein helix/hydrophobic-cluster seeds.
+    // Each seed applies a folding_rate_boost multiplier to k_fold at that position.
+    std::vector<NucleationSeed> nseeds;
+    std::vector<double>         seed_boost_map(max_steps, 1.0);
+    std::vector<int>            step_seed_id  (max_steps, -1);
+
+    if (config_.detect_nucleation_seeds) {
+        std::string seq_str = extract_sequence(residues_, n_residues_, is_rna_receptor_);
+        nseeds = NucleationSeedDetector::detect(
+            seq_str, is_rna_receptor_, config_.temperature_K);
+
+        // Fill full-length boost map then truncate to max_steps
+        auto full_map = NucleationSeedDetector::position_boost_map(
+            nseeds, static_cast<int>(seq_str.size()));
+        for (int s = 0; s < max_steps && s < static_cast<int>(full_map.size()); ++s)
+            seed_boost_map[s] = full_map[s];
+
+        // Build per-step seed-id lookup (first seed wins if seeds overlap)
+        for (int si = 0; si < static_cast<int>(nseeds.size()); ++si) {
+            for (int s = nseeds[si].start_pos;
+                 s <= nseeds[si].end_pos && s < max_steps; ++s) {
+                if (step_seed_id[s] < 0) step_seed_id[s] = si;
+            }
+        }
+
+        if (!nseeds.empty()) {
+            std::cout << "[NATURaL] Nucleation seeds detected: "
+                      << nseeds.size() << " (";
+            int rna_h=0, rna_g=0, pro_hx=0, pro_hp=0;
+            for (const auto& s : nseeds) {
+                switch (s.type) {
+                    case NucleationSeed::Type::RNA_HAIRPIN:          ++rna_h;  break;
+                    case NucleationSeed::Type::RNA_GQUADRUPLEX:      ++rna_g;  break;
+                    case NucleationSeed::Type::PROTEIN_HELIX:        ++pro_hx; break;
+                    case NucleationSeed::Type::PROTEIN_HYDROPHOBIC:  ++pro_hp; break;
+                }
+            }
+            if (rna_h)  std::cout << rna_h  << " RNA hairpin";
+            if (rna_g)  std::cout << (rna_h?", ":"") << rna_g  << " G-quad";
+            if (pro_hx) std::cout << (rna_h||rna_g?", ":"") << pro_hx << " helix";
+            if (pro_hp) std::cout << (rna_h||rna_g||pro_hx?", ":"") << pro_hp << " hydrophobic";
+            std::cout << ")\n";
+        }
+    }
+
+    if (!burst_units.empty()) {
+        int max_bs = 0;
+        for (const auto& bu : burst_units)
+            max_bs = std::max(max_bs, bu.n_residues);
+        std::cout << "[NATURaL] Burst elongation units: "
+                  << burst_units.size()
+                  << " (max " << max_bs << " residues/burst)\n";
+    }
+
     // ── TransloconInsertion (polypeptide chains only) ─────────────────────────
     std::unique_ptr<translocon::TransloconInsertion> tm_model;
     std::string aa_seq_for_tm;
@@ -332,6 +524,12 @@ std::vector<DualAssemblyEngine::GrowthStep> DualAssemblyEngine::run() {
             k_fold_here = ribosome::K_FOLD_DEFAULT;
             if (is_pause) k_fold_here *= 3.0;  // Pechmann 2013 pause-site boost
         }
+        // Apply nucleation seed boost: detected hairpin/G-quad/helix/hydrophobic
+        // seeds increase local k_fold at their sequence positions.
+        {
+            double boost = seed_boost_map[step];
+            if (boost > 1.0 + 1e-9) k_fold_here *= boost;
+        }
         double p_cotrans = k_fold_here / (k_fold_here + k_n);
 
         // CF score for partial complex
@@ -375,7 +573,14 @@ std::vector<DualAssemblyEngine::GrowthStep> DualAssemblyEngine::run() {
             p_cotrans,
             cumulative_dG,
             tm_inserted,
-            tm_insert_dG
+            tm_insert_dG,
+            // burst annotation
+            step_burst_id[step],
+            step_burst_size[step],
+            step_burst_follows_pause[step],
+            // nucleation seed annotation
+            step_seed_id[step],
+            (step_seed_id[step] >= 0) ? seed_boost_map[step] : 1.0
         });
     }
 
