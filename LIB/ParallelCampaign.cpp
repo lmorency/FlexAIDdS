@@ -38,6 +38,7 @@
 #include <ranges>
 #include <span>
 #include <string>
+#include <thread>
 #include <vector>
 
 #ifdef FLEXAIDS_HAS_EIGEN
