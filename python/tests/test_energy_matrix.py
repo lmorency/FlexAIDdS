@@ -317,10 +317,10 @@ class TestProjection:
         # Set all entries for base_type=0 (C_sp, SYBYL=1) to 5.0
         mat = np.zeros((256, 256))
         for code_i in range(256):
-            base_i = code_i & 0x1F
+            base_i = code_i & 0x3F
             if base_i == 0:
                 for code_j in range(256):
-                    base_j = code_j & 0x1F
+                    base_j = code_j & 0x3F
                     if base_j == 0:
                         mat[code_i, code_j] = 5.0
         em = EnergyMatrix(256, mat)

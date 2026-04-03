@@ -30,18 +30,18 @@ void register_matrix_bindings(py::module_& m) {
         "Encode 8-bit atom type from (base_type, charge_bin, hbond_flag)");
 
     m_at.def("get_base", &atom256::get_base,
-        py::arg("code"), "Extract base type (bits 0-4)");
+        py::arg("code"), "Extract base type (bits 0-5)");
     m_at.def("get_charge_bin", &atom256::get_charge_bin,
-        py::arg("code"), "Extract charge bin (bits 5-6)");
+        py::arg("code"), "Extract charge polarity (bit 6)");
     m_at.def("get_hbond", &atom256::get_hbond,
         py::arg("code"), "Extract H-bond flag (bit 7)");
 
     m_at.def("sybyl_to_base", &atom256::sybyl_to_base,
         py::arg("sybyl_type"),
-        "Map SYBYL type (1-40) to base type (0-31)");
+        "Map SYBYL type (1-40) to base type (0-63)");
     m_at.def("base_to_sybyl_parent", &atom256::base_to_sybyl_parent,
         py::arg("base_type"),
-        "Map base type (0-31) to SYBYL parent (1-40)");
+        "Map base type (0-63) to SYBYL parent (1-40)");
     m_at.def("base_type_name", &atom256::base_type_name,
         py::arg("base"), "Human-readable name for base type");
     m_at.def("charge_bin_name", &atom256::charge_bin_name,
@@ -55,7 +55,7 @@ void register_matrix_bindings(py::module_& m) {
         "Full encoding from SYBYL type + charge + structural context");
 
     m_at.def("quantise_charge", &atom256::quantise_charge,
-        py::arg("partial_charge"), "Quantise charge to 2-bit bin");
+        py::arg("partial_charge"), "Quantise charge to 1-bit polarity");
 
     m_at.attr("BASE_TYPE_COUNT") = atom256::BASE_TYPE_COUNT;
 
