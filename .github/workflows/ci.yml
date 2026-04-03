@@ -115,7 +115,6 @@ jobs:
             -DFLEXAIDS_USE_CUDA=OFF ^
             -DFLEXAIDS_USE_METAL=OFF ^
             -DFLEXAIDS_USE_OPENMP=OFF ^
-            -DFLEXAIDS_USE_EIGEN=OFF ^
             -DBUILD_PYTHON_BINDINGS=OFF ^
             -DBUILD_TESTING=ON
       - name: Build (Unix)
