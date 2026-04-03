@@ -118,6 +118,7 @@ jobs:
           if [ "$RUNNER_OS" = "macOS" ]; then
             CMAKE_ARGS+=(-DCMAKE_PREFIX_PATH="$(brew --prefix)")
             CMAKE_ARGS+=(-DBUILD_TESTING=OFF)
+            CMAKE_ARGS+=(-DOpenMP_ROOT="$(brew --prefix libomp)")
           fi
           cmake "${CMAKE_ARGS[@]}"
       - name: Build

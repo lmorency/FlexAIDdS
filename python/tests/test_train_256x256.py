@@ -89,14 +89,14 @@ def synthetic_complexes():
             Atom(index=k, name=f"CA{k}", element="C",
                  x=rng.uniform(-5, 5), y=rng.uniform(-5, 5),
                  z=rng.uniform(-5, 5), charge=0.0, base_type=2,
-                 type_256=encode_256_type(2, 2, False))
+                 type_256=encode_256_type(2, 1, False))
             for k in range(20)
         ]
         lig_atoms = [
             Atom(index=k, name=f"L{k}", element="N",
                  x=rng.uniform(-2, 2), y=rng.uniform(-2, 2),
                  z=rng.uniform(-2, 2), charge=-0.2, base_type=7,
-                 type_256=encode_256_type(7, 1, True))
+                 type_256=encode_256_type(7, 0, True))
             for k in range(5)
         ]
         contacts = enumerate_contacts(prot_atoms, lig_atoms, cutoff=10.0)
@@ -130,26 +130,26 @@ class TestAtom:
 # ─── charge quantisation ─────────────────────────────────────────────────────
 
 class TestQuantiseCharge:
-    def test_anionic(self):
+    def test_negative(self):
         assert _quantise_charge(-0.5) == 0
 
-    def test_weak_neg(self):
-        assert _quantise_charge(-0.1) == 1
+    def test_slightly_negative(self):
+        assert _quantise_charge(-0.1) == 0
 
-    def test_weak_pos(self):
-        assert _quantise_charge(0.1) == 2
+    def test_slightly_positive(self):
+        assert _quantise_charge(0.1) == 1
 
-    def test_cationic(self):
-        assert _quantise_charge(0.5) == 3
+    def test_positive(self):
+        assert _quantise_charge(0.5) == 1
 
     def test_boundary_neg(self):
-        assert _quantise_charge(-0.25) == 1  # -0.25 is not < -0.25, falls to bin 1
+        assert _quantise_charge(-0.25) == 0  # negative → 0
 
     def test_boundary_zero(self):
-        assert _quantise_charge(0.0) == 2
+        assert _quantise_charge(0.0) == 1  # >= 0 → positive → 1
 
     def test_boundary_pos(self):
-        assert _quantise_charge(0.25) == 3
+        assert _quantise_charge(0.25) == 1
 
 
 # ─── PDB parser tests ────────────────────────────────────────────────────────
@@ -259,13 +259,13 @@ class TestEnumerateContacts:
         assert len(contacts) > 0
 
     def test_distant_atoms_excluded(self):
-        prot = [Atom(0, "CA", "C", 0, 0, 0, 0, 2, encode_256_type(2, 2, False))]
+        prot = [Atom(0, "CA", "C", 0, 0, 0, 0, 2, encode_256_type(2, 1, False))]
         lig = [Atom(0, "N1", "N", 100, 100, 100, 0, 7, encode_256_type(7, 1, True))]
         contacts = enumerate_contacts(prot, lig, cutoff=4.5)
         assert len(contacts) == 0
 
     def test_contact_distance_accuracy(self):
-        prot = [Atom(0, "CA", "C", 0, 0, 0, 0, 2, encode_256_type(2, 2, False))]
+        prot = [Atom(0, "CA", "C", 0, 0, 0, 0, 2, encode_256_type(2, 1, False))]
         lig = [Atom(0, "N1", "N", 3, 0, 0, 0, 7, encode_256_type(7, 1, True))]
         contacts = enumerate_contacts(prot, lig, cutoff=5.0)
         assert len(contacts) == 1
@@ -275,7 +275,7 @@ class TestEnumerateContacts:
         assert enumerate_contacts([], [], cutoff=5.0) == []
 
     def test_contact_types_assigned(self):
-        t_a = encode_256_type(2, 2, False)
+        t_a = encode_256_type(2, 1, False)
         t_b = encode_256_type(7, 1, True)
         prot = [Atom(0, "CA", "C", 0, 0, 0, 0, 2, t_a)]
         lig = [Atom(0, "N1", "N", 1, 0, 0, 0, 7, t_b)]
@@ -287,8 +287,8 @@ class TestEnumerateContacts:
         """Test that brute-force fallback gives same results as KD-tree."""
         from flexaidds.train_256x256 import _enumerate_contacts_brute
         prot = [
-            Atom(0, "CA", "C", 0, 0, 0, 0, 2, encode_256_type(2, 2, False)),
-            Atom(1, "CB", "C", 5, 0, 0, 0, 2, encode_256_type(2, 2, False)),
+            Atom(0, "CA", "C", 0, 0, 0, 0, 2, encode_256_type(2, 1, False)),
+            Atom(1, "CB", "C", 5, 0, 0, 0, 2, encode_256_type(2, 1, False)),
         ]
         lig = [
             Atom(0, "N1", "N", 1, 0, 0, 0, 7, encode_256_type(7, 1, True)),
@@ -441,7 +441,7 @@ class TestValidateCASF:
     )
     def test_perfect_prediction(self):
         """With a trivially constructed matrix, should get high correlation."""
-        t_a = encode_256_type(2, 2, False)
+        t_a = encode_256_type(2, 1, False)
         t_b = encode_256_type(7, 1, True)
         complexes = []
         for i in range(10):
