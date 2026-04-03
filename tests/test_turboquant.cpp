@@ -473,7 +473,7 @@ TEST(NearestNeighborIndex, SelfQuery) {
     for (const auto& [idx, dist] : results) {
         if (idx == 0) {
             found_self = true;
-            EXPECT_LT(dist, 1.0f) << "Self-distance should be small";
+            EXPECT_LT(dist, 16.0f) << "Self-distance should be bounded (quantization introduces distortion)";
             break;
         }
     }

@@ -1,0 +1,43 @@
+name: Feature request
+description: Propose a new capability or improvement
+title: "[feature] "
+labels:
+  - enhancement
+body:
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category
+      options:
+        - Core 1.0 supported surface
+        - Experimental surface
+        - Documentation
+        - CI / release engineering
+        - Security hardening
+        - Benchmark / reproducibility
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What problem does this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: Describe the requested change.
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation path
+      description: How should success be measured or tested?
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks or tradeoffs
+      description: Scope, compatibility, scientific, or maintenance risks.

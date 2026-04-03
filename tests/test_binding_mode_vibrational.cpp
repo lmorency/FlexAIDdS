@@ -12,6 +12,15 @@
 #include <vector>
 
 // ===========================================================================
+// Test-accessible subclass to reach protected methods
+// ===========================================================================
+class TestableBindingMode : public BindingMode {
+public:
+    using BindingMode::BindingMode;
+    using BindingMode::compute_vibrational_correction;
+};
+
+// ===========================================================================
 // TEST FIXTURE
 // ===========================================================================
 
@@ -28,14 +37,13 @@ protected:
     BindingPopulation* test_population;
 
     static constexpr int NUM_ATOMS = 20;
+    static constexpr int NUM_RESIDUES = 2;
     static constexpr double TEST_TEMPERATURE = 300.0;
     static constexpr double EPSILON = 1e-6;
 
     void SetUp() override {
         mock_fa = new FA_Global();
-        mock_fa->temperature = TEST_TEMPERATURE;
-        mock_fa->num_atoms = NUM_ATOMS;
-        mock_fa->num_residues = 2;
+        mock_fa->temperature = static_cast<uint>(TEST_TEMPERATURE);
         mock_fa->normal_modes = 0;  // No vibrational correction by default
 
         mock_gb = new GB_Global();
@@ -46,7 +54,7 @@ protected:
         mock_chroms = new chromosome[5];
         mock_gene_lim = new genlim[mock_gb->num_genes];
         mock_atoms = new atom[NUM_ATOMS];
-        mock_residue = new resid[mock_fa->num_residues];
+        mock_residue = new resid[NUM_RESIDUES];
         mock_cleftgrid = new gridpoint[100];
 
         // Initialize atoms with null eigen pointers
@@ -108,7 +116,7 @@ protected:
 
 TEST_F(BindingModeVibrationalTest, NoModesZeroCorrection) {
     // When normal_modes == 0, vibrational correction should be 0
-    BindingMode mode(test_population);
+    TestableBindingMode mode(test_population);
     Pose p = create_mock_pose(-10.0, 0);
     mode.add_Pose(p);
 
@@ -127,7 +135,7 @@ TEST_F(BindingModeVibrationalTest, WithModesNonzeroCorrection) {
     // Set up eigenvalues to produce a vibrational correction
     setup_mock_eigenvalues(5, 0.5);
 
-    BindingMode mode(test_population);
+    TestableBindingMode mode(test_population);
     Pose p = create_mock_pose(-10.0, 0);
     mode.add_Pose(p);
 
@@ -142,7 +150,7 @@ TEST_F(BindingModeVibrationalTest, WithModesNonzeroCorrection) {
 TEST_F(BindingModeVibrationalTest, CorrectionIncludedInFreeEnergy) {
     setup_mock_eigenvalues(5, 0.5);
 
-    BindingMode mode(test_population);
+    TestableBindingMode mode(test_population);
     for (int i = 0; i < 3; ++i) {
         Pose p = create_mock_pose(-10.0 - i * 2.0, i);
         mode.add_Pose(p);
@@ -165,7 +173,7 @@ TEST_F(BindingModeVibrationalTest, MoreModesLargerCorrection) {
     // With more modes, S_vib should be larger → correction more negative
     setup_mock_eigenvalues(3, 0.5);
 
-    BindingMode mode_few(test_population);
+    TestableBindingMode mode_few(test_population);
     Pose p1 = create_mock_pose(-10.0, 0);
     mode_few.add_Pose(p1);
     double correction_few = mode_few.compute_vibrational_correction();
@@ -177,7 +185,7 @@ TEST_F(BindingModeVibrationalTest, MoreModesLargerCorrection) {
 
     setup_mock_eigenvalues(10, 0.5);
 
-    BindingMode mode_many(test_population);
+    TestableBindingMode mode_many(test_population);
     Pose p2 = create_mock_pose(-10.0, 0);
     mode_many.add_Pose(p2);
     double correction_many = mode_many.compute_vibrational_correction();
@@ -191,7 +199,7 @@ TEST_F(BindingModeVibrationalTest, NullEigenReturnsZero) {
     mock_fa->normal_modes = 5;
     // mock_atoms[0].eigen is already nullptr from SetUp
 
-    BindingMode mode(test_population);
+    TestableBindingMode mode(test_population);
     Pose p = create_mock_pose(-10.0, 0);
     mode.add_Pose(p);
 
@@ -203,16 +211,16 @@ TEST_F(BindingModeVibrationalTest, CorrectionScalesWithTemperature) {
     setup_mock_eigenvalues(5, 0.5);
 
     // Test at 300K
-    BindingMode mode_300(test_population);
+    TestableBindingMode mode_300(test_population);
     Pose p1 = create_mock_pose(-10.0, 0);
     mode_300.add_Pose(p1);
     double correction_300 = mode_300.compute_vibrational_correction();
 
     // Change temperature to 600K
-    mock_fa->temperature = 600.0;
+    mock_fa->temperature = 600;
     test_population->Temperature = 600;
 
-    BindingMode mode_600(test_population);
+    TestableBindingMode mode_600(test_population);
     Pose p2 = create_mock_pose(-10.0, 0);
     mode_600.add_Pose(p2);
     double correction_600 = mode_600.compute_vibrational_correction();
@@ -221,7 +229,7 @@ TEST_F(BindingModeVibrationalTest, CorrectionScalesWithTemperature) {
     EXPECT_LT(correction_600, correction_300);
 
     // Restore
-    mock_fa->temperature = TEST_TEMPERATURE;
+    mock_fa->temperature = static_cast<uint>(TEST_TEMPERATURE);
     test_population->Temperature = static_cast<unsigned int>(TEST_TEMPERATURE);
 }
 
