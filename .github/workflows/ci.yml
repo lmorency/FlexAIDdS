@@ -97,6 +97,9 @@ jobs:
             -DFLEXAIDS_USE_METAL=OFF
             -DBUILD_PYTHON_BINDINGS=OFF
             -DBUILD_TESTING=ON
+            -DENABLE_TENCOM_TOOL=OFF
+            -DBUILD_FLEXAIDDS_FAST=OFF
+            -DENABLE_BENCHMARK_DATASETS=OFF
           )
           # Homebrew on Apple Silicon installs to /opt/homebrew
           if [ "$RUNNER_OS" = "macOS" ]; then
@@ -116,7 +119,10 @@ jobs:
             -DFLEXAIDS_USE_METAL=OFF ^
             -DFLEXAIDS_USE_OPENMP=OFF ^
             -DBUILD_PYTHON_BINDINGS=OFF ^
-            -DBUILD_TESTING=ON
+            -DBUILD_TESTING=ON ^
+            -DENABLE_TENCOM_TOOL=OFF ^
+            -DBUILD_FLEXAIDDS_FAST=OFF ^
+            -DENABLE_BENCHMARK_DATASETS=OFF
       - name: Build (Unix)
         if: runner.os != 'Windows'
         run: cmake --build build --parallel
