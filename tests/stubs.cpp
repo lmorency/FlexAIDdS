@@ -67,6 +67,11 @@ int write_DensityPeak_rrd(FA_Global*, GB_Global*, const chromosome*, const genli
                           float*, char[]) { return 0; }
 
 // ---------------------------------------------------------------------------
+// vcfunction.cpp — get_yval (energy matrix lookup)
+// ---------------------------------------------------------------------------
+double get_yval(energy_matrix*, double) { return 0.0; }
+
+// ---------------------------------------------------------------------------
 // partition_grid.cpp, slice_grid.cpp, write_grid/generate_grid
 // ---------------------------------------------------------------------------
 void partition_grid(FA_Global*, chromosome*, genlim*, atom*, resid*, gridpoint**, int, int) {}
