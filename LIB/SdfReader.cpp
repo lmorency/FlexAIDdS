@@ -71,13 +71,14 @@ int read_sdf_ligand(FA_Global* FA, atom** atoms, resid** residue,
 
     // Line 1: molecule name
     if (fgets(buf, sizeof(buf), fp)) {
-        buf[strlen(buf) - 1] = '\0';
+        size_t len = strlen(buf);
+        if (len > 0 && buf[len - 1] == '\n') buf[len - 1] = '\0';
         if (strlen(buf) > 0) sscanf(buf, "%63s", mol_name);
     }
     // Line 2: program/timestamp (skip)
-    fgets(buf, sizeof(buf), fp);
+    if (!fgets(buf, sizeof(buf), fp)) { fclose(fp); return 0; }
     // Line 3: comment (skip)
-    fgets(buf, sizeof(buf), fp);
+    if (!fgets(buf, sizeof(buf), fp)) { fclose(fp); return 0; }
 
     // Line 4: counts
     if (!fgets(buf, sizeof(buf), fp)) {
@@ -93,6 +94,10 @@ int read_sdf_ligand(FA_Global* FA, atom** atoms, resid** residue,
 
     if (natoms <= 0 || natoms > 9999) {
         fprintf(stderr, "ERROR: invalid atom count %d in SDF file\n", natoms);
+        fclose(fp); return 0;
+    }
+    if (nbonds < 0 || nbonds > 9999) {
+        fprintf(stderr, "ERROR: invalid bond count %d in SDF file\n", nbonds);
         fclose(fp); return 0;
     }
 

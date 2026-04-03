@@ -11,7 +11,8 @@ std::mt19937 gen(rd());
 struct RNG
 {
     int operator() (int n) {
-        return std::rand() / (1.0 + RAND_MAX) * n;
+        std::uniform_int_distribution<int> dist(0, n - 1);
+        return dist(gen);
     }
 };
 
@@ -370,6 +371,10 @@ void FastOPTICS::output_3d_OPTICS_ordering(char* end_strfile, char* tmp_end_strf
 		        snprintf(tmpremark, MAX_REMARK, "REMARK CF.wal=%8.5f\n", pCF->wal);
 		        safe_remark_cat(remark, tmpremark, &remark_len);
 		        snprintf(tmpremark, MAX_REMARK, "REMARK CF.con=%8.5f\n", pCF->con);
+		        safe_remark_cat(remark, tmpremark, &remark_len);
+		        snprintf(tmpremark, MAX_REMARK, "REMARK CF.gist=%8.5f\n", pCF->gist);
+		        safe_remark_cat(remark, tmpremark, &remark_len);
+		        snprintf(tmpremark, MAX_REMARK, "REMARK CF.hbond=%8.5f\n", pCF->hbond);
 		        safe_remark_cat(remark, tmpremark, &remark_len);
 		        snprintf(tmpremark, MAX_REMARK, "REMARK Residue has an overall SAS of %.3f\n", pCF->totsas);
 		        safe_remark_cat(remark, tmpremark, &remark_len);
@@ -1136,5 +1141,5 @@ int roll_die()
 }
 int roll_rand_die()
 {
-	return rand();
+	return roll_die();
 }

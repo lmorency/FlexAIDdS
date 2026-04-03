@@ -7,6 +7,7 @@
 
 #include "flexaid.h"
 #include "gaboom.h"
+#include "GAContext.h"
 #include "statmech.h"
 #include "GridDecomposer.h"
 #include "SharedPosePool.h"
@@ -90,6 +91,7 @@ private:
         VC_Global vc;
         std::vector<atom> atoms_copy;
         std::vector<resid> residue_copy;
+        GAContext ga_ctx;  // per-region GA state for re-entrant execution
     };
     RegionWorkspace create_workspace() const;
 };

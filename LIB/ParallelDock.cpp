@@ -192,7 +192,7 @@ RegionResult ParallelDockManager::run_region(
     int memchrom = num_chrom * 2;
     char gainpfile[256] = "";
 
-    // Run the GA on this region's subgrid
+    // Run the GA on this region's subgrid with per-region context
     GA(&ws.fa, &ws.gb, &ws.vc,
        &chrom, &chrom_snapshot,
        &gene_lim,
@@ -201,7 +201,8 @@ RegionResult ParallelDockManager::run_region(
        &subgrid,
        gainpfile,
        &memchrom,
-       target);
+       target,
+       &ws.ga_ctx);
 
     // Collect results: snapshot energies for partition function
     int n_snap = ws.gb.num_chrom;  // snapshot from last generation

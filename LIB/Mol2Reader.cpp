@@ -70,6 +70,10 @@ static int sybyl_to_flexaid_type(const char* sybyl_type) {
 }
 
 static float sybyl_radius(const char* sybyl_type) {
+    // Multi-character element symbols must be checked before the switch
+    if (!strcmp(sybyl_type, "Cl")) return 1.75f;
+    if (!strcmp(sybyl_type, "Br")) return 1.85f;
+
     char elem = sybyl_type[0];
     switch (elem) {
         case 'C': return 1.70f;
@@ -82,8 +86,6 @@ static float sybyl_radius(const char* sybyl_type) {
         case 'I': return 1.98f;
         default:  return 1.70f;
     }
-    if (!strcmp(sybyl_type, "Cl")) return 1.75f;
-    if (!strcmp(sybyl_type, "Br")) return 1.85f;
 }
 
 /* ── MOL2 section tags ─────────────────────────────────────────── */

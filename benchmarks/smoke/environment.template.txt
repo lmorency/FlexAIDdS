@@ -1,0 +1,9 @@
+# Copy this file to environment.txt when recording a smoke-validation run.
+
+repo_full_name=lmorency/FlexAIDdS
+git_sha=
+runner_os=
+compiler=
+cmake_version=
+python_version=
+notes=

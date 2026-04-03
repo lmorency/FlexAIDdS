@@ -326,6 +326,32 @@ std::vector<DualAssemblyEngine::GrowthStep> DualAssemblyEngine::run() {
     auto elong_model = build_elongation_model(config_, residues_, n_residues_);
     const auto& k_el = elong_model.elongation_rates();
 
+    // Tunnel length depends on mode
+    const double tunnel_len = config_.use_ribosome_speed
+                              ? ribosome::TUNNEL_LENGTH_AA
+                              : ribosome::RNAP_TUNNEL_NT;
+
+    // Pause threshold
+    const double pause_threshold = config_.use_ribosome_speed
+        ? ribosome::RIBOSOME_PAUSE_THRESHOLD
+        : ribosome::RNAP_PAUSE_THRESHOLD;
+
+    // Harmonic mean rate for pause detection (filter NaN/Inf/zero values)
+    double hmean_rate = elong_model.elongation_rates().empty()
+                        ? 16.5
+                        : [&](){
+                            double inv_sum = 0.0; int cnt = 0;
+                            for (double k : k_el) {
+                                if (std::isfinite(k) && k > 1e-9) {
+                                    inv_sum += 1.0 / k;
+                                    ++cnt;
+                                }
+                            }
+                            return (cnt > 0 && inv_sum > 1e-15)
+                                   ? static_cast<double>(cnt) / inv_sum
+                                   : 16.5;
+                          }();
+
     // Pre-compute analytical arrival times for each residue
     // <T_n> = 1/k_ini + Σ_{i<n} 1/k_i  (Zhao 2011 Eq. 7)
     std::vector<double> t_arrival(max_steps + 1);
@@ -333,7 +359,8 @@ std::vector<DualAssemblyEngine::GrowthStep> DualAssemblyEngine::run() {
     for (int n = 1; n <= max_steps; ++n) {
         double k = (n - 1 < (int)k_el.size()) ? k_el[n - 1]
                                                 : elong_model.elongation_rates().back();
-        t_arrival[n] = t_arrival[n - 1] + 1.0 / k;
+        double inv_k = (std::isfinite(k) && k > 1e-9) ? 1.0 / k : 1.0 / hmean_rate;
+        t_arrival[n] = t_arrival[n - 1] + inv_k;
     }
 
     // Tunnel length depends on mode
@@ -469,7 +496,9 @@ std::vector<DualAssemblyEngine::GrowthStep> DualAssemblyEngine::run() {
     for (int step = 0; step < max_steps; ++step) {
         // Elongation kinetics at this residue
         double k_n = (step < (int)k_el.size()) ? k_el[step] : hmean_rate;
-        double dwell_time  = 1.0 / k_n;
+        double dwell_time  = (std::isfinite(k_n) && k_n > 1e-9)
+                             ? 1.0 / k_n
+                             : 1.0 / hmean_rate;
         double t_arr       = (step < (int)t_arrival.size()) ? t_arrival[step] : 0.0;
         bool   in_tunnel   = (step < static_cast<int>(tunnel_len));
         bool   is_pause    = (!in_tunnel) && (k_n < pause_threshold * hmean_rate);

@@ -8,6 +8,7 @@
 #include "BindingResidues.h"
 #include <vector>
 #include <algorithm>
+#include <random>
 
 /*****************************************************************************
  * compute_mif_and_reflig — MIF computation, grid prioritization, RefLig seeding
@@ -206,6 +207,15 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 		if(strcmp(field,"SLVPEN") == 0){sscanf(buffer,"%s %f",field,&FA->solventterm);}
 		if(strcmp(field,"USEELC") == 0){FA->use_elec=1;}
 		if(strcmp(field,"DIELEC") == 0){sscanf(buffer,"%s %f",field,&FA->dielectric);}
+		if(strcmp(field,"USEGIS") == 0){FA->use_gist=1;}
+		if(strcmp(field,"GISTDG") == 0){sscanf(buffer,"%s %s",field,FA->gist_dg_file);}
+		if(strcmp(field,"GISTDN") == 0){sscanf(buffer,"%s %s",field,FA->gist_dens_file);}
+		if(strcmp(field,"GISTWT") == 0){sscanf(buffer,"%s %lf",field,&FA->gist_weight);}
+		if(strcmp(field,"GISTGC") == 0){sscanf(buffer,"%s %f",field,&FA->gist_dg_cutoff);}
+		if(strcmp(field,"GISTRC") == 0){sscanf(buffer,"%s %f",field,&FA->gist_rho_cutoff);}
+		if(strcmp(field,"GISTDV") == 0){sscanf(buffer,"%s %f",field,&FA->gist_divisor);}
+		if(strcmp(field,"USEHBD") == 0){FA->use_hbond=1;}
+		if(strcmp(field,"HBONDW") == 0){sscanf(buffer,"%s %lf",field,&FA->hbond_weight);}
 		if(strcmp(field,"OUTRNG") == 0){FA->output_range=1;}
 		if(strcmp(field,"USEDEE") == 0){FA->useflexdee=1;}
 		if(strcmp(field,"IMATRX") == 0){strncpy(emat_forced,&buffer[7],MAX_PATH__-1);emat_forced[MAX_PATH__-1]='\0';}
@@ -354,8 +364,7 @@ void read_input(FA_Global* FA,atom** atoms, resid** residue,rot** rotamer,gridpo
 	}
 
 	// Generate random 6-digit number
-	srand((unsigned int)time(NULL));
-	int random_num = rand() % 900000 + 100000; // Ensures 6 digits
+	int random_num = static_cast<int>(std::random_device{}() % 900000 + 100000);
 
 	// If we had a dot, restore the string terminator to its original position
 	if (dot != NULL) {

@@ -105,7 +105,7 @@ public:
         double t_arrival;         // time since initiation (s) from master equation
         double k_el;              // elongation rate at this codon (s⁻¹)
         double dwell_time;        // 1/k_el (s) — time available for folding
-        bool   is_pause_site;     // rate < 30% of mean → folding window
+        bool   is_pause_site;     // rate < RIBOSOME_PAUSE_THRESHOLD of mean → folding window
         bool   in_tunnel;         // residue still inside ribosomal exit tunnel
         double cf_score;          // Contact Function (kcal/mol)
         double shannon_entropy;   // bits
