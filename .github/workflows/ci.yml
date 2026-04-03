@@ -82,7 +82,7 @@ jobs:
       - name: Install Windows dependencies
         if: runner.os == 'Windows'
         run: |
-          choco install ninja eigen -y
+          choco install ninja -y
         shell: cmd
       - name: Configure (Unix)
         if: runner.os != 'Windows'
@@ -140,7 +140,7 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build
+          sudo apt-get install -y cmake ninja-build libeigen3-dev
           python -m pip install --upgrade pip
           python -m pip install 'pybind11[global]' pytest numpy
       - name: Configure Python bindings
@@ -150,7 +150,6 @@ jobs:
             -DBUILD_PYTHON_BINDINGS=ON \
             -DPYBIND11_FINDPYTHON=ON \
             -DFLEXAIDS_USE_OPENMP=OFF \
-            -DFLEXAIDS_USE_EIGEN=OFF \
             -DFLEXAIDS_USE_CUDA=OFF \
             -DFLEXAIDS_USE_METAL=OFF \
             -DCMAKE_LIBRARY_OUTPUT_DIRECTORY=${{ github.workspace }}/python/flexaidds

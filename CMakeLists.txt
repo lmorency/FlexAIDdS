@@ -131,13 +131,13 @@ if(FLEXAIDS_USE_EIGEN)
         if(EIGEN3_FOUND)
             message(STATUS "Eigen3 found via pkg-config")
         else()
-            # FetchContent fallback — download header-only Eigen
+            # FetchContent fallback — download header-only Eigen tarball
             message(STATUS "Eigen3 not found locally — fetching via FetchContent")
             include(FetchContent)
             FetchContent_Declare(eigen3
-                GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
-                GIT_TAG        3.4.0
-                GIT_SHALLOW    TRUE)
+                URL      https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz
+                URL_HASH SHA256=8586084f71f9bde545ee7fa6d00288b264a2b7ac3607b974e54d13e7162c1c72
+                DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
             FetchContent_MakeAvailable(eigen3)
             set(Eigen3_FOUND TRUE)
             message(STATUS "Eigen3 3.4.0 fetched via FetchContent")
