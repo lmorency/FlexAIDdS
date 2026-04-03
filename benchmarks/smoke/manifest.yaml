@@ -1,0 +1,13 @@
+name: smoke-validation
+kind: repository-validation
+status: active
+reproducibility_level: replayable-from-repository-artifacts
+purpose: low-cost replayable validation for the supported Core 1.0 build-and-test surface
+entrypoint: bash benchmarks/smoke/run.sh
+artifacts:
+  - build directory generated locally
+  - ctest output
+  - pytest output for smoke validation
+notes:
+  - This bundle validates repository install/build/test behavior, not scientific benchmark quality.
+  - Scientific benchmark claims require dataset-specific bundles with provenance and metric definitions.
