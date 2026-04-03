@@ -102,12 +102,15 @@ PYBIND11_MODULE(_core, m) {
 
         // ─── Thermodynamic analysis ───
         .def("compute", &StatMechEngine::compute,
-            "Compute full thermodynamics (F, S, H, Cv, etc.)")
+            "Compute full thermodynamics (F, S, H, Cv, etc.)",
+            py::call_guard<py::gil_scoped_release>())
         .def("boltzmann_weights", &StatMechEngine::boltzmann_weights,
-            "Return Boltzmann weights for all samples (same order as insertion)")
+            "Return Boltzmann weights for all samples (same order as insertion)",
+            py::call_guard<py::gil_scoped_release>())
         .def("delta_G", &StatMechEngine::delta_G,
             py::arg("reference"),
-            "Compute delta-G relative to another ensemble")
+            "Compute delta-G relative to another ensemble",
+            py::call_guard<py::gil_scoped_release>())
 
         // ─── Advanced methods ───
         // Note: std::span parameters require lambda wrappers for pybind11
@@ -119,7 +122,7 @@ PYBIND11_MODULE(_core, m) {
             "Initialize parallel tempering replicas at given temperatures")
         .def_static("attempt_swap",
             [](Replica& a, Replica& b) {
-                static std::mt19937 rng{std::random_device{}()};
+                thread_local std::mt19937 rng{std::random_device{}()};
                 return StatMechEngine::attempt_swap(a, b, rng);
             },
             py::arg("replica_a"), py::arg("replica_b"),
@@ -128,6 +131,7 @@ PYBIND11_MODULE(_core, m) {
             [](const std::vector<double>& energies,
                const std::vector<double>& coordinates,
                double temperature, int n_bins, int max_iter, double tolerance) {
+                py::gil_scoped_release release;
                 return StatMechEngine::wham(energies, coordinates,
                     temperature, n_bins, max_iter, tolerance);
             },
@@ -137,12 +141,14 @@ PYBIND11_MODULE(_core, m) {
             "WHAM free energy profile along a reaction coordinate")
         .def_static("thermodynamic_integration",
             [](const std::vector<TIPoint>& points) {
+                py::gil_scoped_release release;
                 return StatMechEngine::thermodynamic_integration(points);
             },
             py::arg("points"),
             "Compute delta-G via thermodynamic integration (trapezoidal rule)")
         .def_static("helmholtz",
             [](const std::vector<double>& energies, double temperature) {
+                py::gil_scoped_release release;
                 return StatMechEngine::helmholtz(energies, temperature);
             },
             py::arg("energies"), py::arg("temperature"),
@@ -264,6 +270,7 @@ PYBIND11_MODULE(_core, m) {
             [](const ENCoMEngineWrapper& self,
                const std::vector<encom::NormalMode>& modes,
                double temperature) {
+                py::gil_scoped_release release;
                 return encom::ENCoMEngine::compute_vibrational_entropy(
                     modes, temperature, self.eigenvalue_cutoff);
             },
@@ -273,7 +280,8 @@ PYBIND11_MODULE(_core, m) {
         .def_static("load_modes",
             &encom::ENCoMEngine::load_modes,
             py::arg("eigenvalue_file"), py::arg("eigenvector_file"),
-            "Load normal modes from ENCoM output files")
+            "Load normal modes from ENCoM output files",
+            py::call_guard<py::gil_scoped_release>())
         .def_static("total_entropy",
             &encom::ENCoMEngine::total_entropy,
             py::arg("S_conf_kcal_mol_K"), py::arg("S_vib_kcal_mol_K"),
@@ -306,6 +314,7 @@ PYBIND11_MODULE(_core, m) {
         .def("build_from_pdb",
             [](tencm::TorsionalENM& self, const std::string& pdb_path,
                float cutoff, float k0) {
+                py::gil_scoped_release release;
                 // Parse PDB for Cα coordinates, build model
                 // Read PDB file, extract atoms/residues, then build
                 std::vector<std::array<float,3>> ca_coords;
@@ -371,7 +380,8 @@ PYBIND11_MODULE(_core, m) {
             py::return_value_policy::reference_internal)
         .def("bfactors", &tencm::TorsionalENM::bfactors,
             py::arg("temperature") = 300.0f,
-            "Predicted Cα B-factors at given temperature (Å²)")
+            "Predicted Cα B-factors at given temperature (Å²)",
+            py::call_guard<py::gil_scoped_release>())
         .def("__repr__", [](const tencm::TorsionalENM& t) {
             return "<TorsionalENM n_res=" + std::to_string(t.n_residues()) +
                    " n_bonds=" + std::to_string(t.n_bonds()) +
@@ -400,16 +410,19 @@ PYBIND11_MODULE(_core, m) {
     m.def("compute_shannon_entropy",
         &shannon_thermo::compute_shannon_entropy,
         py::arg("values"), py::arg("num_bins") = 20,
-        "Compute Shannon entropy of continuous values (bits)");
+        "Compute Shannon entropy of continuous values (bits)",
+        py::call_guard<py::gil_scoped_release>());
 
     m.def("compute_torsional_vibrational_entropy",
         &shannon_thermo::compute_torsional_vibrational_entropy,
         py::arg("modes"), py::arg("temperature_K") = 298.15,
-        "Compute torsional vibrational entropy from normal modes");
+        "Compute torsional vibrational entropy from normal modes",
+        py::call_guard<py::gil_scoped_release>());
 
     m.def("run_shannon_thermo_stack",
         &shannon_thermo::run_shannon_thermo_stack,
         py::arg("stat_engine"), py::arg("tencm_model"),
         py::arg("base_deltaG"), py::arg("temperature_K") = 298.15,
-        "Run full ShannonThermoStack pipeline");
+        "Run full ShannonThermoStack pipeline",
+        py::call_guard<py::gil_scoped_release>());
 }

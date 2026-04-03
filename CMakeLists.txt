@@ -217,6 +217,7 @@ target_sources(FlexAID PRIVATE
         LIB/calc_cleftic.cpp
         LIB/write_pdb.cpp
         LIB/gaboom.cpp
+        LIB/GAContext.cpp
         LIB/calc_center.cpp
         LIB/ic_bounds.cpp
         LIB/buildic_point.cpp
@@ -950,6 +951,7 @@ if(BUILD_TESTING)
         tests/test_gaboom.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/GAContext.cpp
         LIB/Vcontacts.cpp
         LIB/statmech.cpp
         LIB/TurboQuant.cpp
@@ -1196,6 +1198,7 @@ flexaids_configure_simd(test_cavity_detect)
         tests/test_binding_mode_statmech.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/GAContext.cpp
         LIB/Vcontacts.cpp
         LIB/statmech.cpp
         LIB/TurboQuant.cpp
@@ -1240,6 +1243,7 @@ flexaids_configure_simd(test_cavity_detect)
         tests/test_ccbm.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/GAContext.cpp
         LIB/Vcontacts.cpp
         LIB/statmech.cpp
         LIB/TurboQuant.cpp
@@ -1284,6 +1288,7 @@ flexaids_configure_simd(test_cavity_detect)
         tests/test_binding_mode_advanced.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/GAContext.cpp
         LIB/Vcontacts.cpp
         LIB/statmech.cpp
         LIB/TurboQuant.cpp
@@ -1328,6 +1333,7 @@ flexaids_configure_simd(test_cavity_detect)
         tests/test_ga_core.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/GAContext.cpp
         LIB/Vcontacts.cpp
         LIB/statmech.cpp
         LIB/TurboQuant.cpp
@@ -1372,6 +1378,7 @@ flexaids_configure_simd(test_cavity_detect)
         tests/test_ga_validation.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/GAContext.cpp
         LIB/Vcontacts.cpp
         LIB/statmech.cpp
         LIB/TurboQuant.cpp
@@ -1466,6 +1473,7 @@ flexaids_configure_simd(test_cavity_detect)
         tests/test_entropy_ga.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/GAContext.cpp
         LIB/Vcontacts.cpp
         LIB/statmech.cpp
         LIB/TurboQuant.cpp
@@ -1600,6 +1608,7 @@ flexaids_configure_simd(test_cavity_detect)
         tests/test_binding_mode_vibrational.cpp
         tests/stubs.cpp
         LIB/gaboom.cpp
+        LIB/GAContext.cpp
         LIB/Vcontacts.cpp
         LIB/statmech.cpp
         LIB/TurboQuant.cpp
@@ -1834,7 +1843,28 @@ flexaids_configure_simd(test_cavity_detect)
     flexaids_configure_msvc_test(test_distributed_backend)
     add_test(NAME DistributedBackendTests COMMAND test_distributed_backend)
 
-    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_tencom_diff, test_target_validation, test_grand_partition, test_target_server")
+    # test_ga_context — GAContext re-entrant state + GPUContextPool singleton
+    add_executable(test_ga_context
+        tests/test_ga_context.cpp
+        LIB/GAContext.cpp
+    )
+    target_include_directories(test_ga_context PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+    )
+    target_link_libraries(test_ga_context PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_ga_context PRIVATE /O2)
+    else()
+        target_compile_options(test_ga_context PRIVATE -O2)
+    endif()
+    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
+        target_link_libraries(test_ga_context PRIVATE Eigen3::Eigen)
+        target_compile_definitions(test_ga_context PRIVATE FLEXAIDS_HAS_EIGEN)
+    endif()
+    flexaids_configure_msvc_test(test_ga_context)
+    add_test(NAME GAContextTests COMMAND test_ga_context)
+
+    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_tencom_diff, test_target_validation, test_grand_partition, test_target_server, test_ga_context")
 endif()
 
 # ─── Swift Bridge (macOS only) ────────────────────────────────────────────
