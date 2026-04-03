@@ -275,7 +275,12 @@ target_sources(FlexAID PRIVATE
         LIB/encom.cpp             # ← NEW: ENCoM vibrational entropy
         # ── TurboQuant vector quantization (Zandieh et al. 2025) ──
         LIB/TurboQuant.cpp
-        # ── ProcessLigand (Phase 3: standalone ligand preprocessing) ──
+)
+
+# ── Extended C++20 modules (not yet MSVC-compatible) ──────────────────
+if(NOT MSVC)
+    target_sources(FlexAID PRIVATE
+        # ProcessLigand (Phase 3: standalone ligand preprocessing)
         LIB/ProcessLigand/ProcessLigand.cpp
         LIB/ProcessLigand/SmilesParser.cpp
         LIB/ProcessLigand/RingPerception.cpp
@@ -291,7 +296,7 @@ target_sources(FlexAID PRIVATE
         LIB/LibrarySplitter.cpp
         LIB/ReferenceEntropy.cpp
         LIB/ParallelCampaign.cpp
-        # ── v1.5 thermodynamic + hardware acceleration modules ──
+        # v1.5 thermodynamic + hardware acceleration modules
         LIB/hardware_detect.cpp
         LIB/hardware_dispatch.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
@@ -302,31 +307,32 @@ target_sources(FlexAID PRIVATE
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
         LIB/ChiralCenter/ChiralCenterGene.cpp
-        # ── CleftDetector + Mol2Reader + SdfReader ──
+        # CleftDetector + Mol2Reader + SdfReader
         LIB/CleftDetector.cpp
         LIB/Mol2Reader.cpp
         LIB/SdfReader.cpp
-        # ── CavityDetect: native SURFNET cavity detection ──
+        # CavityDetect: native SURFNET cavity detection
         LIB/CavityDetect/CavityDetect.cpp
-        # ── PTMAttachment: PTM/glycan modification on target chain ──
+        # PTMAttachment: PTM/glycan modification on target chain
         LIB/PTMAttachment/PTMAttachment.cpp
-        # ── JSON config parser (zero external dependencies) ──
+        # JSON config parser (zero external dependencies)
         LIB/config_parser.cpp
-        # ── Unified runtime hardware dispatch ──
+        # Unified runtime hardware dispatch
         LIB/HardwareDispatch.cpp
-        # ── Parallel grid-decomposed docking ──
+        # Parallel grid-decomposed docking
         LIB/GridDecomposer.cpp
         LIB/SharedPosePool.cpp
         LIB/ParallelDock.cpp
-        # ── CoarseScreen: NRGRank coarse-grained screening ──
+        # CoarseScreen: NRGRank coarse-grained screening
         LIB/CoarseScreen.cpp
         LIB/TwoStageScreen.cpp
-        # ── TargetServer: target-centric docking architecture ──
+        # TargetServer: target-centric docking architecture
         LIB/TargetValidation.cpp
         LIB/GrandPartitionFunction.cpp
         LIB/TargetKnowledgeBase.cpp
         LIB/TargetServer.cpp
-)
+    )
+endif()
 
 target_include_directories(FlexAID PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/LIB
