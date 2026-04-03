@@ -21,6 +21,7 @@ static FA_Global make_fa(int ntypes = 40) {
     FA_Global fa;
     memset(&fa, 0, sizeof(fa));
     fa.ntypes = ntypes;
+    fa.res_cnt = 1;  // one residue at index 1
     return fa;
 }
 
@@ -253,7 +254,7 @@ TEST(IonTypeTest, WaterGetsHydrophilic) {
 //   6.0 − 1.73 (MG) − 1.88 (Cα) = 2.39 Å < 9 Å cutoff → spring is formed.
 // ===========================================================================
 
-#include "../LIB/tencm.h"
+#include "../LIB/tENCoM/tencm.h"
 #include "../LIB/ion_utils.h"
 
 namespace {

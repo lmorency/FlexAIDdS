@@ -148,7 +148,7 @@ __global__ void hip_eval_kernel(const float*   d_coords,   // [n_atoms*n_poses*3
         float xi = coords[i * 3 + 0];
         float yi = coords[i * 3 + 1];
         float zi = coords[i * 3 + 2];
-        uint8_t ti = d_types[i] & 0x1Fu; // base type (bits 0-4)
+        uint8_t ti = d_types[i] & 0x3Fu; // base type (bits 0-5)
         float   qi = d_charges[i];
         float   ei = d_lj_eps[ti < 31 ? ti : 0];
         float   ri = d_lj_rmin2[ti < 31 ? ti : 0];
@@ -159,7 +159,7 @@ __global__ void hip_eval_kernel(const float*   d_coords,   // [n_atoms*n_poses*3
             float dz = zi - coords[j * 3 + 2];
             float r2 = dx*dx + dy*dy + dz*dz;
 
-            uint8_t tj = d_types[j] & 0x1Fu;
+            uint8_t tj = d_types[j] & 0x3Fu;
             float   qj = d_charges[j];
             float   ej = d_lj_eps[tj < 31 ? tj : 0];
             float   rj = d_lj_rmin2[tj < 31 ? tj : 0];

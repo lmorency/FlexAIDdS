@@ -2,7 +2,7 @@
 
 from .models import BindingModeResult, DockingResult, PoseResult
 from .results import load_results
-from .io import is_ion, _ION_RESNAMES
+from .io import is_ion, _ION_RESNAMES, Atom, PDBStructure, read_pdb, write_pdb
 from .docking import Docking, BindingMode, BindingPopulation, Pose
 from .encom import ENCoMEngine, NormalMode, VibrationalEntropy
 from .tencm import (
@@ -60,6 +60,18 @@ except ImportError:
     kB_kcal = 0.001987206   # kcal mol⁻¹ K⁻¹
     kB_SI = 1.380649e-23    # J K⁻¹
     HAS_CORE_BINDINGS = False
+
+# GA hyperparameter optimizer
+from .optimize import GAOptimizer, OptimizationResult
+
+# ML rescoring bridge
+from .ml_rescore import (
+    VoronoiGraphExtractor,
+    ShannonProfileExtractor,
+    FeatureBuilder,
+    ThermoFeatures,
+    MLRescorer,
+)
 
 from .supercluster import SuperCluster
 from .tencom_results import FlexModeResult, FlexPopulationResult, parse_tencom_pdb, parse_tencom_json
@@ -147,6 +159,47 @@ def dock(
 
     docking = Docking(str(cfg_path))
     return docking.run(binary=binary, timeout=timeout)
+
+
+__all__ = [
+    # Version
+    "__version__",
+    # Data models
+    "PoseResult",
+    "BindingModeResult",
+    "DockingResult",
+    # Result loading
+    "load_results",
+    # I/O utilities
+    "is_ion",
+    "_ION_RESNAMES",
+    "Atom",
+    "PDBStructure",
+    "read_pdb",
+    "write_pdb",
+    # Docking
+    "Docking",
+    "BindingMode",
+    "BindingPopulation",
+    "Pose",
+    "dock",
+    # ENCoM
+    "ENCoMEngine",
+    "NormalMode",
+    "VibrationalEntropy",
+    # Torsional ENCoM
+    "TorsionalENM",
+    "TorsionalNormalMode",
+    "Conformer",
+    "FullThermoResult",
+    "compute_shannon_entropy",
+    "compute_torsional_vibrational_entropy",
+    "run_shannon_thermo_stack",
+    # Thermodynamics (pure-Python or C++ override)
+    "StatMechEngine",
+    "Thermodynamics",
+    "kB_kcal",
+    "kB_SI",
     # Availability flag
     "HAS_CORE_BINDINGS",
     # Core types (C++ when available, pure-Python fallback otherwise)
@@ -155,6 +208,34 @@ def dock(
     "Replica",
     "WHAMBin",
     "TIPoint",
+    # Updater
+    "check_for_updates",
+    "UpdateInfo",
+    # Boltz2
+    "Boltz2Client",
+    "Boltz2PredictionResult",
+    "Boltz2AffinityResult",
+    "Boltz2Polymer",
+    "Boltz2Ligand",
+    "PocketConstraint",
+    "PocketContact",
+    "Boltz2Error",
+    # Benchmark
+    "BenchmarkSystem",
+    "MethodResult",
+    "SystemBenchmarkResult",
+    "BenchmarkResult",
+    "BenchmarkSummary",
+    "run_benchmark",
+    "load_benchmark_dataset",
+    "save_benchmark_dataset",
+    # SuperCluster
+    "SuperCluster",
+    # tENCoM results
+    "FlexModeResult",
+    "FlexPopulationResult",
+    "parse_tencom_pdb",
+    "parse_tencom_json",
     # Energy matrix I/O and 256-type encoding (always available — pure Python)
     "EnergyMatrix",
     "MatrixEntry",
@@ -167,14 +248,13 @@ def dock(
     "write_dat_file",
     "SYBYL_TYPE_NAMES",
     "SYBYL_RADII",
+    # GA hyperparameter optimizer
+    "GAOptimizer",
+    "OptimizationResult",
+    # ML rescoring bridge
+    "VoronoiGraphExtractor",
+    "ShannonProfileExtractor",
+    "FeatureBuilder",
+    "ThermoFeatures",
+    "MLRescorer",
 ]
-
-# C++ core extras (only available when compiled)
-if HAS_CORE_BINDINGS:
-    __all__.extend([
-        "State",
-        "BoltzmannLUT",
-        "Replica",
-        "WHAMBin",
-        "TIPoint",
-    ])
