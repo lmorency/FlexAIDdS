@@ -153,6 +153,8 @@ struct ThreadWorkspace {
             optres[o].cf.sas    = 0.0;
             optres[o].cf.totsas = 0.0;
             optres[o].cf.con    = 0.0;
+            optres[o].cf.gist   = 0.0;
+            optres[o].cf.hbond  = 0.0;
             optres[o].cf.elec   = 0.0;
             optres[o].cf.hbond  = 0.0;
             optres[o].cf.gist_desolv = 0.0;
