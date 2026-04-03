@@ -71,7 +71,7 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB) {
         // GIST desolvation grid
         FA->use_gist    = jbool(config, "scoring", "gist_enabled", false) ? 1 : 0;
         FA->gist_weight = jdbl(config, "scoring", "gist_weight", 1.0);
-        FA->gist_grid   = nullptr;
+        FA->gist_evaluator = nullptr;
         // Note: GIST grid loading is handled by the caller after apply_config()
         // when FA->use_gist is enabled and gist_dx_file is non-empty.
     }

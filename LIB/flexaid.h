@@ -373,13 +373,19 @@ struct FA_Global_struct{
 	int   use_gist;                      // enable GIST water displacement scoring
 	char  gist_dg_file[MAX_PATH__];      // path to GIST free-energy .dx file
 	char  gist_dens_file[MAX_PATH__];    // path to GIST density .dx file
-	float gist_weight;                   // weight for GIST term (default 1.0)
+	double gist_weight;                  // weight for GIST term (default 1.0)
 	float gist_dg_cutoff;                // free-energy cutoff (kcal/mol, default 1.0)
 	float gist_rho_cutoff;               // density cutoff (relative to bulk, default 4.8)
 	float gist_divisor;                  // Gaussian sigma = radius/divisor (default 2.0)
+	void* gist_evaluator;               // GISTEvaluator* (cast in vcfunction.cpp)
 
-	int   use_hbond;                     // enable directional H-bond scoring
-	float hbond_weight;                  // weight for H-bond angular correction (default 1.0)
+	int    use_hbond;                    // enable directional H-bond scoring
+	double hbond_weight;                 // energy weight (kcal/mol), default -2.5
+	double hbond_optimal_dist;           // D-A distance (Å), default 2.8
+	double hbond_optimal_angle;          // D-H...A angle (°), default 180
+	double hbond_sigma_dist;             // Gaussian width distance (Å), default 0.4
+	double hbond_sigma_angle;            // Gaussian width angle (°), default 30
+	double hbond_salt_bridge_weight;     // salt bridge weight (kcal/mol), default -5.0
 
 	constraint* constraints;             // list of constraints
 	int num_constraints;                 // constraints counter
@@ -550,21 +556,7 @@ struct FA_Global_struct{
 	std::vector<std::vector<float>> model_coords;  // model_coords[model_idx][atom_idx*3+{0,1,2}]
 	std::vector<double>             model_strain;  // strain energy per model (kcal/mol)
 
-	// ── GIST evaluator (opaque pointer, allocated when use_gist=1) ──
-	void*   gist_evaluator;          // GISTEvaluator* (cast in vcfunction.cpp)
-	// ── Angular-Dependent H-Bond Scoring ──
-	int     use_hbond;               // 0=off (default), 1=on
-	double  hbond_optimal_dist;      // D-A distance (Å), default 2.8
-	double  hbond_optimal_angle;     // D-H...A angle (°), default 180
-	double  hbond_sigma_dist;        // Gaussian width distance (Å), default 0.4
-	double  hbond_sigma_angle;       // Gaussian width angle (°), default 30
-	double  hbond_weight;            // energy weight (kcal/mol), default -2.5
-	double  hbond_salt_bridge_weight;// salt bridge weight (kcal/mol), default -5.0
-
-	// ── GIST Desolvation Scoring ──
-	int     use_gist;                // 0=off (default), 1=on
-	double  gist_weight;             // weighting coefficient (default 1.0)
-	void*   gist_grid;               // pointer to gist::GISTGrid (opaque, NULL when disabled)
+	// (GIST evaluator and H-bond fields are declared above, near use_gist/use_hbond)
 };
 typedef struct FA_Global_struct FA_Global;
 
