@@ -39,6 +39,7 @@ option(FLEXAIDS_USE_EIGEN   "Enable Eigen3 vectorised linear algebra" ON)
 option(FLEXAIDS_USE_256_MATRIX "Enable 256×256 soft contact matrix" ON)
 option(FLEXAIDS_USE_MPI     "Enable MPI distributed parallel docking" OFF)
 option(BUILD_PYTHON_BINDINGS "Build Python bindings via pybind11" OFF)
+option(FLEXAIDS_BUILD_CORE  "Build core executables (FlexAID/FlexAIDdS/tENCoM)" ON)
 
 # ─── platform / SIMD helpers ───────────────────────────────────────────────
 string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" FLEXAIDS_SYSTEM_PROCESSOR_LOWER)
@@ -118,6 +119,13 @@ if(FLEXAIDS_USE_OPENMP)
 endif()
 
 # ─── Eigen3 (header-only; optional but strongly recommended) ──────────────────────
+if(FLEXAIDS_BUILD_CORE AND NOT FLEXAIDS_USE_EIGEN)
+    message(FATAL_ERROR
+        "Core executable build requires Eigen3 headers. "
+        "Either configure with -DFLEXAIDS_USE_EIGEN=ON "
+        "or disable core targets via -DFLEXAIDS_BUILD_CORE=OFF.")
+endif()
+
 if(FLEXAIDS_USE_EIGEN)
     find_package(Eigen3 3.4 QUIET NO_MODULE)
     if(Eigen3_FOUND)
@@ -154,6 +162,15 @@ if(FLEXAIDS_USE_EIGEN)
     endif()
 endif()
 
+if(FLEXAIDS_BUILD_CORE)
+    if(NOT Eigen3_FOUND AND NOT EIGEN3_FOUND)
+        message(FATAL_ERROR
+            "Eigen3 headers are required for core executables but were not found. "
+            "Install Eigen3 locally or provide a reachable mirror for FetchContent. "
+            "For benchmark-only builds use -DFLEXAIDS_BUILD_CORE=OFF.")
+    endif()
+endif()
+
 # ─── pybind11 (for Python bindings) ────────────────────────────────────────
 if(BUILD_PYTHON_BINDINGS)
     find_package(pybind11 CONFIG QUIET)
@@ -187,6 +204,7 @@ else()
 endif()
 
 # ─── executable ─────────────────────────────────────────────────────────
+if(FLEXAIDS_BUILD_CORE)
 add_executable(FlexAID "")
 target_sources(FlexAID PRIVATE
         LIB/top.cpp
@@ -756,6 +774,8 @@ if(ENABLE_DISPATCH_BENCHMARK)
     endif()
     message(STATUS "Dispatch benchmark enabled — build target: benchmark_dispatch")
 endif()
+
+endif() # FLEXAIDS_BUILD_CORE
 
 # ─── Benchmark Dataset Runner ──────────────────────────────────────────────
 option(ENABLE_BENCHMARK_DATASETS "Build benchmark dataset runner" ON)
