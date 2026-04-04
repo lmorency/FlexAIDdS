@@ -26,6 +26,9 @@
 #include "flexaid.h"
 #include "Vcontacts.h"
 
+// Forward declaration for re-entrant GA context
+struct GAContext;
+
 #define MAX_NUM_GENES 100
 #define MAX_NUM_CHROM 1000
 #define MAX_GEN_LENGTH 32                         // in number of bits
@@ -124,6 +127,13 @@ struct GB_Global_struct{
 	int          entropy_interval;    // compute ensemble thermo every N generations (0 = off)
 	int          use_shannon;         // include Shannon configurational entropy in fitness
 
+	// ── Diversity monitoring (entropy collapse mitigation) ──
+	int          diversity_monitoring;            // 0=off (default), 1=on
+	int          diversity_check_interval;        // check every N generations (default: 10)
+	double       diversity_collapse_threshold;    // normalized allele entropy threshold (default: 0.3)
+	double       catastrophic_mutation_fraction;  // fraction of population to re-randomize (default: 0.2)
+	int          catastrophic_mutation_count;     // counter: how many times triggered
+
 };
 typedef struct GB_Global_struct GB_Global;
 
@@ -162,7 +172,7 @@ typedef struct Cluster_struct DPcluster;
 /*234567890123456789012345678901234567890123456789012345678901234567890*/
 /* 1         2         3         4         5         6         7*/
 /***********************************************************************/
-int   GA(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome** chrom_snapshot,genlim** gene_lim,atom* atoms,resid* residue,gridpoint** cleftgrid,char gainpfile[], int* memchrom, cfstr (*target)(FA_Global*,VC_Global*,atom*,resid*,gridpoint*,int, double*));
+int   GA(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome** chrom_snapshot,genlim** gene_lim,atom* atoms,resid* residue,gridpoint** cleftgrid,char gainpfile[], int* memchrom, cfstr (*target)(FA_Global*,VC_Global*,atom*,resid*,gridpoint*,int, double*), GAContext* ctx = nullptr);
 int   check_state(char* pausefile, char* abortfile, char* stopfile, int interval);
 void  QuickSort(chromosome*, int, int, bool);
 void  QuickSort_Clusters(int*, int*, double*, double*, int*, int, int);

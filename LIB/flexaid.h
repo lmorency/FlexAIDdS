@@ -27,6 +27,7 @@
 #include <algorithm>
 #include <utility>
 #include <map>
+#include <cstdint>
 
 //const int endian_t = 1;
 //#define IS_BIG_ENDIAN() ( ( *(char *) &endian_t ) == 0 ) // cross-platform development
@@ -118,6 +119,9 @@ struct cf_str{  // Complementarity Function value structure
 	double wal;    // wall term
 	double sas;    // solvent accessibility surface
 	double elec;   // electrostatic (Coulomb) energy
+	double gist;   // GIST water displacement score
+	double hbond;  // angular-dependent hydrogen bond energy
+	double gist_desolv; // GIST grid-based desolvation energy
 	double totsas; // overall sas of molecule
 	int   rclash; // flag that shows whether the residue is making steric clashes
 };
@@ -205,6 +209,7 @@ struct atom_struct{  // atom structure
 	int    ncons;   // number of constraint for atoms
 	int    isbb;    // atom is a backbone atom
 	int    graph;   // id of graph atom belongs to (ligands only)
+	uint8_t type256; // 256-class atom type (atom_typing_256.h encoding)
 
 	optmap* par;    // if this atom defines a variable (translational/rotational or dihedrals)
 	constraint** cons; // points to constraint , if NULL no constraint to atom
@@ -365,6 +370,23 @@ struct FA_Global_struct{
 	int   use_elec;                      // enable Coulomb electrostatic scoring
 	float dielectric;                    // distance-dependent dielectric constant (default 4.0)
 
+	int   use_gist;                      // enable GIST water displacement scoring
+	char  gist_dg_file[MAX_PATH__];      // path to GIST free-energy .dx file
+	char  gist_dens_file[MAX_PATH__];    // path to GIST density .dx file
+	double gist_weight;                  // weight for GIST term (default 1.0)
+	float gist_dg_cutoff;                // free-energy cutoff (kcal/mol, default 1.0)
+	float gist_rho_cutoff;               // density cutoff (relative to bulk, default 4.8)
+	float gist_divisor;                  // Gaussian sigma = radius/divisor (default 2.0)
+	void* gist_evaluator;               // GISTEvaluator* (cast in vcfunction.cpp)
+
+	int    use_hbond;                    // enable directional H-bond scoring
+	double hbond_weight;                 // energy weight (kcal/mol), default -2.5
+	double hbond_optimal_dist;           // D-A distance (Å), default 2.8
+	double hbond_optimal_angle;          // D-H...A angle (°), default 180
+	double hbond_sigma_dist;             // Gaussian width distance (Å), default 0.4
+	double hbond_sigma_angle;            // Gaussian width angle (°), default 30
+	double hbond_salt_bridge_weight;     // salt bridge weight (kcal/mol), default -5.0
+
 	constraint* constraints;             // list of constraints
 	int num_constraints;                 // constraints counter
 	float interaction_factor;            // interaction constraint factor
@@ -428,6 +450,7 @@ struct FA_Global_struct{
 	int   clashed;                       // skipped individuals due to steric clashes
 	int   omit_buried;                   // skip buried atoms in the Vcontacts procedure
 	int   assume_folded;                 // assume receptor is fully folded — skip NATURaL co-translational/co-transcriptional chain growth
+	double natural_deltaG;              // NATURaL co-translational ΔG (kcal/mol); 0.0 if not run or assume_folded
 	int   vindex;                        // use indexed boxes and atoms in Vcontacts index_proteins
 
 	//rot    rotamer[MAX_ROTLIBSIZE];       // array of rotamer library rotamers OR observed rotamer list
@@ -533,6 +556,8 @@ struct FA_Global_struct{
 	int     model_gene_index;        // index of the model-selection gene in chromosome
 	std::vector<std::vector<float>> model_coords;  // model_coords[model_idx][atom_idx*3+{0,1,2}]
 	std::vector<double>             model_strain;  // strain energy per model (kcal/mol)
+
+	// (GIST evaluator and H-bond fields are declared above, near use_gist/use_hbond)
 };
 typedef struct FA_Global_struct FA_Global;
 

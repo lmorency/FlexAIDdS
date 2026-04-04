@@ -297,7 +297,8 @@ double BindingMode::compute_entropy() const
 double BindingMode::compute_energy() const
 {
 	rebuild_engine();
-	return engine_.compute().free_energy + compute_vibrational_correction();
+	double nat_dg = (Population && Population->FA) ? Population->FA->natural_deltaG : 0.0;
+	return engine_.compute().free_energy + compute_vibrational_correction() + nat_dg;
 }
 
 
@@ -308,6 +309,8 @@ statmech::Thermodynamics BindingMode::get_thermodynamics() const
 	statmech::Thermodynamics td = engine_.compute();
 	// Phase 3: include vibrational free energy correction in reported free energy
 	td.free_energy += compute_vibrational_correction();
+	// NATURaL: include co-translational ΔG (0.0 if assume_folded or not computed)
+	td.free_energy += (Population && Population->FA) ? Population->FA->natural_deltaG : 0.0;
 	return td;
 }
 
@@ -453,6 +456,10 @@ void BindingMode::output_BindingMode(int num_result, char* end_strfile, char* tm
 		safe_remark_cat(remark, tmpremark, &remark_len);
 		snprintf(tmpremark, MAX_REMARK, "REMARK CF.con=%8.5f\n", pCF->con);
 		safe_remark_cat(remark, tmpremark, &remark_len);
+		snprintf(tmpremark, MAX_REMARK, "REMARK CF.gist=%8.5f\n", pCF->gist);
+		safe_remark_cat(remark, tmpremark, &remark_len);
+		snprintf(tmpremark, MAX_REMARK, "REMARK CF.hbond=%8.5f\n", pCF->hbond);
+		safe_remark_cat(remark, tmpremark, &remark_len);
 		snprintf(tmpremark, MAX_REMARK, "REMARK Residue has an overall SAS of %.3f\n", pCF->totsas);
 		safe_remark_cat(remark, tmpremark, &remark_len);
 	}
@@ -534,6 +541,10 @@ void BindingMode::output_dynamic_BindingMode(int num_result, char* end_strfile, 
 			snprintf(tmpremark, MAX_REMARK, "REMARK CF.wal=%8.5f\n", pCF->wal);
 			safe_remark_cat(remark, tmpremark, &remark_len);
 			snprintf(tmpremark, MAX_REMARK, "REMARK CF.con=%8.5f\n", pCF->con);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK CF.gist=%8.5f\n", pCF->gist);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK CF.hbond=%8.5f\n", pCF->hbond);
 			safe_remark_cat(remark, tmpremark, &remark_len);
 			snprintf(tmpremark, MAX_REMARK, "REMARK Residue has an overall SAS of %.3f\n", pCF->totsas);
 			safe_remark_cat(remark, tmpremark, &remark_len);

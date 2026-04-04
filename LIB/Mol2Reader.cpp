@@ -1,11 +1,15 @@
 #include "Mol2Reader.h"
+#include "flexaid.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <cctype>
+#include <cmath>
 #include <string>
 #include <vector>
 #include <map>
+#include <queue>
+#include <set>
 
 /*
  * SYBYL atom type → FlexAID numeric type mapping.
@@ -261,7 +265,7 @@ int read_mol2_ligand(FA_Global* FA, atom** atoms, resid** residue,
         a.coor[0] = a.coor_ori[0] = tmp_atoms[ai].x;
         a.coor[1] = a.coor_ori[1] = tmp_atoms[ai].y;
         a.coor[2] = a.coor_ori[2] = tmp_atoms[ai].z;
-        a.coor_ref = a.coor_ori;
+        a.coor_ref = NULL;
 
         strncpy(a.name, tmp_atoms[ai].name, 4);
         a.name[4] = '\0';
@@ -302,9 +306,84 @@ int read_mol2_ligand(FA_Global* FA, atom** atoms, resid** residue,
         atom& ao = (*atoms)[idx_o];
         atom& at = (*atoms)[idx_t];
 
-        if (ao.bond[0] < 6) { ao.bond[0]++; ao.bond[ao.bond[0]] = at.number; }
-        if (at.bond[0] < 6) { at.bond[0]++; at.bond[at.bond[0]] = ao.number; }
+        if (ao.bond[0] < 6) { ao.bond[0]++; ao.bond[ao.bond[0]] = idx_t; }
+        if (at.bond[0] < 6) { at.bond[0]++; at.bond[at.bond[0]] = idx_o; }
     }
+
+    // Build IC reconstruction tree via BFS from the first ligand atom.
+    // Each atom needs rec[0,1,2] = internal indices of parent, grandparent,
+    // great-grandparent in the spanning tree (0 = use FA->ori reference frame).
+    // recs='m' marks atoms for IC-based Cartesian reconstruction in buildcc.
+    {
+        int fa = (*residue)[FA->res_cnt].fatm[0];
+        int la = (*residue)[FA->res_cnt].latm[0];
+        int n  = la - fa + 1;
+
+        // BFS ancestors: parent_idx[i-fa] = internal index of parent in tree, -1 if root
+        std::vector<int> parent(n, -1);
+        std::vector<int> grandpar(n, -1);
+        std::vector<int> grtgpar(n, -1);
+        std::vector<bool> visited(n, false);
+
+        std::queue<int> q;
+        q.push(fa);
+        visited[fa - fa] = true;
+
+        while (!q.empty()) {
+            int cur = q.front(); q.pop();
+            int ci = cur - fa; // local index
+
+            for (int k = 1; k <= (*atoms)[cur].bond[0]; k++) {
+                int nb = (*atoms)[cur].bond[k]; // internal index of neighbour
+                if (nb < fa || nb > la) continue;
+                int ni = nb - fa;
+                if (!visited[ni]) {
+                    visited[ni] = true;
+                    parent[ni]   = cur;
+                    grandpar[ni] = parent[ci];   // may be -1
+                    grtgpar[ni]  = grandpar[ci]; // may be -1
+                    q.push(nb);
+                }
+            }
+        }
+
+        // Assign rec[] and recs for each ligand atom
+        for (int ai = fa; ai <= la; ai++) {
+            int li = ai - fa;
+            atom& a = (*atoms)[ai];
+            a.recs   = 'm';
+            a.rec[0] = (parent[li]  >= 0) ? parent[li]  : 0;
+            a.rec[1] = (grandpar[li] >= 0) ? grandpar[li] : 0;
+            a.rec[2] = (grtgpar[li] >= 0) ? grtgpar[li] : 0;
+        }
+
+        // Compute IC for all ligand atoms using buildic() which reads rec[]
+        // and current coor[] to produce dis/ang/dih consistent with buildcc.
+        buildic(FA, *atoms, *residue, FA->res_cnt);
+    }
+
+    // Build bonded matrix, shortest paths, and shortflex (mirrors read_lig.cpp)
+    {
+        int fa = (*residue)[FA->res_cnt].fatm[0];
+        int la = (*residue)[FA->res_cnt].latm[0];
+        int n  = la - fa + 1;
+        int bondlist[MAX_ATM_HET];
+        int neighbours[MAX_ATM_HET];
+        int nbonded;
+        for (int ai = fa; ai <= la; ai++) {
+            nbonded = 0;
+            bondedlist(*atoms, ai, FA->bloops, &nbonded, bondlist, neighbours);
+            update_bonded(&(*residue)[FA->res_cnt], n, nbonded, bondlist, neighbours);
+        }
+        shortest_path(&(*residue)[FA->res_cnt], n, *atoms);
+        assign_shortflex(&(*residue)[FA->res_cnt], n, (*residue)[FA->res_cnt].fdih, *atoms);
+    }
+
+    // Finalise optres for the ligand (mirrors read_lig.cpp logic)
+    FA->optres[0].rnum = FA->res_cnt;
+    FA->optres[0].type = 1;
+    FA->optres[0].tot  = FA->num_het_atm;
+    FA->num_optres     = 1;
 
     printf("read_mol2_ligand: loaded %zu atoms into FlexAID structures\n",
            tmp_atoms.size());

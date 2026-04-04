@@ -1,10 +1,11 @@
 // atom_typing_256.h — 8-bit atom type encoding for 256×256 soft contact matrix
 //
 // Extends FlexAID's 40-type SYBYL system to 256 types:
-//   Bits 0–4: base type (32 classes, superset of SYBYL)
-//   Bits 5–6: AM1-BCC charge bin (4 levels: anionic, weak-neg, weak-pos, cationic)
+//   Bits 0–5: base type (64 classes, superset of SYBYL — no rare type collapse)
+//   Bit    6: charge polarity (0 = negative/neutral, 1 = positive)
 //   Bit    7: H-bond donor/acceptor flag
 //
+// All 40 SYBYL atom types map to distinct base types — no Solvent fallback.
 // Includes sybyl_to_base() bridge from FlexAID's 40-type world, context-aware
 // refinements for C_ar_hetadj and C_pi_bridging (NATURaL-critical for indole/
 // tryptamine π-systems), and base_to_sybyl_parent() for the 256→40 projection.
@@ -17,7 +18,7 @@
 
 namespace atom256 {
 
-// ─── base types (bits 0–4, 32 classes) ──────────────────────────────────────
+// ─── base types (bits 0–5, 64 classes) ──────────────────────────────────────
 enum BaseType : uint8_t {
     C_sp         =  0,   // C.1  — triple bond carbon
     C_sp2        =  1,   // C.2  — double bond carbon
@@ -50,38 +51,46 @@ enum BaseType : uint8_t {
     Metal_Zn     = 28,   // ZN
     Metal_Ca     = 29,   // CA
     Metal_Fe     = 30,   // FE
-    Solvent      = 31,   // SOL / DUMMY / other metals
-    BASE_TYPE_COUNT = 32
+    Solvent      = 31,   // SOL (true solvent probe only)
+    // ─── extended types (32–63): no more Solvent fallback ────────────────
+    HAL_Se       = 32,   // SE  — selenocysteine, distinct coordination
+    Metal_Mg     = 33,   // MG  — 6 NRGRank interactions (O.2, O.3, O.CO2, P.3, …)
+    Metal_Sr     = 34,   // SR
+    Metal_Cu     = 35,   // CU  — distinct redox/coordination chemistry
+    Metal_Mn     = 36,   // MN  — 1 NRGRank interaction (O.CO2)
+    Metal_Hg     = 37,   // HG  — toxic heavy metal, distinct binding
+    Metal_Cd     = 38,   // CD  — toxic heavy metal
+    Metal_Ni     = 39,   // NI  — 1 NRGRank interaction (C.AR)
+    Metal_Co     = 40,   // CO.OH — cobalt hydroxide
+    Dummy        = 41,   // DUMMY — placeholder / unknown atom
+    // 42–63: reserved for future types (RNA bases, lipid headgroups, PTMs, …)
+    BASE_TYPE_COUNT = 64
 };
 
-// ─── charge bins (bits 5–6, 4 levels) ───────────────────────────────────────
+// ─── charge polarity (bit 6, 2 levels) ─────────────────────────────────────
 enum ChargeBin : uint8_t {
-    Q_ANIONIC  = 0,   // charge < -0.25
-    Q_WEAK_NEG = 1,   // -0.25 <= charge < 0.0
-    Q_WEAK_POS = 2,   //  0.0  <= charge < 0.25
-    Q_CATIONIC = 3,   // charge >= 0.25
+    Q_NEGATIVE = 0,   // charge < 0.0  (negative or neutral)
+    Q_POSITIVE = 1,   // charge >= 0.0 (positive or neutral)
 };
 
 // ─── encoding / decoding ────────────────────────────────────────────────────
+// Layout: [H:1][Q:1][B:6] = 2 × 2 × 64 = 256 codes
 
 inline constexpr uint8_t encode(uint8_t base_type, uint8_t charge_bin,
                                  bool hbond) noexcept {
     return (static_cast<uint8_t>(hbond) << 7) |
-           ((charge_bin & 0x03) << 5) |
-           (base_type & 0x1F);
+           ((charge_bin & 0x01) << 6) |
+           (base_type & 0x3F);
 }
 
-inline constexpr uint8_t get_base(uint8_t code) noexcept { return code & 0x1F; }
-inline constexpr uint8_t get_charge_bin(uint8_t code) noexcept { return (code >> 5) & 0x03; }
+inline constexpr uint8_t get_base(uint8_t code) noexcept { return code & 0x3F; }
+inline constexpr uint8_t get_charge_bin(uint8_t code) noexcept { return (code >> 6) & 0x01; }
 inline constexpr bool    get_hbond(uint8_t code) noexcept { return (code >> 7) & 0x01; }
 
 // ─── charge quantisation ────────────────────────────────────────────────────
 
 inline ChargeBin quantise_charge(float partial_charge) noexcept {
-    if (partial_charge < -0.25f) return Q_ANIONIC;
-    if (partial_charge <  0.00f) return Q_WEAK_NEG;
-    if (partial_charge <  0.25f) return Q_WEAK_POS;
-    return Q_CATIONIC;
+    return partial_charge < 0.0f ? Q_NEGATIVE : Q_POSITIVE;
 }
 
 // ─── H-bond classification ──────────────────────────────────────────────────
@@ -110,9 +119,10 @@ inline bool is_hbond_capable(uint8_t base_type, float partial_charge,
     }
 }
 
-// ─── SYBYL (1–40) ↔ base type (0–31) mapping ───────────────────────────────
+// ─── SYBYL (1–40) ↔ base type (0–63) mapping ───────────────────────────────
 
 // Forward mapping: SYBYL type → canonical base type (without context refinement)
+// Every SYBYL type maps to a distinct base type — no Solvent fallback.
 inline uint8_t sybyl_to_base(int sybyl_type) noexcept {
     // SYBYL types are 1-indexed (1–40)
     static constexpr uint8_t table[41] = {
@@ -143,40 +153,54 @@ inline uint8_t sybyl_to_base(int sybyl_type) noexcept {
         HAL_Cl,      // 24: CL
         HAL_Br,      // 25: BR
         HAL_I,       // 26: I
-        Solvent,     // 27: SE  → Solvent (rare)
-        Solvent,     // 28: MG  → Solvent (grouped metals)
-        Solvent,     // 29: SR  → Solvent
-        Solvent,     // 30: CU  → Solvent
-        Solvent,     // 31: MN  → Solvent
-        Solvent,     // 32: HG  → Solvent
-        Solvent,     // 33: CD  → Solvent
-        Solvent,     // 34: NI  → Solvent
+        HAL_Se,      // 27: SE
+        Metal_Mg,    // 28: MG
+        Metal_Sr,    // 29: SR
+        Metal_Cu,    // 30: CU
+        Metal_Mn,    // 31: MN
+        Metal_Hg,    // 32: HG
+        Metal_Cd,    // 33: CD
+        Metal_Ni,    // 34: NI
         Metal_Zn,    // 35: ZN
         Metal_Ca,    // 36: CA
         Metal_Fe,    // 37: FE
-        Solvent,     // 38: CO.OH → Solvent
-        Solvent,     // 39: DUMMY
+        Metal_Co,    // 38: CO.OH
+        Dummy,       // 39: DUMMY
         Solvent,     // 40: SOLVENT
     };
-    if (sybyl_type < 0 || sybyl_type > 40) return Solvent;
+    if (sybyl_type < 0 || sybyl_type > 40) return Dummy;
     return table[sybyl_type];
 }
 
 // Reverse mapping: base type → SYBYL parent (1-indexed)
 inline int base_to_sybyl_parent(uint8_t base_type) noexcept {
-    static constexpr int table[32] = {
-         1,  2,  3,  4,  5,        // C types
-         6,  7,  8,  9, 10, 11, 12, // N types
-        13, 14, 15, 16,            // O types
-        17, 18, 19, 20, 21,        // S types
-        22,                        // P.3
-        23, 24, 25, 26,            // halogens
-         4,                        // C_ar_hetadj → C.AR
-         2,                        // C_pi_bridge → C.2
-        35, 36, 37,                // metals
-        40,                        // Solvent
+    static constexpr int table[BASE_TYPE_COUNT] = {
+         1,  2,  3,  4,  5,        // 0–4:   C types
+         6,  7,  8,  9, 10, 11, 12, // 5–11:  N types
+        13, 14, 15, 16,            // 12–15: O types
+        17, 18, 19, 20, 21,        // 16–20: S types
+        22,                        // 21:    P.3
+        23, 24, 25, 26,            // 22–25: halogens
+         4,                        // 26:    C_ar_hetadj → C.AR
+         2,                        // 27:    C_pi_bridge → C.2
+        35, 36, 37,                // 28–30: Zn, Ca, Fe
+        40,                        // 31:    Solvent
+        // ── extended types (32–63) ──
+        27,                        // 32:    HAL_Se → SE
+        28,                        // 33:    Metal_Mg → MG
+        29,                        // 34:    Metal_Sr → SR
+        30,                        // 35:    Metal_Cu → CU
+        31,                        // 36:    Metal_Mn → MN
+        32,                        // 37:    Metal_Hg → HG
+        33,                        // 38:    Metal_Cd → CD
+        34,                        // 39:    Metal_Ni → NI
+        38,                        // 40:    Metal_Co → CO.OH
+        39,                        // 41:    Dummy → DUMMY
+        // 42–63: reserved (map to DUMMY)
+        39, 39, 39, 39, 39, 39, 39, 39, 39, 39,
+        39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39, 39,
     };
-    if (base_type >= 32) return 40;
+    if (base_type >= BASE_TYPE_COUNT) return 39;
     return table[base_type];
 }
 
@@ -219,7 +243,7 @@ inline uint8_t encode_from_sybyl(int sybyl_type, float partial_charge,
 // ─── name table for debugging ───────────────────────────────────────────────
 
 inline const char* base_type_name(uint8_t base) noexcept {
-    static const char* names[32] = {
+    static const char* names[BASE_TYPE_COUNT] = {
         "C.sp", "C.sp2", "C.sp3", "C.ar", "C.cat",
         "N.sp", "N.sp2", "N.sp3", "N.4", "N.ar", "N.am", "N.pl3",
         "O.sp2", "O.sp3", "O.co2", "O.ar",
@@ -228,14 +252,20 @@ inline const char* base_type_name(uint8_t base) noexcept {
         "F", "Cl", "Br", "I",
         "C.ar.het", "C.pi.br",
         "Zn", "Ca", "Fe",
-        "SOL"
+        "SOL",
+        // extended (32–41)
+        "Se", "Mg", "Sr", "Cu", "Mn", "Hg", "Cd", "Ni", "Co.OH", "DUMMY",
+        // reserved (42–63)
+        "?42", "?43", "?44", "?45", "?46", "?47", "?48", "?49",
+        "?50", "?51", "?52", "?53", "?54", "?55", "?56", "?57",
+        "?58", "?59", "?60", "?61", "?62", "?63"
     };
-    return (base < 32) ? names[base] : "???";
+    return (base < BASE_TYPE_COUNT) ? names[base] : "???";
 }
 
 inline const char* charge_bin_name(uint8_t qbin) noexcept {
-    static const char* names[4] = {"anion", "w-neg", "w-pos", "cation"};
-    return (qbin < 4) ? names[qbin] : "???";
+    static const char* names[2] = {"neg", "pos"};
+    return (qbin < 2) ? names[qbin] : "???";
 }
 
 } // namespace atom256

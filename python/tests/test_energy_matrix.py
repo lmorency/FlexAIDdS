@@ -82,10 +82,10 @@ def sample_256_matrix():
 
 class TestEncode256Type:
     def test_basic_encoding(self):
-        code = encode_256_type(base_type=3, charge_bin=2, hbond_flag=True)
+        code = encode_256_type(base_type=3, charge_bin=1, hbond_flag=True)
         base, charge, hbond = decode_256_type(code)
         assert base == 3
-        assert charge == 2
+        assert charge == 1
         assert hbond is True
 
     def test_zero_encoding(self):
@@ -97,11 +97,11 @@ class TestEncode256Type:
         assert hbond is False
 
     def test_max_encoding(self):
-        code = encode_256_type(31, 3, True)
+        code = encode_256_type(63, 1, True)
         assert code == 255
         base, charge, hbond = decode_256_type(code)
-        assert base == 31
-        assert charge == 3
+        assert base == 63
+        assert charge == 1
         assert hbond is True
 
     def test_all_256_codes_roundtrip(self):
@@ -111,10 +111,10 @@ class TestEncode256Type:
             assert reconstructed == code
 
     def test_clamping(self):
-        code = encode_256_type(50, 10, True)  # out of range
+        code = encode_256_type(100, 10, True)  # out of range
         base, charge, hbond = decode_256_type(code)
-        assert 0 <= base <= 31
-        assert 0 <= charge <= 3
+        assert 0 <= base <= 63
+        assert 0 <= charge <= 1
 
 
 # ── SYBYL projection tests ──────────────────────────────────────────────────
@@ -127,14 +127,14 @@ class TestSYBYLProjection:
         assert set(SYBYL_RADII.keys()) == set(range(1, 41))
 
     def test_base_to_sybyl_range(self):
-        for base in range(32):
+        for base in range(64):
             sybyl = base_to_sybyl(base)
             assert 1 <= sybyl <= 40, f"base={base} → sybyl={sybyl} out of range"
 
     def test_sybyl_to_base_range(self):
         for sybyl in range(1, 41):
             base = sybyl_to_base(sybyl)
-            assert 0 <= base <= 31
+            assert 0 <= base <= 63
 
     def test_roundtrip_identity_for_canonical_types(self):
         # First 22 base types should round-trip through sybyl
@@ -317,10 +317,10 @@ class TestProjection:
         # Set all entries for base_type=0 (C_sp, SYBYL=1) to 5.0
         mat = np.zeros((256, 256))
         for code_i in range(256):
-            base_i = code_i & 0x1F
+            base_i = code_i & 0x3F
             if base_i == 0:
                 for code_j in range(256):
-                    base_j = code_j & 0x1F
+                    base_j = code_j & 0x3F
                     if base_j == 0:
                         mat[code_i, code_j] = 5.0
         em = EnergyMatrix(256, mat)

@@ -126,7 +126,7 @@ cfstr ic2cf(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue,
 	bool error;
 	double penalty = vcfunction(FA,VC,atoms,residue,intraclashes,&error);
 	if(error){
-		cfstr cf_clash = { 0.0, 0.0, penalty, 0.0, 1 };
+		cfstr cf_clash = { 0.0, 0.0, penalty, 0.0, 0.0, 0.0, 0.0, 0.0, 1 };
 		return(cf_clash);
 	}
 	
@@ -134,6 +134,9 @@ cfstr ic2cf(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue,
 	cf.wal = 0.0;
 	cf.sas = 0.0;
 	cf.con = 0.0;
+	cf.elec = 0.0;
+	cf.hbond = 0.0;
+	cf.gist_desolv = 0.0;
 	cf.rclash = 0;
     
 	for(i=0;i<FA->num_optres;i++){
@@ -385,13 +388,13 @@ double get_apparent_cf_evalue(cfstr* cf) {
 #else
 	double get_apparent_cf_evalue(cfstr* cf) {
 #endif
-		return cf->com + cf->wal + cf->sas + cf->elec;
+		return cf->com + cf->wal + cf->sas + cf->elec + cf->hbond + cf->gist_desolv;
 	}
-    
+
 #ifdef _WIN32
 	double get_cf_evalue(cfstr* cf) {
 #else
 		double get_cf_evalue(cfstr* cf) {
 #endif
-			return cf->com + cf->wal + cf->sas + cf->con + cf->elec;
+			return cf->com + cf->wal + cf->sas + cf->con + cf->elec + cf->hbond + cf->gist_desolv;
 		}

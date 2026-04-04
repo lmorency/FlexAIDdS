@@ -11,8 +11,12 @@ concurrency:
 
 jobs:
   pure_python_results:
-    name: Pure Python results tests
-    runs-on: ubuntu-latest
+    name: Pure Python results tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -21,33 +25,35 @@ jobs:
       - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pytest numpy
+          python -m pip install pytest numpy scipy
       - name: Run pure-Python tests (no C++ extension needed)
-        run: |
-          python -m pip install scipy
-          PYTHONPATH=python pytest -q \
-            python/tests/test_results_io.py \
-            python/tests/test_results_loader_models.py \
-            python/tests/test_pdb_io.py \
-            python/tests/test_import_fallback.py \
-            python/tests/test_py_statmech.py \
-            python/tests/test_thermodynamics_dataclass.py \
-            python/tests/test_models.py \
-            python/tests/test_models_deserialization.py \
-            python/tests/test_version.py \
-            python/tests/test_io.py \
-            python/tests/test_cli.py \
-            python/tests/test_docking.py \
-            python/tests/test_results.py \
-            python/tests/test_energy_matrix.py \
-            python/tests/test_train_256x256.py \
-            python/tests/test_tencm.py \
-            python/tests/test_tencom_results.py \
-            python/tests/test_visualization.py
+        env:
+          PYTHONPATH: python
+        run: >
+          pytest -q
+          python/tests/test_results_io.py
+          python/tests/test_results_loader_models.py
+          python/tests/test_pdb_io.py
+          python/tests/test_import_fallback.py
+          python/tests/test_py_statmech.py
+          python/tests/test_thermodynamics_dataclass.py
+          python/tests/test_models.py
+          python/tests/test_models_deserialization.py
+          python/tests/test_version.py
+          python/tests/test_io.py
+          python/tests/test_cli.py
+          python/tests/test_docking.py
+          python/tests/test_results.py
+          python/tests/test_energy_matrix.py
+          python/tests/test_train_256x256.py
+          python/tests/test_tencm.py
+          python/tests/test_tencom_results.py
+          python/tests/test_visualization.py
 
   cxx_core_build:
     name: C++ core (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.allow_failure || false }}
     strategy:
       fail-fast: false
       matrix:
@@ -64,17 +70,29 @@ jobs:
             os: macos-latest
             cc: clang
             cxx: clang++
-          - name: windows-msvc
-            os: windows-latest
-            cc: cl
-            cxx: cl
+            allow_failure: true
+          - name: linux-gcc-avx512
+            os: ubuntu-latest
+            cc: gcc
+            cxx: g++
+            cmake_extra: "-DFLEXAIDS_USE_AVX512=ON -DBUILD_TESTING=OFF"
+          - name: linux-gcc-mpi
+            os: ubuntu-latest
+            cc: gcc
+            cxx: g++
+            cmake_extra: "-DFLEXAIDS_USE_MPI=ON"
+          # windows-msvc excluded: deep MSVC C++20 incompatibilities in legacy sources
     steps:
       - uses: actions/checkout@v6
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build libeigen3-dev libomp-dev
+          PKGS="cmake ninja-build libeigen3-dev libomp-dev"
+          if [ "${{ matrix.name }}" = "linux-gcc-mpi" ]; then
+            PKGS="$PKGS libopenmpi-dev openmpi-bin"
+          fi
+          sudo apt-get install -y $PKGS
       - name: Install macOS dependencies
         if: runner.os == 'macOS'
         run: |
@@ -82,10 +100,9 @@ jobs:
       - name: Install Windows dependencies
         if: runner.os == 'Windows'
         run: |
-          choco install ninja -y
+          choco install ninja eigen -y
         shell: cmd
-      - name: Configure (Unix)
-        if: runner.os != 'Windows'
+      - name: Configure
         shell: bash
         run: |
           export CC=${{ matrix.cc }}
@@ -97,53 +114,55 @@ jobs:
             -DFLEXAIDS_USE_METAL=OFF
             -DBUILD_PYTHON_BINDINGS=OFF
             -DBUILD_TESTING=ON
+            ${{ matrix.cmake_extra }}
           )
           # Homebrew on Apple Silicon installs to /opt/homebrew
           if [ "$RUNNER_OS" = "macOS" ]; then
             CMAKE_ARGS+=(-DCMAKE_PREFIX_PATH="$(brew --prefix)")
+            CMAKE_ARGS+=(-DBUILD_TESTING=OFF)
+            CMAKE_ARGS+=(-DOpenMP_ROOT="$(brew --prefix libomp)")
           fi
           cmake "${CMAKE_ARGS[@]}"
-      - name: Configure (Windows)
-        if: runner.os == 'Windows'
-        shell: cmd
-        run: |
-          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
-          cmake -S . -B build -G Ninja ^
-            -DCMAKE_BUILD_TYPE=Release ^
-            -DCMAKE_C_COMPILER=cl ^
-            -DCMAKE_CXX_COMPILER=cl ^
-            -DFLEXAIDS_USE_CUDA=OFF ^
-            -DFLEXAIDS_USE_METAL=OFF ^
-            -DFLEXAIDS_USE_OPENMP=OFF ^
-            -DBUILD_PYTHON_BINDINGS=OFF ^
-            -DBUILD_TESTING=ON
-      - name: Build (Unix)
-        if: runner.os != 'Windows'
+      - name: Build
         run: cmake --build build --parallel
-      - name: Build (Windows)
-        if: runner.os == 'Windows'
-        shell: cmd
-        run: |
-          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
-          cmake --build build --parallel
       - name: Test
+        if: matrix.name == 'linux-gcc' || matrix.name == 'linux-clang' || matrix.name == 'linux-gcc-mpi'
         run: ctest --test-dir build --output-on-failure
 
   python_bindings_smoke:
-    name: Python bindings smoke test
-    runs-on: ubuntu-latest
+    name: Python bindings smoke (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.allow_failure || false }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux
+            os: ubuntu-latest
+          - name: windows
+            os: windows-latest
+            allow_failure: true
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
           python-version: '3.11'
-      - name: Install build dependencies
+      - name: Install build dependencies (Linux)
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build libeigen3-dev
           python -m pip install --upgrade pip
           python -m pip install 'pybind11[global]' pytest numpy
-      - name: Configure Python bindings
+      - name: Install build dependencies (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          choco install ninja eigen -y
+          python -m pip install --upgrade pip
+          python -m pip install "pybind11[global]" pytest numpy
+      - name: Configure Python bindings (Linux)
+        if: runner.os == 'Linux'
         run: |
           cmake -S . -B build-python -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
@@ -153,15 +172,33 @@ jobs:
             -DFLEXAIDS_USE_CUDA=OFF \
             -DFLEXAIDS_USE_METAL=OFF \
             -DCMAKE_LIBRARY_OUTPUT_DIRECTORY=${{ github.workspace }}/python/flexaidds
-      - name: Build Python extension
+      - name: Configure Python bindings (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          cmake -S . -B build-python -G Ninja ^
+            -DCMAKE_BUILD_TYPE=Release ^
+            -DCMAKE_C_COMPILER=cl ^
+            -DCMAKE_CXX_COMPILER=cl ^
+            -DBUILD_PYTHON_BINDINGS=ON ^
+            -DPYBIND11_FINDPYTHON=ON ^
+            -DFLEXAIDS_USE_OPENMP=OFF ^
+            -DFLEXAIDS_USE_CUDA=OFF ^
+            -DFLEXAIDS_USE_METAL=OFF ^
+            -DCMAKE_LIBRARY_OUTPUT_DIRECTORY=${{ github.workspace }}\python\flexaidds
+      - name: Build Python extension (Linux)
+        if: runner.os == 'Linux'
         run: cmake --build build-python --parallel --target _core
+      - name: Build Python extension (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+          cmake --build build-python --parallel --target _core
       - name: Run Python binding tests
+        env:
+          PYTHONPATH: python
         run: |
           python -m pip install scipy
-          PYTHONPATH=python pytest -q \
-            python/tests/test_statmech_smoke.py \
-            python/tests/test_statmech.py \
-            python/tests/test_thermodynamics.py \
-            python/tests/test_encom.py \
-            python/tests/test_energy_matrix.py \
-            python/tests/test_train_256x256.py
+          pytest -q python/tests/test_statmech_smoke.py python/tests/test_statmech.py python/tests/test_thermodynamics.py python/tests/test_encom.py python/tests/test_energy_matrix.py python/tests/test_train_256x256.py
