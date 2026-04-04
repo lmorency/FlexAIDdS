@@ -79,3 +79,7 @@ python/data/training_runs
 # standalone tools / simulation drivers
 !tools
 !tools/**
+# benchmark suite
+!benchmarks
+!benchmarks/**
+benchmarks/**/__pycache__
