@@ -861,10 +861,13 @@ void adapt_prob(GB_Global* GB,double fit1, double fit2, double* mutp, double* cr
 	//crossp/mutp=0 when high=max
 
 	//calculate new probabilities (pc/pm)
-	if (GB->fit_high > GB->fit_avg) *crossp = GB->k1*(GB->fit_max-GB->fit_high)/(GB->fit_max-GB->fit_avg);
+	double denom = GB->fit_max - GB->fit_avg;
+	if (denom < 1e-15) denom = 1e-15;  // prevent division by zero when converged
+
+	if (GB->fit_high > GB->fit_avg) *crossp = GB->k1*(GB->fit_max-GB->fit_high)/denom;
 	else *crossp = GB->k3;
 
-	if (GB->fit_low > GB->fit_avg) *mutp = GB->k2*(GB->fit_max-GB->fit_low)/(GB->fit_max-GB->fit_avg);
+	if (GB->fit_low > GB->fit_avg) *mutp = GB->k2*(GB->fit_max-GB->fit_low)/denom;
 	else *mutp = GB->k4;
 
 	/*
@@ -1156,22 +1159,23 @@ int roullete_wheel(const chromosome* chrom,int n){
 	double tot=0.0;
 	int i;
 
+	if (n <= 0) return 0;
+
 	for(i=0;i<n;i++){tot += chrom[i].fitnes;}
-	//printf("tot=%f\n",tot);
-	//PAUSE;
+
+	// Guard: if total fitness is zero or negative, return random index
+	if (tot <= 0.0) return static_cast<int>(RandomDouble() * n) % n;
 
 	r=RandomDouble()*tot;
 
 	i=0;
 	tot=0.0;
-	while(tot <= r){
+	while(tot <= r && i < n){
 		tot += chrom[i].fitnes;
 		i++;
 	}
-	//printf("r=%f tot=%f i=%d\n",r,tot,i);
 	i--;
-
-	//PAUSE;
+	if (i < 0) i = 0;
 
 	return i;
 }
@@ -2527,20 +2531,16 @@ void crossover(gene *john,gene *mary,int num_genes, int intragenes){
 	/* john and mary are two chromosomes to be crossover at points a and b
 	 */
 
-	/*
-	printf("john before:\n");
-	print_chrom(john,num_genes,0);
-	printf("mary before:\n");
-	print_chrom(mary,num_genes,0);
-	*/
-
 	int i,j;
-	int optr,temp;
+	unsigned int optr;
+	int temp;
 	int gen_a,gen_b,aux_gen;
 	int pnt_a,pnt_b,aux_pnt;
 
 	gen_a=(int)(RandomDouble()*(double)num_genes);
 	gen_b=(int)(RandomDouble()*(double)num_genes);
+	if (gen_a >= num_genes) gen_a = num_genes - 1;
+	if (gen_b >= num_genes) gen_b = num_genes - 1;
 	//printf("gen_a=%d\tgen_b=%d\n",gen_a,gen_b);
 
 
@@ -2596,20 +2596,22 @@ void crossover(gene *john,gene *mary,int num_genes, int intragenes){
 	//printf("gen_a=%d\tpnt_a=%d\tgen_b=%d\tpnt_b=%d\n",gen_a,pnt_a,gen_b,pnt_b);
 
 	for(j=gen_a;j<=gen_b;j++){
-		optr=1;
+		optr=1u;
 		aux_pnt = (j==gen_a)?pnt_a:(MAX_GEN_LENGTH);
 		for(i=0;i<aux_pnt;i++) optr |= (optr << 1);
-		temp = (john[j].to_int32 & ~optr) | (mary[j].to_int32 &  optr);
-		mary[j].to_int32 = (john[j].to_int32 &  optr) | (mary[j].to_int32 & ~optr);
-		john[j].to_int32 = temp;
+		unsigned int uj = static_cast<unsigned int>(john[j].to_int32);
+		unsigned int um = static_cast<unsigned int>(mary[j].to_int32);
+		john[j].to_int32 = static_cast<int32_t>((uj & ~optr) | (um &  optr));
+		mary[j].to_int32 = static_cast<int32_t>((uj &  optr) | (um & ~optr));
 	}
 
 	if(pnt_b > 0){
-		optr=1;
+		optr=1u;
 		for(i=0;i<pnt_b-1;i++) optr |= (optr << 1);
-		temp = (john[gen_b].to_int32 & ~optr) | (mary[gen_b].to_int32 &  optr);
-		mary[gen_b].to_int32 = (john[gen_b].to_int32 &  optr) | (mary[gen_b].to_int32 & ~optr);
-		john[gen_b].to_int32 = temp;
+		unsigned int uj = static_cast<unsigned int>(john[gen_b].to_int32);
+		unsigned int um = static_cast<unsigned int>(mary[gen_b].to_int32);
+		john[gen_b].to_int32 = static_cast<int32_t>((uj & ~optr) | (um &  optr));
+		mary[gen_b].to_int32 = static_cast<int32_t>((uj &  optr) | (um & ~optr));
 	}
 
 	/*
@@ -2632,19 +2634,19 @@ void mutate(gene *john,int num_genes,double mut_rate){
 	   uses it to mutate john.
 	*/
 	int i,j;
-	int optr;
-	int test;
+	unsigned int optr;
+	unsigned int test;
 
 	for(j=0;j<num_genes;j++){
-		optr=0;
-		test=1;
+		optr=0u;
+		test=1u;
 		for(i=0;i<32;i++){
 			if(RandomDouble() < mut_rate){
 				optr |= test;
 			}
 			test <<= 1;
 		}
-		john[j].to_int32 ^= optr;
+		john[j].to_int32 ^= static_cast<int32_t>(optr);
 	}
 
 	return;
