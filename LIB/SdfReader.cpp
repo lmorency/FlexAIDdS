@@ -71,13 +71,14 @@ int read_sdf_ligand(FA_Global* FA, atom** atoms, resid** residue,
 
     // Line 1: molecule name
     if (fgets(buf, sizeof(buf), fp)) {
-        buf[strlen(buf) - 1] = '\0';
+        size_t len = strlen(buf);
+        if (len > 0 && buf[len - 1] == '\n') buf[len - 1] = '\0';
         if (strlen(buf) > 0) sscanf(buf, "%63s", mol_name);
     }
     // Line 2: program/timestamp (skip)
-    fgets(buf, sizeof(buf), fp);
+    if (!fgets(buf, sizeof(buf), fp)) { fclose(fp); return 0; }
     // Line 3: comment (skip)
-    fgets(buf, sizeof(buf), fp);
+    if (!fgets(buf, sizeof(buf), fp)) { fclose(fp); return 0; }
 
     // Line 4: counts
     if (!fgets(buf, sizeof(buf), fp)) {
@@ -93,6 +94,10 @@ int read_sdf_ligand(FA_Global* FA, atom** atoms, resid** residue,
 
     if (natoms <= 0 || natoms > 9999) {
         fprintf(stderr, "ERROR: invalid atom count %d in SDF file\n", natoms);
+        fclose(fp); return 0;
+    }
+    if (nbonds < 0 || nbonds > 9999) {
+        fprintf(stderr, "ERROR: invalid bond count %d in SDF file\n", nbonds);
         fclose(fp); return 0;
     }
 
@@ -212,7 +217,7 @@ int read_sdf_ligand(FA_Global* FA, atom** atoms, resid** residue,
         a.coor[0] = a.coor_ori[0] = satoms[ai].x;
         a.coor[1] = a.coor_ori[1] = satoms[ai].y;
         a.coor[2] = a.coor_ori[2] = satoms[ai].z;
-        a.coor_ref = a.coor_ori;
+        a.coor_ref = NULL;
 
         // Build atom name from element + index
         snprintf(a.name, 5, "%-2s%d", satoms[ai].elem, (ai % 100));
@@ -245,9 +250,15 @@ int read_sdf_ligand(FA_Global* FA, atom** atoms, resid** residue,
         atom& ao = (*atoms)[fa1];
         atom& at = (*atoms)[fa2];
 
-        if (ao.bond[0] < 6) { ao.bond[0]++; ao.bond[ao.bond[0]] = at.number; }
-        if (at.bond[0] < 6) { at.bond[0]++; at.bond[at.bond[0]] = ao.number; }
+        if (ao.bond[0] < 6) { ao.bond[0]++; ao.bond[ao.bond[0]] = fa2; }
+        if (at.bond[0] < 6) { at.bond[0]++; at.bond[at.bond[0]] = fa1; }
     }
+
+    // Finalise optres for the ligand (mirrors read_lig.cpp logic)
+    FA->optres[0].rnum = FA->res_cnt;
+    FA->optres[0].type = 1;
+    FA->optres[0].tot  = FA->num_het_atm;
+    FA->num_optres     = 1;
 
     printf("read_sdf_ligand: loaded %d atoms into FlexAID structures\n", natoms);
     return 1;

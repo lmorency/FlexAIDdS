@@ -45,6 +45,10 @@ void write_contributions(FA_Global*, FILE*, bool) {}
 void buildcc(FA_Global*, atom*, int, int[]) {}
 void buildic(FA_Global*, atom*, resid*, int) {}
 void build_rotamers(FA_Global*, atom**, resid*, rot*) {}
+void bondedlist(atom*, int, int, int*, int*, int*) {}
+void update_bonded(resid*, int, int, int*, int*) {}
+void shortest_path(resid*, int, atom*) {}
+void assign_shortflex(resid*, int, int, atom*) {}
 int check_clash(FA_Global*, atom*, resid*, int, int, int[]) { return 0; }
 void create_rebuild_list(FA_Global*, atom*, resid*) {}
 
@@ -65,6 +69,11 @@ void FastOPTICS_cluster(FA_Global*, GB_Global*, VC_Global*, chromosome*, genlim*
 int write_DensityPeak_rrd(FA_Global*, GB_Global*, const chromosome*, const genlim*,
                           atom*, resid*, gridpoint*, ClusterChrom*, DPcluster*,
                           float*, char[]) { return 0; }
+
+// ---------------------------------------------------------------------------
+// vcfunction.cpp — get_yval (energy matrix lookup)
+// ---------------------------------------------------------------------------
+double get_yval(energy_matrix*, double) { return 0.0; }
 
 // ---------------------------------------------------------------------------
 // partition_grid.cpp, slice_grid.cpp, write_grid/generate_grid

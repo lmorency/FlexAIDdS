@@ -20,7 +20,7 @@ static constexpr double kB   = statmech::kB_kcal;   // 0.001987206 kcal mol⁻¹
 static constexpr double TEMP = 300.0;                // Kelvin
 static constexpr double BETA = 1.0 / (kB * TEMP);   // ~1.677 (kcal/mol)⁻¹
 static constexpr double EPS  = 1e-8;                 // tight tolerance
-static constexpr double EPS_LOOSE = 1e-4;            // loose tolerance for MI
+static constexpr double EPS_LOOSE = 5e-3;            // loose tolerance for MI (sampling noise with small ensembles)
 
 // ===========================================================================
 // TEST FIXTURE

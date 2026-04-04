@@ -1,0 +1,52 @@
+name: Bug report
+description: Report a defect in a supported or experimental repository surface
+title: "[bug] "
+labels:
+  - bug
+body:
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Surface
+      options:
+        - Core 1.0 supported surface
+        - Experimental surface
+        - Unsure
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What is broken?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Exact steps, commands, and inputs.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, compiler, Python version, commit SHA, backend.
+  - type: textarea
+    id: artifacts
+    attributes:
+      label: Logs or artifacts
+      description: Paste logs or link artifacts.

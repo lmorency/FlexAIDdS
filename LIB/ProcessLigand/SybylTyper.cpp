@@ -139,12 +139,12 @@ bool is_hbond_acceptor(const BonMol& mol, int atom_idx) {
 
 // ---------------------------------------------------------------------------
 // 256-type encoding (mirrors atom_typing_256.h encode_from_sybyl)
-// Bits 0-4: base type (5 bits, 32 classes)
-// Bits 5-6: AM1-BCC charge bin (4 levels: <-0.3, -0.3–0, 0–0.3, >0.3)
+// Bits 0-5: base type (6 bits, 64 classes — no Solvent fallback)
+// Bit    6: charge polarity (0 = negative, 1 = positive)
 // Bit    7: H-bond donor/acceptor flag
 // ---------------------------------------------------------------------------
 
-// Internal: SYBYL type → base type (5-bit, 0-31)
+// Internal: SYBYL type → base type (6-bit, 0-63)
 static uint8_t sybyl_to_base(int sybyl_type) {
     // Mapping mirrors atom_typing_256.h sybyl_to_base()
     switch (sybyl_type) {
@@ -171,25 +171,21 @@ static uint8_t sybyl_to_base(int sybyl_type) {
         case 20: return 21; // P.3
         case 21: return 22; // I
         case 22: return 23; // H
-        case 30: return 24; // Fe
-        default: return 0;
+        case 30: return 30; // Fe
+        default: return 41; // Dummy (was 0/Solvent)
     }
 }
 
 uint8_t encode_256(int sybyl_type, float partial_charge, bool is_hbond) {
-    uint8_t base = sybyl_to_base(sybyl_type) & 0x1F; // bits 0-4
+    uint8_t base = sybyl_to_base(sybyl_type) & 0x3F; // bits 0-5
 
-    // Charge bin (bits 5-6)
-    uint8_t charge_bin;
-    if      (partial_charge < -0.3f) charge_bin = 0;
-    else if (partial_charge < 0.0f)  charge_bin = 1;
-    else if (partial_charge < 0.3f)  charge_bin = 2;
-    else                              charge_bin = 3;
+    // Charge polarity (bit 6)
+    uint8_t charge_bin = (partial_charge < 0.0f) ? 0u : 1u;
 
     uint8_t hbond_bit = is_hbond ? 1u : 0u;
 
     return static_cast<uint8_t>(
-        base | (charge_bin << 5) | (hbond_bit << 7)
+        base | (charge_bin << 6) | (hbond_bit << 7)
     );
 }
 

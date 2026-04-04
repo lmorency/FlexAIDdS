@@ -2,7 +2,7 @@
 
 from .models import BindingModeResult, DockingResult, PoseResult
 from .results import load_results
-from .io import is_ion, _ION_RESNAMES
+from .io import is_ion, _ION_RESNAMES, Atom, PDBStructure, read_pdb, write_pdb
 from .docking import Docking, BindingMode, BindingPopulation, Pose
 from .encom import ENCoMEngine, NormalMode, VibrationalEntropy
 from .tencm import (
@@ -60,6 +60,18 @@ except ImportError:
     kB_kcal = 0.001987206   # kcal mol⁻¹ K⁻¹
     kB_SI = 1.380649e-23    # J K⁻¹
     HAS_CORE_BINDINGS = False
+
+# GA hyperparameter optimizer
+from .optimize import GAOptimizer, OptimizationResult
+
+# ML rescoring bridge
+from .ml_rescore import (
+    VoronoiGraphExtractor,
+    ShannonProfileExtractor,
+    FeatureBuilder,
+    ThermoFeatures,
+    MLRescorer,
+)
 
 from .supercluster import SuperCluster
 from .tencom_results import FlexModeResult, FlexPopulationResult, parse_tencom_pdb, parse_tencom_json
@@ -158,9 +170,13 @@ __all__ = [
     "DockingResult",
     # Result loading
     "load_results",
-    # Ion utilities
+    # I/O utilities
     "is_ion",
     "_ION_RESNAMES",
+    "Atom",
+    "PDBStructure",
+    "read_pdb",
+    "write_pdb",
     # Docking
     "Docking",
     "BindingMode",
@@ -232,4 +248,13 @@ __all__ = [
     "write_dat_file",
     "SYBYL_TYPE_NAMES",
     "SYBYL_RADII",
+    # GA hyperparameter optimizer
+    "GAOptimizer",
+    "OptimizationResult",
+    # ML rescoring bridge
+    "VoronoiGraphExtractor",
+    "ShannonProfileExtractor",
+    "FeatureBuilder",
+    "ThermoFeatures",
+    "MLRescorer",
 ]

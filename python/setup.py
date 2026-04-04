@@ -76,5 +76,6 @@ setup(
     author="Louis-Philippe Morency",
     packages=["flexaidds"],
     package_dir={"": "."},
+    package_data={"flexaidds": ["py.typed"]},
     ext_modules=ext_modules,
 )

@@ -207,36 +207,6 @@ double BindingPopulation::get_shannon_entropy() const
 		return 0.0;
 	}
 
-	// Collect free energies per mode and compute Boltzmann weights
-	const double beta = 1.0 / (statmech::kB_kcal * static_cast<double>(Temperature));
-	std::vector<double> log_weights;
-	log_weights.reserve(BindingModes.size());
-	for (const auto& mode : BindingModes)
-		log_weights.push_back(-beta * mode.get_free_energy());
-
-	// Log-sum-exp for numerical stability
-	double log_Z = log_weights[0];
-	for (std::size_t i = 1; i < log_weights.size(); ++i)
-		log_Z = std::max(log_Z, log_weights[i]) +
-		        std::log1p(std::exp(std::min(log_weights[i], log_weights[0]) -
-		                            std::max(log_weights[i], log_weights[0])));
-
-	// Recompute properly with log-sum-exp
-	double lse = *std::max_element(log_weights.begin(), log_weights.end());
-	double sum_exp = 0.0;
-	for (double lw : log_weights)
-		sum_exp += std::exp(lw - lse);
-	double log_sum = lse + std::log(sum_exp);
-
-	double S = 0.0;
-	for (double lw : log_weights)
-	{
-		double p = std::exp(lw - log_sum);
-		if (p > 0.0)
-			S -= p * std::log(p);
-	}
-	// Convert to kcal/mol/K units (multiply by kB)
-	shannonS_population_ = statmech::kB_kcal * S;
 	// Compute Shannon entropy via ShannonThermoStack (energy histogram binning)
 	double shannon_bits = shannon_thermo::compute_shannon_entropy(all_energies);
 
@@ -327,7 +297,8 @@ double BindingMode::compute_entropy() const
 double BindingMode::compute_energy() const
 {
 	rebuild_engine();
-	return engine_.compute().free_energy + compute_vibrational_correction();
+	double nat_dg = (Population && Population->FA) ? Population->FA->natural_deltaG : 0.0;
+	return engine_.compute().free_energy + compute_vibrational_correction() + nat_dg;
 }
 
 
@@ -338,6 +309,8 @@ statmech::Thermodynamics BindingMode::get_thermodynamics() const
 	statmech::Thermodynamics td = engine_.compute();
 	// Phase 3: include vibrational free energy correction in reported free energy
 	td.free_energy += compute_vibrational_correction();
+	// NATURaL: include co-translational ΔG (0.0 if assume_folded or not computed)
+	td.free_energy += (Population && Population->FA) ? Population->FA->natural_deltaG : 0.0;
 	return td;
 }
 
@@ -483,6 +456,10 @@ void BindingMode::output_BindingMode(int num_result, char* end_strfile, char* tm
 		safe_remark_cat(remark, tmpremark, &remark_len);
 		snprintf(tmpremark, MAX_REMARK, "REMARK CF.con=%8.5f\n", pCF->con);
 		safe_remark_cat(remark, tmpremark, &remark_len);
+		snprintf(tmpremark, MAX_REMARK, "REMARK CF.gist=%8.5f\n", pCF->gist);
+		safe_remark_cat(remark, tmpremark, &remark_len);
+		snprintf(tmpremark, MAX_REMARK, "REMARK CF.hbond=%8.5f\n", pCF->hbond);
+		safe_remark_cat(remark, tmpremark, &remark_len);
 		snprintf(tmpremark, MAX_REMARK, "REMARK Residue has an overall SAS of %.3f\n", pCF->totsas);
 		safe_remark_cat(remark, tmpremark, &remark_len);
 	}
@@ -565,6 +542,10 @@ void BindingMode::output_dynamic_BindingMode(int num_result, char* end_strfile, 
 			safe_remark_cat(remark, tmpremark, &remark_len);
 			snprintf(tmpremark, MAX_REMARK, "REMARK CF.con=%8.5f\n", pCF->con);
 			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK CF.gist=%8.5f\n", pCF->gist);
+			safe_remark_cat(remark, tmpremark, &remark_len);
+			snprintf(tmpremark, MAX_REMARK, "REMARK CF.hbond=%8.5f\n", pCF->hbond);
+			safe_remark_cat(remark, tmpremark, &remark_len);
 			snprintf(tmpremark, MAX_REMARK, "REMARK Residue has an overall SAS of %.3f\n", pCF->totsas);
 			safe_remark_cat(remark, tmpremark, &remark_len);
 		}
@@ -641,7 +622,7 @@ Pose::Pose(chromosome* chrom, int index, int iorder, float dist, uint temperatur
 	  model_coords(nullptr),
 	  receptor_strain(0.0)
 {
-	this->boltzmann_weight = pow(E, ((-1.0) * (1 / static_cast<double>(temperature)) * chrom->app_evalue));
+	this->boltzmann_weight = exp((-1.0) * (1 / static_cast<double>(temperature)) * chrom->app_evalue);
 }
 
 

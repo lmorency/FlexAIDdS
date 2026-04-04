@@ -13,6 +13,7 @@
 #include <array>
 #include <memory>
 #include <span>
+#include <unordered_set>
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -33,7 +34,10 @@
 #include "statmech.h"
 #include "tENCoM/tencm.h"
 #include "ShannonThermoStack/ShannonThermoStack.h"
+#include "ga_diversity.h"
 #include "TurboQuant.h"
+#include "GAContext.h"
+#include "GPUContextPool.h"
 #include "fast_optics.hpp"
 #include "NATURaL/NATURaLDualAssembly.h"
 
@@ -67,6 +71,20 @@ static inline void ccbm_inject_strain(FA_Global* FA, chromosome& chrom, const ge
     chrom.app_evalue += strain;
 }
 
+// Forward declarations for functions defined later in this file
+int reproduce(FA_Global* FA,GB_Global* GB,VC_Global* VC, chromosome* chrom, const genlim* gene_lim,
+               atom* atoms,resid* residue,gridpoint* cleftgrid,char* repmodel,
+               double mutprob, double crossprob, int print,
+               std::function<int32_t()> & dice,
+               std::map<std::string, int> & duplicates,
+               cfstr (*target)(FA_Global*,VC_Global*,atom*,resid*,gridpoint*,int,double*),
+               GAContext& ctx);
+
+void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chrom, const genlim* gene_lim,
+                       atom* atoms,resid* residue,gridpoint* cleftgrid,char method[], int pop_size, int print,
+                       cfstr (*target)(FA_Global*,VC_Global*,atom*,resid*,gridpoint*,int,double*),
+                       GAContext& ctx);
+
 /***********************************************************************/
 /* 1         2         3         4         5         6          */
 /*234567890123456789012345678901234567890123456789012345678901234567890*/
@@ -74,7 +92,12 @@ static inline void ccbm_inject_strain(FA_Global* FA, chromosome& chrom, const ge
 /***********************************************************************/
 int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome** chrom_snapshot,
        genlim** gene_lim,atom* atoms,resid* residue,gridpoint** cleftgrid,char gainpfile[],
-       int* memchrom, cfstr (*target)(FA_Global*,VC_Global*,atom*,resid*,gridpoint*,int,double*)){
+       int* memchrom, cfstr (*target)(FA_Global*,VC_Global*,atom*,resid*,gridpoint*,int,double*),
+       GAContext* ctx){
+
+	// Create a stack-local context if none was provided (backward compat)
+	GAContext local_ctx;
+	if (!ctx) ctx = &local_ctx;
 
 	int i;
 	int print=0;
@@ -445,8 +468,27 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 			}
 		}
 
+		// Diversity monitoring: detect and mitigate premature entropy collapse
+		if (GB->diversity_monitoring &&
+		    ((i + 1) % GB->diversity_check_interval == 0)) {
+			auto dm = ga_diversity::compute_diversity(
+				*chrom, GB->num_chrom, GB->num_genes, *gene_lim,
+				GB->diversity_collapse_threshold);
+			if (dm.collapse_detected && (i + 1) < GB->max_generations / 2) {
+				// Only trigger catastrophic mutation in the first half of generations
+				ga_diversity::catastrophic_mutation(
+					*chrom, GB->num_chrom, GB->num_genes, *gene_lim,
+					GB->catastrophic_mutation_fraction, rng);
+				GB->catastrophic_mutation_count++;
+				fprintf(stderr, "[DIVERSITY] Catastrophic mutation #%d at gen %d "
+				        "(H_allele=%.3f, min_gene=%.3f)\n",
+				        GB->catastrophic_mutation_count, i + 1,
+				        dm.allele_entropy, dm.min_gene_entropy);
+			}
+		}
+
 		nrejected = reproduce(FA,GB,VC,(*chrom),(*gene_lim),atoms,residue,(*cleftgrid),
-				      GB->rep_model,GB->mut_rate,GB->cross_rate,print,dice,duplicates,target);
+				      GB->rep_model,GB->mut_rate,GB->cross_rate,print,dice,duplicates,target,*ctx);
 
 		save_snapshot(&(*chrom_snapshot)[i*GB->num_chrom],(*chrom),save_num_chrom,GB->num_genes);
 		n_chrom_snapshot += save_num_chrom;
@@ -603,15 +645,8 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 				printf("  log(Z) approx              = %.6f\n", static_cast<double>(log_Z_approx));
 				printf("  |Δlog(Z)|                  = %.6e\n", pf_err);
 			} else {
-				// ── Legacy scalar-only diagnostic (TQ_DIM=1) ──
+				// ── Legacy scalar-only diagnostic (d=1, skip TurboQuant which requires d>=2) ──
 				constexpr int TQ_DIM = 1;
-				turboquant::TurboQuantMSE tq_mse(TQ_DIM, TQ_BITS, /*seed=*/42);
-				tq_mse.initialize();
-
-				std::vector<float> energies_f(n_chrom_snapshot);
-				for (int s = 0; s < n_chrom_snapshot; ++s)
-					energies_f[s] = static_cast<float>((*chrom_snapshot)[s].evalue);
-
 				size_t raw_bytes = n_chrom_snapshot * sizeof(float);
 				size_t quant_bytes = n_chrom_snapshot * ((TQ_DIM * TQ_BITS + 7) / 8 + sizeof(float));
 				printf("--- TurboQuant ensemble compression (b=%d, d=%d) ---\n", TQ_BITS, TQ_DIM);
@@ -620,7 +655,6 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 				printf("  Quantized size             = %zu bytes\n", quant_bytes);
 				printf("  Compression ratio          = %.1f×\n",
 				       static_cast<double>(raw_bytes) / quant_bytes);
-				printf("  Theoretical MSE bound      = %.6f\n", tq_mse.theoretical_mse());
 			}
 		}
 
@@ -668,13 +702,33 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 				if (!trajectory.empty()) {
 					printf("  Final ΔG (co-translational) = %10.4f kcal/mol\n",
 					       engine.final_deltaG());
-					int n_pause = 0, n_tm = 0;
+					FA->natural_deltaG = engine.final_deltaG();
+
+					int  n_pause        = 0;
+					int  n_tm           = 0;
+					int  n_burst_events = 0;
+					int  max_burst_size = 0;
+					int  n_nuc_seeds    = 0;
+					std::unordered_set<int> seen_bursts, seen_seeds;
+
 					for (const auto& step : trajectory) {
 						if (step.is_pause_site) ++n_pause;
 						if (step.tm_inserted)   ++n_tm;
+						if (step.burst_unit_id >= 0 &&
+						    seen_bursts.insert(step.burst_unit_id).second) {
+							++n_burst_events;
+							if (step.burst_size > max_burst_size)
+								max_burst_size = step.burst_size;
+						}
+						if (step.nucleation_seed_id >= 0 &&
+						    seen_seeds.insert(step.nucleation_seed_id).second)
+							++n_nuc_seeds;
 					}
-					printf("  Pause sites detected        = %d\n", n_pause);
-					printf("  TM insertions               = %d\n", n_tm);
+					printf("  Pause sites detected        = %d\n",    n_pause);
+					printf("  TM insertions               = %d\n",    n_tm);
+					printf("  Burst elongation events     = %d (max %d residues/burst)\n",
+					       n_burst_events, max_burst_size);
+					printf("  Nucleation seeds detected   = %d\n",    n_nuc_seeds);
 				}
 			}
 		}
@@ -830,9 +884,10 @@ int reproduce(FA_Global* FA,GB_Global* GB,VC_Global* VC, chromosome* chrom, cons
                double mutprob, double crossprob, int print,
 	       std::function<int32_t()> & dice,
 	       std::map<std::string, int> & duplicates,
-               cfstr (*target)(FA_Global*,VC_Global*,atom*,resid*,gridpoint*,int,double*)){
+               cfstr (*target)(FA_Global*,VC_Global*,atom*,resid*,gridpoint*,int,double*),
+               GAContext& ctx){
 
-	static int nrejected = 0;
+	int& nrejected = ctx.nrejected;
 
 	int i,j,k;
 	int nnew,p1,p2;
@@ -966,11 +1021,11 @@ int reproduce(FA_Global* FA,GB_Global* GB,VC_Global* VC, chromosome* chrom, cons
 		QuickSort(chrom,0,GB->num_chrom-1,true);
 		for(i=0;i<nnew;i++) chrom[GB->num_chrom-1-i]=chrom[GB->num_chrom+i];
 		calculate_fitness(FA,GB,VC,chrom,gene_lim,atoms,residue,cleftgrid,
-				  GB->fitness_model,GB->num_chrom,print,target);
+				  GB->fitness_model,GB->num_chrom,print,target,ctx);
 	}else if(strcmp(repmodel,"BOOM")==0){
 		// merge and sort both merged populations
 		calculate_fitness(FA,GB,VC,chrom,gene_lim,atoms,residue,cleftgrid,
-				  GB->fitness_model,GB->num_chrom+nnew,print,target);
+				  GB->fitness_model,GB->num_chrom+nnew,print,target,ctx);
 	}
 
 	//printf("number of conformers rejected: %d\n", nrejected);
@@ -1127,9 +1182,10 @@ int roullete_wheel(const chromosome* chrom,int n){
 /***********************************************************************/
 void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chrom, const genlim* gene_lim,
                        atom* atoms,resid* residue,gridpoint* cleftgrid,char method[], int pop_size, int print,
-                       cfstr (*target)(FA_Global*,VC_Global*,atom*,resid*,gridpoint*,int,double*)){
+                       cfstr (*target)(FA_Global*,VC_Global*,atom*,resid*,gridpoint*,int,double*),
+                       GAContext& ctx){
 
-	static int gen_id = 0;
+	int& gen_id = ctx.gen_id;
 	int i;
 
 	// ── TurboQuant QuantizedContactMatrix (TQCM) ─────────────────────────
@@ -1139,8 +1195,8 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 	// compression.  Subsequent calls can use
 	// qcm.approximate_score(type_i, type_j) for fast scoring.
 	// The compressed matrix is rebuilt whenever ntypes changes.
-	static std::unique_ptr<turboquant::QuantizedContactMatrix> s_tqcm;
-	static int s_tqcm_ntypes = 0;
+	auto& s_tqcm = ctx.tqcm;
+	auto& s_tqcm_ntypes = ctx.tqcm_ntypes;
 
 	if (FA->use_tqcm && (gen_id == 0 || s_tqcm_ntypes != FA->ntypes)) {
 		// Sample the energy_matrix spline functions at midpoint (area=0.5)
@@ -1162,7 +1218,8 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 			}
 		}
 
-		s_tqcm = std::make_unique<turboquant::QuantizedContactMatrix>(/*bit_width=*/2);
+		delete s_tqcm;
+		s_tqcm = new turboquant::QuantizedContactMatrix(/*bit_width=*/2);
 		s_tqcm->build(flat_matrix.data());
 		s_tqcm_ntypes = nt;
 
@@ -1255,6 +1312,8 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 				chrom[c].cf.wal    = h_wal[c];
 				chrom[c].cf.sas    = h_sas[c];
 				chrom[c].cf.con    = 0.0;
+				chrom[c].cf.gist   = 0.0;
+				chrom[c].cf.hbond  = 0.0;
 				chrom[c].cf.totsas = 0.0;
 				chrom[c].cf.rclash = (h_wal[c] > 1e4) ? 1 : 0;
 				chrom[c].evalue     = get_cf_evalue(&chrom[c].cf);
@@ -1295,86 +1354,69 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 #endif  // FLEXAIDS_USE_CUDA || FLEXAIDS_USE_METAL
 
 	// Log dispatch decision on first call.
-	static bool dispatch_logged = false;
 	[[maybe_unused]] const auto backend = flexaids::select_backend();
-	if (!dispatch_logged) {
+	if (!ctx.dispatch_logged) {
 		auto report = flexaids::get_dispatch_report();
 		fprintf(stderr, "[FlexAIDdS] Hardware dispatch: %s (%s)\n",
 		        flexaids::backend_name(report.selected), report.reason.c_str());
-		dispatch_logged = true;
+		ctx.dispatch_logged = true;
 	}
 
 	[[maybe_unused]] bool gpu_handled = false;
 
 #ifdef FLEXAIDS_USE_CUDA
 	if (backend == flexaids::HardwareBackend::CUDA) {
-		// Persistent CUDA context: atom data uploaded once; re-init only when
-		// the system geometry changes (different run or atom count changes).
-		static CudaEvalCtx* s_cuda_ctx    = nullptr;
-		static int           s_cuda_natom = 0;
-		static int           s_cuda_ntype = 0;
-
 		const int n_atoms = FA->atm_cnt_real;
 		const int n_types = FA->ntypes;
 		const int n_genes = GB->num_genes;
 		const int ns      = CUDA_EMAT_SAMPLES;
 
-		if (!s_cuda_ctx || s_cuda_natom != n_atoms || s_cuda_ntype != n_types) {
-			if (s_cuda_ctx) cuda_eval_shutdown(s_cuda_ctx);
-
+		// Thread-safe GPU context pool — shared across concurrent GA instances
+		auto& pool = GPUContextPool::instance();
+		auto handle = pool.acquire_cuda(n_atoms, n_types, [&]() {
 			auto ad = prepare_gpu_atoms();
 			std::vector<float> h_emat = build_emat_sampled(n_types, ns);
-
-			s_cuda_ctx    = cuda_eval_init(n_atoms, n_types, MAX_NUM_CHROM,
-			                               n_genes, ad.lig_first, ad.lig_last,
-			                               FA->permeability,
-			                               ad.xyz.data(), ad.type.data(),
-			                               ad.radius.data(), h_emat.data());
-			s_cuda_natom  = n_atoms;
-			s_cuda_ntype  = n_types;
-		}
+			return cuda_eval_init(n_atoms, n_types, MAX_NUM_CHROM,
+			                     n_genes, ad.lig_first, ad.lig_last,
+			                     FA->permeability,
+			                     ad.xyz.data(), ad.type.data(),
+			                     ad.radius.data(), h_emat.data());
+		});
 
 		std::vector<double> h_genes = pack_genes_batch(n_genes);
 		std::vector<double> h_com(pop_size), h_wal(pop_size), h_sas(pop_size);
-		cuda_eval_batch(s_cuda_ctx, pop_size, n_genes, h_genes.data(),
+		cuda_eval_batch(handle.ctx, pop_size, n_genes, h_genes.data(),
 		                h_com.data(), h_wal.data(), h_sas.data());
 		unpack_gpu_results(h_com, h_wal, h_sas);
+		pool.release_cuda(handle);
 		gpu_handled = true;
 	}
 #endif
 
 #ifdef FLEXAIDS_USE_METAL
 	if (!gpu_handled && backend == flexaids::HardwareBackend::METAL) {
-		// Persistent Metal context (same caching strategy as CUDA).
-		static MetalEvalCtx* s_metal_ctx   = nullptr;
-		static int            s_metal_natom = 0;
-		static int            s_metal_ntype = 0;
-
 		const int n_atoms = FA->atm_cnt_real;
 		const int n_types = FA->ntypes;
 		const int n_genes = GB->num_genes;
 		const int ns      = METAL_EMAT_SAMPLES;
 
-		if (!s_metal_ctx || s_metal_natom != n_atoms || s_metal_ntype != n_types) {
-			if (s_metal_ctx) metal_eval_shutdown(s_metal_ctx);
-
+		auto& pool = GPUContextPool::instance();
+		auto handle = pool.acquire_metal(n_atoms, n_types, [&]() {
 			auto ad = prepare_gpu_atoms();
 			std::vector<float> h_emat = build_emat_sampled(n_types, ns);
-
-			s_metal_ctx   = metal_eval_init(n_atoms, n_types, MAX_NUM_CHROM,
-			                                ad.lig_first, ad.lig_last,
-			                                FA->permeability,
-			                                ad.xyz.data(), ad.type.data(),
-			                                ad.radius.data(), h_emat.data(), ns);
-			s_metal_natom = n_atoms;
-			s_metal_ntype = n_types;
-		}
+			return metal_eval_init(n_atoms, n_types, MAX_NUM_CHROM,
+			                      ad.lig_first, ad.lig_last,
+			                      FA->permeability,
+			                      ad.xyz.data(), ad.type.data(),
+			                      ad.radius.data(), h_emat.data(), ns);
+		});
 
 		std::vector<double> h_genes = pack_genes_batch(n_genes);
 		std::vector<double> h_com(pop_size), h_wal(pop_size), h_sas(pop_size);
-		metal_eval_batch(s_metal_ctx, pop_size, n_genes, h_genes.data(),
+		metal_eval_batch(handle.ctx, pop_size, n_genes, h_genes.data(),
 		                 h_com.data(), h_wal.data(), h_sas.data());
 		unpack_gpu_results(h_com, h_wal, h_sas);
+		pool.release_metal(handle);
 		gpu_handled = true;
 	}
 #endif
@@ -1463,10 +1505,10 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 
 		// Per-thread mutable atom arrays.
 		std::vector<std::vector<atom>>  tl_atoms(n_thr,
-		    std::vector<atom>(atoms, atoms + natm));
+		    std::vector<atom>(atoms, atoms + natm + 1));
 		// Per-thread residue arrays (pointer fields shared read-only; .rot private).
 		std::vector<std::vector<resid>> tl_res(n_thr,
-		    std::vector<resid>(residue, residue + nres));
+		    std::vector<resid>(residue, residue + nres + 1));
 		// Per-thread FA copies with redirected mutable scratch buffers.
 		std::vector<FA_Global>           tl_fa(n_thr, *FA);
 		std::vector<std::vector<int>>    tl_contacts(n_thr, std::vector<int>(MAX_ATOM_NUMBER, 0));
@@ -1544,8 +1586,18 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 					tl_res[tid][ri] = residue[ri];
 				}
 			} else {
-				std::copy(atoms,   atoms + natm,   tl_atoms[tid].begin());
-				std::copy(residue, residue + nres, tl_res[tid].begin());
+				std::copy(atoms,   atoms + natm + 1,   tl_atoms[tid].begin());
+				std::copy(residue, residue + nres + 1, tl_res[tid].begin());
+			}
+			// Redirect per-thread atom optres pointers to per-thread optres array.
+			// atoms[j].optres points to FA->optres (original); redirect to tl_optres[tid]
+			// so vcfunction scoring writes to (and ic2cf reads from) the same buffer.
+			for (int ai = 1; ai <= natm; ++ai) {
+				atom& a = tl_atoms[tid][ai];
+				if (a.optres) {
+					ptrdiff_t oidx = a.optres - FA->optres;
+					a.optres = &tl_optres[tid][oidx];
+				}
 			}
 			// optres cf fields are cleared by vcfunction itself; pre-clear for safety.
 			for (int o = 0; o < nopt; ++o) {
@@ -1554,6 +1606,10 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 				tl_optres[tid][o].cf.sas    = 0.0;
 				tl_optres[tid][o].cf.totsas = 0.0;
 				tl_optres[tid][o].cf.con    = 0.0;
+				tl_optres[tid][o].cf.gist   = 0.0;
+				tl_optres[tid][o].cf.elec   = 0.0;
+				tl_optres[tid][o].cf.hbond  = 0.0;
+				tl_optres[tid][o].cf.gist_desolv = 0.0;
 				tl_optres[tid][o].cf.rclash = 0;
 			}
 			tl_vc[tid].numcarec = 0;
@@ -1989,8 +2045,8 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 		const int nctb  = FA->ntypes * FA->ntypes;
 		const int range = GB->num_chrom - popoffset;
 
-		std::vector<std::vector<atom>>   p_atoms(n_thr, std::vector<atom>(atoms, atoms + natm));
-		std::vector<std::vector<resid>>  p_res(n_thr, std::vector<resid>(residue, residue + nres));
+		std::vector<std::vector<atom>>   p_atoms(n_thr, std::vector<atom>(atoms, atoms + natm + 1));
+		std::vector<std::vector<resid>>  p_res(n_thr, std::vector<resid>(residue, residue + nres + 1));
 		std::vector<FA_Global>           p_fa(n_thr, *FA);
 		std::vector<std::vector<int>>    p_contacts(n_thr, std::vector<int>(MAX_ATOM_NUMBER, 0));
 		std::vector<std::vector<float>>  p_contrib(n_thr, std::vector<float>(nctb, 0.0f));
@@ -2092,8 +2148,16 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 					p_res[tid][ri] = residue[ri];
 				}
 			} else {
-				std::copy(atoms,   atoms + natm,   p_atoms[tid].begin());
-				std::copy(residue, residue + nres, p_res[tid].begin());
+				std::copy(atoms,   atoms + natm + 1,   p_atoms[tid].begin());
+				std::copy(residue, residue + nres + 1, p_res[tid].begin());
+			}
+			// Redirect per-thread atom optres pointers to per-thread optres array.
+			for (int ai = 1; ai <= natm; ++ai) {
+				atom& a = p_atoms[tid][ai];
+				if (a.optres) {
+					ptrdiff_t oidx = a.optres - FA->optres;
+					a.optres = &p_optres[tid][oidx];
+				}
 			}
 			for (int o = 0; o < nopt; ++o) {
 				p_optres[tid][o].cf.com    = 0.0;
@@ -2101,6 +2165,10 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 				p_optres[tid][o].cf.sas    = 0.0;
 				p_optres[tid][o].cf.totsas = 0.0;
 				p_optres[tid][o].cf.con    = 0.0;
+				p_optres[tid][o].cf.gist   = 0.0;
+				p_optres[tid][o].cf.elec   = 0.0;
+				p_optres[tid][o].cf.hbond  = 0.0;
+				p_optres[tid][o].cf.gist_desolv = 0.0;
 				p_optres[tid][o].cf.rclash = 0;
 			}
 			p_vc[tid].numcarec = 0;
@@ -2116,8 +2184,9 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 		}
 	}
 
-	// sort and calculate fitness
-	calculate_fitness(FA,GB,VC,chrom,gene_lim,atoms,residue,cleftgrid,GB->fitness_model,GB->num_chrom,print,target);
+	// sort and calculate fitness (use a local GAContext for initial population)
+	GAContext pop_ctx;
+	calculate_fitness(FA,GB,VC,chrom,gene_lim,atoms,residue,cleftgrid,GB->fitness_model,GB->num_chrom,print,target,pop_ctx);
 
 	return;
 }

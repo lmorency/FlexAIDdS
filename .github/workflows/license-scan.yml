@@ -1,0 +1,38 @@
+name: License Compliance
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  scan:
+    name: License scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Install scancode-toolkit
+        run: pip install scancode-toolkit
+
+      - name: Run license scan
+        run: |
+          scancode --license --package --info \
+            --json-pp license-report.json \
+            --timeout 120 \
+            --processes 2 \
+            LIB/ python/ tests/ \
+            || true
+
+      - name: Check for forbidden licenses
+        run: python scripts/check_licenses.py license-report.json
+
+      - name: Upload license report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: license-report
+          path: license-report.json

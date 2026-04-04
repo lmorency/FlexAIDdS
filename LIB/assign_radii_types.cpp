@@ -8,6 +8,14 @@ void assign_radii_types(FA_Global* FA, atom* atoms, resid* residue)
 {
     for(int i=1; i<=FA->res_cnt; i++)
     {
+        // Ligand residues (type=1) already have correct radii set by the
+        // MOL2/SDF reader (sybyl_radius / element_radius). The type numbering
+        // used here is calibrated for NUCLEOTIDES.def receptor types, which
+        // differs from the sybyl_to_flexaid_type scheme used for ligands.
+        // Overwriting ligand radii here would assign wrong values (e.g. C.ar
+        // type 3 would get 1.88 Å instead of 1.70 Å). Skip ligand residues.
+        if (residue[i].type == 1) continue;
+
         for(int j=residue[i].fatm[0]; j<=residue[i].latm[0]; j++)
         {
             switch(atoms[j].type){

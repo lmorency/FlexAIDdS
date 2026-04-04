@@ -62,12 +62,28 @@ inline constexpr double MEAN_NT_RATE_ECOLI   = 25.0;  // nt/s mRNA in vivo (Sci.
 inline constexpr double MEAN_NT_RATE_HUMAN   = 25.0;  // nt/s (Jonkers 2014)
 inline constexpr double K_RNAP_INI_DEFAULT   = 0.05;  // initiation rate (s⁻¹)
 inline constexpr double K_RNAP_TERM_DEFAULT  = 5.0;   // termination rate (s⁻¹)
+// Pause threshold for ribosome: rate < mean × 0.30 → co-translational folding window
+// (Pechmann & Frydman 2013 Nat. Struct. Mol. Biol.)
+inline constexpr double RIBOSOME_PAUSE_THRESHOLD = 0.30;
 // Pause threshold for RNAP: rate < mean × 0.15 → co-transcriptional folding window
 // (RNAP pauses are more extreme than ribosome pauses; Neuman 2003 Science 298:1152)
 inline constexpr double RNAP_PAUSE_THRESHOLD = 0.15;
 
 // ─── organism context ─────────────────────────────────────────────────────────
 enum class Organism { EcoliK12, HumanHEK293 };
+
+// ─── burst elongation unit ────────────────────────────────────────────────────
+// A burst unit is a maximal run of consecutive fast codons (k_el > threshold×mean)
+// after tunnel exit. Multiple residues in a burst elongate quasi-simultaneously
+// before co-translational folding can compete (dwell_i << 1/k_fold).
+struct BurstUnit {
+    int    start_residue;    // 0-based first residue of burst
+    int    end_residue;      // 0-based last residue (inclusive)
+    int    n_residues;       // monomers effectively added "at once"
+    double total_dwell;      // Σ 1/k_el[i] for i in burst (s)
+    double mean_k;           // harmonic mean elongation rate in burst (s⁻¹)
+    bool   follows_pause;    // true if immediately preceded by a pause site
+};
 
 // ─── codon rate table ─────────────────────────────────────────────────────────
 // Maps 3-letter codon string → elongation rate (s⁻¹).
@@ -94,7 +110,13 @@ public:
 
     // Identify "pause sites": codons with rate < mean_rate × threshold
     std::vector<int> pause_sites(const std::vector<std::string>& codons,
-                                  double threshold = 0.3) const;
+                                  double threshold = RIBOSOME_PAUSE_THRESHOLD) const;
+
+    // Most-Frequent Codon (MFC) mapping: amino-acid 1-letter code → dominant codon.
+    // Derived from the highest-rate codon per AA in each organism's rate table.
+    // Enables per-residue elongation rates for protein chains without explicit
+    // DNA sequence (replaces uniform mean-rate fallback).
+    static std::unordered_map<char, std::string> aa_to_mfc(Organism org);
 
     Organism organism;
     double   mean_rate_aa_per_s;
@@ -115,10 +137,11 @@ struct MasterEqState {
     int                 n_residues;
     double              t_current;           // s
     std::vector<double> P;                   // P[n] = probability at position n
-    std::vector<double> t_arrival;           // mean first-passage time to each n (s)
+    std::vector<double> t_arrival;           // leading-edge time (P[n] first > 1e-3) (s)
     std::vector<double> k_el;               // elongation rates (s⁻¹)
     double              k_ini;
     double              k_ter;
+    double              t_median_terminal = -1.0; // time when P[N] ≥ 0.5 (median)
 
     // Fraction of ribosomes that have reached position n at time t_current
     double fraction_reached(int n) const;
@@ -156,7 +179,7 @@ public:
         double t_available;    // time available for folding (s) = 1/k_el(n)
         double k_fold;         // estimated folding rate at this window (s⁻¹)
         double p_folded_cotrans; // k_fold / (k_fold + k_el)
-        bool   is_pause_site;   // rate < mean × 0.3
+        bool   is_pause_site;   // rate < mean × RIBOSOME_PAUSE_THRESHOLD
     };
     std::vector<FoldingWindow> folding_windows(double k_fold_base = K_FOLD_DEFAULT) const;
 
@@ -176,7 +199,7 @@ private:
     std::vector<double> k_el_;         // k_el_[n] = elongation rate for residue n
     double              k_ini_;
     double              k_ter_;
-    std::vector<int>    pause_sites_;  // indices where k_el < 0.3 * mean
+    std::vector<int>    pause_sites_;  // indices where k_el < RIBOSOME_PAUSE_THRESHOLD * mean
     double              mean_rate_;
 };
 
