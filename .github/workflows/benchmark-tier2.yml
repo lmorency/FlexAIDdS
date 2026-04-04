@@ -326,8 +326,7 @@ jobs:
   benchmark-mpi:
     name: Tier-2 MPI Distributed (${{ matrix.nodes }} nodes)
     needs: build
-    # Uncomment and configure when self-hosted MPI runners are available:
-    # runs-on: [self-hosted, hpc, mpi]
+    runs-on: ubuntu-latest   # placeholder; switch to [self-hosted, hpc, mpi] when available
     if: false   # Disabled until self-hosted HPC runner is configured
     timeout-minutes: 180
     strategy:
