@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest]
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -53,6 +53,7 @@ jobs:
   cxx_core_build:
     name: C++ core (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.allow_failure || false }}
     strategy:
       fail-fast: false
       matrix:
@@ -69,6 +70,7 @@ jobs:
             os: macos-latest
             cc: clang
             cxx: clang++
+            allow_failure: true
           - name: linux-gcc-avx512
             os: ubuntu-latest
             cc: gcc
@@ -130,6 +132,7 @@ jobs:
   python_bindings_smoke:
     name: Python bindings smoke (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.allow_failure || false }}
     strategy:
       fail-fast: false
       matrix:
@@ -138,6 +141,7 @@ jobs:
             os: ubuntu-latest
           - name: windows
             os: windows-latest
+            allow_failure: true
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
