@@ -75,6 +75,14 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
 ```
 
+> Core executable builds (`FlexAID`, `FlexAIDdS`, `tENCoM`) require Eigen3 headers.
+> If you are in a restricted/offline environment, you can still build benchmark tooling only:
+>
+> ```bash
+> cmake -S . -B build -DFLEXAIDS_BUILD_CORE=OFF -DBUILD_TESTING=OFF
+> cmake --build build --parallel --target benchmark_datasets
+> ```
+
 ### Run a basic docking workflow
 
 ```bash
