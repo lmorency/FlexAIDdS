@@ -310,6 +310,8 @@ target_sources(FlexAID PRIVATE
         LIB/hardware_detect.cpp
         LIB/hardware_dispatch.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
+        # ── Shannon Thermodynamic GA (entropy-collapse driver) ──
+        LIB/shannon_ga.cpp
         LIB/LigandRingFlex/RingConformerLibrary.cpp
         LIB/LigandRingFlex/SugarPucker.cpp
         LIB/LigandRingFlex/LigandRingFlex.cpp
@@ -1000,6 +1002,7 @@ if(BUILD_TESTING)
         LIB/BindingMode.cpp
         LIB/fast_optics.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
+        LIB/shannon_ga.cpp
         LIB/CleftDetector.cpp
         LIB/NATURaL/NATURaLDualAssembly.cpp
         LIB/NATURaL/RibosomeElongation.cpp
@@ -1030,6 +1033,53 @@ if(BUILD_TESTING)
     endif()
     flexaids_configure_msvc_test(test_gaboom)
     add_test(NAME GABoomTests COMMAND test_gaboom)
+
+    # test_shannon_ga — Shannon Thermodynamic GA entropy-collapse tests
+    add_executable(test_shannon_ga
+        tests/test_shannon_ga.cpp
+        tests/stubs.cpp
+        LIB/shannon_ga.cpp
+        LIB/gaboom.cpp
+        LIB/GAContext.cpp
+        LIB/Vcontacts.cpp
+        LIB/statmech.cpp
+        LIB/TurboQuant.cpp
+        LIB/geometry.cpp
+        LIB/tENCoM/tencm.cpp
+        LIB/encom.cpp
+        LIB/BindingMode.cpp
+        LIB/fast_optics.cpp
+        LIB/ShannonThermoStack/ShannonThermoStack.cpp
+        LIB/CleftDetector.cpp
+        LIB/NATURaL/NATURaLDualAssembly.cpp
+        LIB/NATURaL/RibosomeElongation.cpp
+        LIB/NATURaL/TransloconInsertion.cpp
+        LIB/NATURaL/NucleationDetector.cpp
+        LIB/hardware_dispatch.cpp
+        LIB/hardware_detect.cpp
+    )
+    target_include_directories(test_shannon_ga PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/tENCoM
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ShannonThermoStack
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect
+    )
+    target_link_libraries(test_shannon_ga PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_shannon_ga PRIVATE /O2)
+    else()
+        target_compile_options(test_shannon_ga PRIVATE -O2)
+    endif()
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(test_shannon_ga PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
+        target_link_libraries(test_shannon_ga PRIVATE Eigen3::Eigen)
+        target_compile_definitions(test_shannon_ga PRIVATE FLEXAIDS_HAS_EIGEN)
+    endif()
+    flexaids_configure_msvc_test(test_shannon_ga)
+    add_test(NAME ShannonGATests COMMAND test_shannon_ga)
 
     # test_vcontacts — Voronoi contact scoring math unit tests
     add_executable(test_vcontacts
