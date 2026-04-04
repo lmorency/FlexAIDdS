@@ -421,7 +421,7 @@ def lbfgs_refine(matrix: np.ndarray,
 
     logger.info("L-BFGS refinement: %d parameters, %d complexes", n_params, n_cpx)
     result = minimize(objective, x0, method='L-BFGS-B',
-                      options={'maxiter': max_iter, 'disp': False})
+                      options={'maxiter': max_iter})
 
     # Reconstruct full matrix from optimised upper triangle
     opt_matrix = np.zeros((256, 256), dtype=np.float64)
