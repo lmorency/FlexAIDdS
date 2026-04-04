@@ -1621,6 +1621,7 @@ flexaids_configure_simd(test_cavity_detect)
     # ── Mol2Reader / SdfReader tests ──────────────────────────────────────
     add_executable(test_mol2_sdf_reader
         tests/test_mol2_sdf_reader.cpp
+        tests/stubs.cpp
         LIB/Mol2Reader.cpp
         LIB/SdfReader.cpp
     )
@@ -1693,6 +1694,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/NATURaLDualAssembly.cpp
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
+        LIB/NATURaL/NucleationDetector.cpp
         LIB/hardware_dispatch.cpp
         LIB/hardware_detect.cpp
     )

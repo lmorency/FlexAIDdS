@@ -363,23 +363,6 @@ std::vector<DualAssemblyEngine::GrowthStep> DualAssemblyEngine::run() {
         t_arrival[n] = t_arrival[n - 1] + inv_k;
     }
 
-    // Tunnel length depends on mode
-    const double tunnel_len = config_.use_ribosome_speed
-                              ? ribosome::TUNNEL_LENGTH_AA
-                              : ribosome::RNAP_TUNNEL_NT;
-
-    // Pause threshold
-    const double pause_threshold = config_.use_ribosome_speed ? 0.30 : ribosome::RNAP_PAUSE_THRESHOLD;
-
-    // Harmonic mean rate for pause detection
-    double hmean_rate = elong_model.elongation_rates().empty()
-                        ? 16.5
-                        : [&](){
-                            double inv_sum = 0; int cnt = 0;
-                            for (double k : k_el) { if (k > 1e-9) { inv_sum += 1.0/k; ++cnt; } }
-                            return cnt > 0 ? cnt / inv_sum : 16.5;
-                          }();
-
     // ── Burst elongation detection ────────────────────────────────────────────
     // Identifies multi-residue fast-codon runs where folding cannot compete.
     auto burst_units = detect_burst_units(
