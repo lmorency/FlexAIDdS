@@ -206,6 +206,11 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DFLEXAIDS_USE_METAL=ON
 ```
 
+```bash
+# Distributed validation (parallel C++ tests + MPI benchmark smoke run)
+MPI_PROCS=4 CTEST_JOBS=8 ./scripts/run_distributed_validation.sh
+```
+
 ### CMake Options
 
 | Option | Default | Description |
