@@ -130,6 +130,10 @@ if(FLEXAIDS_USE_EIGEN)
         endif()
         if(EIGEN3_FOUND)
             message(STATUS "Eigen3 found via pkg-config")
+            add_library(Eigen3::Eigen INTERFACE IMPORTED)
+            set_target_properties(Eigen3::Eigen PROPERTIES
+                INTERFACE_INCLUDE_DIRECTORIES "${EIGEN3_INCLUDE_DIRS}")
+            set(Eigen3_FOUND TRUE)
         else()
             # FetchContent fallback — download header-only Eigen tarball
             # Use FetchContent_Populate (not MakeAvailable) to avoid pulling
@@ -149,17 +153,6 @@ if(FLEXAIDS_USE_EIGEN)
         endif()
     endif()
 endif()
-
-# ─── nlohmann/json (header-only JSON parser, MIT license) ──────────────────
-include(FetchContent)
-FetchContent_Declare(
-    nlohmann_json
-    GIT_REPOSITORY https://github.com/nlohmann/json.git
-    GIT_TAG        v3.12.0
-    GIT_SHALLOW    TRUE
-)
-FetchContent_MakeAvailable(nlohmann_json)
-message(STATUS "nlohmann/json fetched — JSON config support enabled")
 
 # ─── pybind11 (for Python bindings) ────────────────────────────────────────
 if(BUILD_PYTHON_BINDINGS)
@@ -360,9 +353,6 @@ elseif(FLEXAIDS_USE_EIGEN AND EIGEN3_FOUND)
     target_include_directories(FlexAID PRIVATE ${EIGEN3_INCLUDE_DIRS})
     target_compile_definitions(FlexAID PRIVATE FLEXAIDS_HAS_EIGEN)
 endif()
-
-# ─── nlohmann/json link ────────────────────────────────────────────────
-target_link_libraries(FlexAID PRIVATE nlohmann_json::nlohmann_json)
 
 # ─── OpenMP link ────────────────────────────────────────────────────────
 if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
@@ -682,7 +672,6 @@ if(BUILD_FLEXAIDDS_FAST)
     endif()
 
     flexaids_configure_simd(FlexAIDdS)
-    target_link_libraries(FlexAIDdS PRIVATE nlohmann_json::nlohmann_json)
 
     if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
         target_link_libraries(FlexAIDdS PRIVATE Eigen3::Eigen)
