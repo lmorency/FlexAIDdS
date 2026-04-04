@@ -2946,7 +2946,10 @@ int ictogene(const genlim* gene_lim, double ic){
 
 
 int RandomInt(double frac){
-	return (int)(frac*((double)RAND_MAX+1.0));
+	double raw = frac * ((double)RAND_MAX + 1.0);
+	if (raw >= (double)RAND_MAX + 1.0) return RAND_MAX;
+	if (raw < 0.0) return 0;
+	return (int)raw;
 }
 
 double RandomDouble(int32_t gene){

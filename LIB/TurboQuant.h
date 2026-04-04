@@ -30,6 +30,13 @@
 
 #pragma once
 
+// MSVC does not support __restrict__ (GCC/Clang extension); map to __restrict
+#ifdef _MSC_VER
+#  ifndef __restrict__
+#    define __restrict__ __restrict
+#  endif
+#endif
+
 #include <algorithm>
 #include <array>
 #include <cassert>
