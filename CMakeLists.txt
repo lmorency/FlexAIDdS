@@ -1,7 +1,7 @@
 # Build: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build
 
 cmake_minimum_required(VERSION 3.18)
-project(FlexAID LANGUAGES CXX)
+project(FlexAID VERSION 2.0.0 LANGUAGES CXX)
 
 include(CheckCXXCompilerFlag)
 

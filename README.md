@@ -12,7 +12,7 @@
 [![C++20](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](https://en.cppreference.com/w/cpp/20)
 [![Python](https://img.shields.io/badge/python-%E2%89%A5%203.9-3776AB.svg)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg)](#)
-[![Version](https://img.shields.io/badge/version-1.9.0--beta-orange.svg)](VERSION.md)
+[![Version](https://img.shields.io/badge/version-2.0.0-brightgreen.svg)](VERSION.md)
 [![DOI](https://img.shields.io/badge/DOI-10.1021%2Facs.jcim.5b00078-blue)](https://doi.org/10.1021/acs.jcim.5b00078)
 
 </div>

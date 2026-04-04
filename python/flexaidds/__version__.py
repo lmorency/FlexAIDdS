@@ -1,7 +1,7 @@
 """Version information for FlexAID∆S Python package."""
 
-__version__ = "1.0.0-alpha"
-__version_info__ = (1, 0, 0, "alpha", 0)
+__version__ = "2.0.0"
+__version_info__ = (2, 0, 0, "final", 0)
 
 # Build metadata
 __author__ = "Louis-Philippe Morency"
