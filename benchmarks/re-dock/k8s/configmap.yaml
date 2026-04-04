@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redock-config
+  namespace: flexaids-redock
+  labels:
+    app: redock
+data:
+  # Geometric temperature ladder: 8 replicas, 298K–600K
+  # Ratio: (600/298)^(1/7) ≈ 1.1047 → ~35% acceptance rate
+  TEMP_LADDER: "298.0,329.3,363.8,401.9,444.0,490.6,542.0,600.0"
+  NUM_REPLICAS: "8"
+  GA_GENERATIONS: "1000"
+  POPULATION_SIZE: "200"
+  CROSSOVER_RATE: "0.8"
+  MUTATION_RATE: "0.02"
+  EXCHANGE_INTERVAL_SEC: "300"
+  VANTHOFF_INTERVAL_SEC: "900"
+  COORDINATOR_URL: "https://redock-coordinator.vercel.app"
+  CHECKPOINT_INTERVAL_SEC: "600"
+  T_REF: "298.15"
