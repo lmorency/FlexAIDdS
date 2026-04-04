@@ -126,11 +126,14 @@ Hardware: CUDA > Metal > AVX-512 > AVX2 > OpenMP > scalar
 ## Features
 
 #### Docking Engine
-- **Genetic algorithm** with configurable population, crossover, mutation, and selection
+- **Genetic algorithm** with configurable population, crossover, mutation, selection, and GA diversity monitoring
 - **Voronoi contact function (CF)** for shape complementarity scoring
+- **GIST water-displacement scoring** -- grid-based explicit solvation term (`GISTEvaluator`, `GISTGrid`)
+- **Directional H-bond scoring** -- geometry-aware hydrogen bond potential (`HBondEvaluator`, `hbond_potential.h`)
 - **Dead-end elimination (DEE)** reduces ligand conformational search space
-- **Batch evaluation** via `VoronoiCFBatch` with OpenMP parallelism
+- **Batch evaluation** via `VoronoiCFBatch` (AoS) and `VoronoiCFBatch_SoA` (SIMD-friendly) with OpenMP parallelism
 - **Multiple clustering** methods: centroid-first, FastOPTICS, Density Peak
+- **MPI distributed docking** -- grid domain decomposition across compute nodes (`FLEXAIDS_USE_MPI`)
 - **Metal ion scoring** -- receptor-bound ions (Mg2+, Zn2+, Ca2+, Fe2+/3+, Cu2+, Mn2+, Na+, K+, Cl-, Br-, and more) receive crystallographic VdW radii and SYBYL atom types
 - **Structural water retention** -- ordered crystallographic waters (B-factor < 20 A^2) participate in Voronoi CF scoring
 
@@ -343,11 +346,11 @@ ctest --test-dir build --output-on-failure
 cd python && pip install -e . && pytest tests/
 ```
 
-28 test files. Tests marked `@requires_core` skip gracefully when the C++ extension is not built.
+32 test files. Tests marked `@requires_core` skip gracefully when the C++ extension is not built.
 
 ### CI
 
-GitHub Actions pipeline: Linux GCC, Linux Clang, macOS Clang. Python smoke tests run on all platforms.
+GitHub Actions pipeline: Linux GCC, Linux Clang, macOS Clang (allow-fail), Windows MSVC (allow-fail). Python smoke tests on all platforms. Additional workflows: `license-scan.yml` (Apache compliance), `perf.yml` (benchmark regression), `sanitizers.yml` (ASan/UBSan).
 
 See [`docs/SUPPORT_MATRIX.md`](docs/SUPPORT_MATRIX.md).
 
@@ -405,11 +408,11 @@ FlexAIDdS/
 |   +-- CleftDetector.cpp/h  # Binding-site detection
 |   +-- VoronoiCFBatch.h     # Batch Voronoi CF (header-only)
 +-- src/                    # Entry points
-+-- tests/                  # GoogleTest suite (38 test files)
++-- tests/                  # GoogleTest suite (46 test files)
 +-- python/                 # Python package + pybind11 bindings
-|   +-- flexaidds/           # Python package (22 modules)
+|   +-- flexaidds/           # Python package (22+ modules)
 |   +-- bindings/            # C++ bridge
-|   +-- tests/               # pytest suite (28 test files)
+|   +-- tests/               # pytest suite (32 test files)
 |   +-- setup.py
 +-- pymol_plugin/           # PyMOL visualization plugin
 +-- swift/                  # Swift package (experimental)
