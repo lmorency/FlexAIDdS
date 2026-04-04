@@ -12,7 +12,7 @@
 namespace ligand_ring_flex {
 
 static std::mt19937& get_rng() {
-    static std::mt19937 rng(42);
+    thread_local std::mt19937 rng(42);
     return rng;
 }
 

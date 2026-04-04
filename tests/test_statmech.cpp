@@ -513,6 +513,27 @@ TEST_F(StatMechEngineTest, WHAMEmptyThrows) {
     );
 }
 
+TEST_F(StatMechEngineTest, WHAMSingleBin) {
+    // Edge case: single bin should produce exactly one result
+    std::vector<double> energies = {-10.0, -10.0, -10.0};
+    std::vector<double> coords = {0.5, 0.5, 0.5};
+    auto result = StatMechEngine::wham(energies, coords, TEMPERATURE, 1);
+    EXPECT_EQ(result.size(), 1u);
+    EXPECT_TRUE(std::isfinite(result[0].free_energy));
+}
+
+TEST_F(StatMechEngineTest, WHAMIdenticalCoordinates) {
+    // All samples at same coordinate — all land in one bin
+    std::vector<double> energies = {-5.0, -10.0, -15.0};
+    std::vector<double> coords = {1.0, 1.0, 1.0};
+    auto result = StatMechEngine::wham(energies, coords, TEMPERATURE, 5);
+    // Should not crash; at least one bin populated
+    int populated = 0;
+    for (const auto& bin : result)
+        if (bin.count > 0) ++populated;
+    EXPECT_GE(populated, 1);
+}
+
 // ===========================================================================
 // THERMODYNAMIC INTEGRATION
 // ===========================================================================

@@ -43,7 +43,8 @@ static constexpr float KWALL_F        = 1.0e6f;
 
 // Maximum ligand atoms handled in shared-memory SAS accumulator.
 // Ligands with more atoms fall back to zero SAS contribution.
-static constexpr int MAX_LIG_SAS = 256;
+// 512 × 4 bytes = 2 KB shared memory per block (well within GPU limits).
+static constexpr int MAX_LIG_SAS = 512;
 
 // ─── context ─────────────────────────────────────────────────────────────────
 struct CudaEvalCtx {
@@ -273,6 +274,16 @@ void cuda_eval_batch(CudaEvalCtx*  ctx,
                      double*       h_wal_out,
                      double*       h_sas_out)
 {
+    // Warn if ligand exceeds shared-memory SAS capacity.
+    {
+        int n_lig = ctx->lig_last - ctx->lig_first + 1;
+        if (n_lig > MAX_LIG_SAS) {
+            fprintf(stderr, "cuda_eval: n_lig=%d exceeds MAX_LIG_SAS=%d, "
+                    "SAS contribution will be zero for atoms beyond limit\n",
+                    n_lig, MAX_LIG_SAS);
+        }
+    }
+
     // Validate against allocated buffer sizes.
     if (pop_size > ctx->max_pop) {
         fprintf(stderr, "cuda_eval: pop_size %d exceeds max_pop %d\n", pop_size, ctx->max_pop);
