@@ -65,6 +65,9 @@ void FastOPTICS::computeOrdering() {
 }
 
 double FastOPTICS::coreDist(size_t idx) const {
+    // minPts=1: every point is its own core with distance 0
+    if (minPts_ <= 1) return 0.0;
+
     if (static_cast<int>(points_.size()) < minPts_) {
         return std::numeric_limits<double>::infinity();
     }
@@ -121,7 +124,7 @@ std::vector<size_t> FastOPTICS::extractSuperCluster(ClusterMode mode) const {
             size_t u = q.front(); q.pop();
             superCluster.push_back(u);
             for (size_t v = 0; v < n; ++v) {
-                if (!visited[v] && distance(points_[u], points_[v]) < 0.8 * coreDist(v)) {
+                if (!visited[v] && distance(points_[u], points_[v]) <= 0.8 * coreDist(v)) {
                     visited[v] = true;
                     q.push(v);
                 }
