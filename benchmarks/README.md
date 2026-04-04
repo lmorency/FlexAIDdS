@@ -74,6 +74,12 @@ python -m benchmarks.run --dataset casf2016 --dataset psychopharm23 --tier 2
 mpirun -n 8 python -m benchmarks.run --all --tier 2 --distributed --nodes 8
 ```
 
+### Combined distributed test + benchmark pass
+
+```bash
+MPI_PROCS=4 CTEST_JOBS=8 ./scripts/run_distributed_validation.sh
+```
+
 ### Use as a library
 
 ```python
