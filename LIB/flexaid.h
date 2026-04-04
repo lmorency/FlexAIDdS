@@ -9,6 +9,11 @@
 #define _CRT_SECURE_NO_WARNINGS
 #endif
 
+// MSVC does not support __restrict__ (GCC/Clang extension); map to __restrict
+#ifndef __restrict__
+#define __restrict__ __restrict
+#endif
+
 #endif
 
 #include <stdlib.h>
