@@ -1,0 +1,82 @@
+# benchmarks/datasets/muv.yaml
+# --------------------------------
+# Maximum Unbiased Validation (MUV) Benchmark
+#
+# Reference: Rohrer & Baumann, J. Chem. Inf. Model. 2009, 49, 169–184
+# DOI: 10.1021/ci8002649
+#
+# MUV is designed to avoid the nearest-neighbour and analogue bias that
+# inflates performance in DUD-style benchmarks.  Actives and decoys are
+# selected so that no decoy is structurally similar to any active.
+#
+# 17 targets, ~30 actives each, ~15,000 decoys each.
+# Binding data from PubChem BioAssay.
+
+name: muv
+version: "2009"
+description: >
+  Maximum Unbiased Validation dataset: 17 targets from PubChem BioAssay
+  with property-matched, topologically dissimilar decoys.  Designed to
+  stress-test docking scoring functions on genuinely diverse chemical
+  spaces without analogue inflation.  Hard benchmark — random forest
+  classifiers often fail here.
+
+n_targets: 17
+protocol: virtual_screening_hard
+tier: 2
+
+tier1_subset:
+  - MUV_466    # S1P1 receptor agonism
+  - MUV_548    # PKA inhibition
+  - MUV_600    # SF1 nuclear receptor
+
+data:
+  source: PubChem BioAssay
+  local_root: "${FLEXAIDS_DATA}/muv"
+  actives_ism:  "MUV_{aid}_actives.ism"
+  decoys_ism:   "MUV_{aid}_decoys.ism"
+  receptor_dir: "receptors/MUV_{aid}.pdb"  # homology models where crystal absent
+
+metrics:
+  primary: entropy_rescue_rate
+  secondary:
+    - enrichment_factor       # EF0.5% (MUV-specific — small active set)
+    - log_auc
+    - hit_rate_top_n          # HR@30 (≈ 0.2% of decoys)
+    - bootstrap_ci
+
+flexaids_params:
+  ga_iterations: 200
+  population_size: 100
+  temperature: 298.15
+  use_entropy: true
+  entropy_weight: 1.0
+  n_poses: 10
+  screen_mode: true
+
+targets:
+  - { aid: 466,  name: "S1P1_agonism",       n_actives: 30,  n_decoys: 15000 }
+  - { aid: 548,  name: "PKA_inhibition",      n_actives: 30,  n_decoys: 15000 }
+  - { aid: 600,  name: "SF1_modulation",      n_actives: 30,  n_decoys: 15000 }
+  - { aid: 644,  name: "VEGFR2_inhibition",   n_actives: 30,  n_decoys: 15000 }
+  - { aid: 652,  name: "RXFP3_agonism",       n_actives: 30,  n_decoys: 15000 }
+  - { aid: 689,  name: "BACE1_inhibition",    n_actives: 30,  n_decoys: 15000 }
+  - { aid: 692,  name: "Caspase3_inhibition", n_actives: 30,  n_decoys: 15000 }
+  - { aid: 712,  name: "HIVgp41_inhibition",  n_actives: 30,  n_decoys: 15000 }
+  - { aid: 713,  name: "HIVrt_inhibition",    n_actives: 30,  n_decoys: 15000 }
+  - { aid: 733,  name: "D1R_antagonism",      n_actives: 30,  n_decoys: 15000 }
+  - { aid: 737,  name: "Orexin1_antagonism",  n_actives: 30,  n_decoys: 15000 }
+  - { aid: 810,  name: "Trypsin_inhibition",  n_actives: 30,  n_decoys: 15000 }
+  - { aid: 832,  name: "FPR1_agonism",        n_actives: 30,  n_decoys: 15000 }
+  - { aid: 846,  name: "Thrombin_inhibition", n_actives: 30,  n_decoys: 15000 }
+  - { aid: 852,  name: "FactorXa_inhibition", n_actives: 30,  n_decoys: 15000 }
+  - { aid: 858,  name: "Renin_inhibition",    n_actives: 30,  n_decoys: 15000 }
+  - { aid: 859,  name: "KCNQ2_modulation",    n_actives: 30,  n_decoys: 15000 }
+
+reproducibility:
+  seed: 2009
+  ef_fraction: 0.005           # EF0.5% is standard for MUV
+  note: >
+    MUV decoys are NOT inactive — they are untested compounds.
+    Performance here is a lower bound.  Use EF0.5% not EF1%.
+    Expect lower absolute EF values than DUD-E due to unbiased decoy design.

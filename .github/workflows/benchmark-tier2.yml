@@ -1,0 +1,287 @@
+name: Benchmark Tier-2 (Nightly Full)
+
+# Full benchmark across all datasets.
+# Runs nightly at 02:00 UTC and on manual dispatch.
+# Requires HPC runner with FlexAID binary and dataset files.
+# Falls back to dry-run if FLEXAIDS_DATA is not mounted.
+
+on:
+  schedule:
+    - cron: "0 2 * * *"     # 02:00 UTC nightly
+  workflow_dispatch:
+    inputs:
+      dataset:
+        description: "Single dataset to run (leave empty for all)"
+        required: false
+        default: ""
+      tier:
+        description: "Tier (1=sanity, 2=full)"
+        required: false
+        default: "2"
+      dry_run:
+        description: "Dry-run mode (skip FlexAID execution)"
+        required: false
+        default: "false"
+      mpi_ranks:
+        description: "Number of MPI ranks (0 = serial)"
+        required: false
+        default: "0"
+
+concurrency:
+  group: benchmark-tier2-nightly
+  cancel-in-progress: false   # allow nightly to finish; don't cancel mid-run
+
+jobs:
+  # ------------------------------------------------------------------ #
+  # Matrix: one job per dataset (parallelise across GH Actions runners) #
+  # ------------------------------------------------------------------ #
+  benchmark-full:
+    name: "${{ matrix.dataset }} (tier ${{ inputs.tier || '2' }})"
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 480    # 8-hour hard limit per dataset job
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Tier-2 datasets with expected runner sizes
+          - dataset: casf2016
+            runner: ubuntu-latest
+            expected_targets: 285
+            hpc: false
+
+          - dataset: itc187
+            runner: ubuntu-latest
+            expected_targets: 187
+            hpc: false
+
+          - dataset: dude37
+            runner: ubuntu-latest
+            expected_targets: 37
+            hpc: false
+
+          - dataset: lsd_docking
+            runner: ubuntu-latest
+            expected_targets: 11
+            hpc: false
+
+          - dataset: psychopharm23
+            runner: ubuntu-latest
+            expected_targets: 23
+            hpc: false
+
+          - dataset: muv
+            runner: ubuntu-latest
+            expected_targets: 17
+            hpc: false
+
+          - dataset: erds_specificity
+            runner: ubuntu-latest
+            expected_targets: 8
+            hpc: true       # marked; skipped unless HPC runner available
+
+    env:
+      BENCHMARK_TIER: ${{ inputs.tier || '2' }}
+      BENCHMARK_TIMEOUT: "3600"
+      MPI_DISABLED: ${{ (inputs.mpi_ranks == '0' || inputs.mpi_ranks == '') && '1' || '0' }}
+      FLEXAIDS_DATA: ${{ secrets.FLEXAIDS_DATA_PATH || '/data/flexaids' }}
+      FLEXAID_BIN:   ${{ secrets.FLEXAID_BINARY_PATH || '' }}
+
+    # Skip a single-dataset dispatch if it doesn't match
+    if: >
+      inputs.dataset == '' || inputs.dataset == matrix.dataset
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pyyaml numpy scipy
+
+      - name: Install mpi4py
+        if: env.MPI_DISABLED != '1'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libopenmpi-dev openmpi-bin
+          python -m pip install mpi4py
+
+      - name: Check dataset availability
+        id: check_data
+        run: |
+          if [ -d "$FLEXAIDS_DATA/${{ matrix.dataset }}" ]; then
+            echo "data_available=true" >> "$GITHUB_OUTPUT"
+            echo "dry_run_mode=false"  >> "$GITHUB_OUTPUT"
+          else
+            echo "data_available=false" >> "$GITHUB_OUTPUT"
+            echo "dry_run_mode=true"   >> "$GITHUB_OUTPUT"
+            echo "::warning::Dataset ${{ matrix.dataset }} not found at $FLEXAIDS_DATA; falling back to dry-run"
+          fi
+
+      - name: Check FlexAID binary
+        id: check_binary
+        run: |
+          if [ -n "$FLEXAID_BIN" ] && [ -x "$FLEXAID_BIN" ]; then
+            echo "binary_available=true" >> "$GITHUB_OUTPUT"
+          elif command -v FlexAID &>/dev/null; then
+            echo "binary_available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "binary_available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::FlexAID binary not found; falling back to dry-run"
+          fi
+
+      - name: Run benchmark (serial)
+        if: env.MPI_DISABLED == '1'
+        run: |
+          DRY=""
+          if [ "${{ inputs.dry_run }}" = "true" ] || \
+             [ "${{ steps.check_data.outputs.dry_run_mode }}" = "true" ] || \
+             [ "${{ steps.check_binary.outputs.binary_available }}" = "false" ]; then
+            DRY="--dry-run"
+            echo "Running in dry-run mode"
+          fi
+
+          python benchmarks/DatasetRunner.py \
+            --dataset ${{ matrix.dataset }} \
+            --tier ${{ inputs.tier || '2' }} \
+            --output "${{ github.workspace }}/benchmark_out/${{ matrix.dataset }}" \
+            --timeout "$BENCHMARK_TIMEOUT" \
+            $DRY
+
+      - name: Run benchmark (MPI)
+        if: env.MPI_DISABLED != '1'
+        run: |
+          RANKS="${{ inputs.mpi_ranks || '4' }}"
+          DRY=""
+          if [ "${{ inputs.dry_run }}" = "true" ] || \
+             [ "${{ steps.check_data.outputs.dry_run_mode }}" = "true" ] || \
+             [ "${{ steps.check_binary.outputs.binary_available }}" = "false" ]; then
+            DRY="--dry-run"
+          fi
+
+          mpirun -n "$RANKS" --allow-run-as-root \
+            python benchmarks/DatasetRunner.py \
+            --dataset ${{ matrix.dataset }} \
+            --tier ${{ inputs.tier || '2' }} \
+            --output "${{ github.workspace }}/benchmark_out/${{ matrix.dataset }}" \
+            --timeout "$BENCHMARK_TIMEOUT" \
+            $DRY
+
+      - name: Validate report structure
+        run: |
+          python -c "
+          import pathlib, json, sys
+          out_dir = pathlib.Path('${{ github.workspace }}/benchmark_out/${{ matrix.dataset }}')
+          json_files = sorted(out_dir.glob('*.json'))
+          if not json_files:
+              print('WARNING: No JSON report (dry-run may have been skipped entirely)')
+              sys.exit(0)
+
+          with json_files[0].open() as f:
+              report = json.load(f)
+
+          print(f'Dataset:  {report[\"dataset_name\"]}')
+          print(f'Version:  {report[\"dataset_version\"]}')
+          print(f'Tier:     {report[\"tier\"]}')
+          print(f'Targets:  {report[\"n_targets_success\"]}/{report[\"n_targets_total\"]} succeeded')
+          print(f'Wall(s):  {report[\"wall_time_s\"]:.1f}')
+
+          if report.get('entropy_rescue_rate') is not None:
+              print(f'ΔS Rescue Rate: {report[\"entropy_rescue_rate\"]:.3f}')
+          if report.get('scoring_power'):
+              sp = report['scoring_power']
+              print(f'Scoring r: {sp[\"pearson_r\"]:.3f}, RMSE: {sp[\"rmse\"]:.2f} kcal/mol')
+
+          n_fail = report['n_targets_failed']
+          if n_fail > 0:
+              print(f'WARN: {n_fail} target(s) failed')
+              for err in report.get('errors', [])[:5]:
+                  print(f'  - {err}')
+          "
+
+      - name: Upload benchmark reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-tier2-${{ matrix.dataset }}-${{ github.run_id }}
+          path: |
+            ${{ github.workspace }}/benchmark_out/${{ matrix.dataset }}/
+          retention-days: 30
+
+  # ------------------------------------------------------------------ #
+  # Aggregation job: collects all dataset results into one summary      #
+  # ------------------------------------------------------------------ #
+  aggregate:
+    name: Aggregate nightly summary
+    needs: benchmark-full
+    runs-on: ubuntu-latest
+    if: always()
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install pyyaml numpy scipy
+
+      - name: Download all benchmark artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: benchmark-tier2-*-${{ github.run_id }}
+          path: ${{ github.workspace }}/all_reports/
+          merge-multiple: false
+
+      - name: Generate aggregate summary
+        run: |
+          python -c "
+          import pathlib, json, datetime
+
+          reports_root = pathlib.Path('${{ github.workspace }}/all_reports')
+          all_json = sorted(reports_root.rglob('*.json'))
+
+          lines = [
+              '# FlexAIDdS Nightly Benchmark Summary',
+              '',
+              f'**Date**: {datetime.datetime.utcnow().isoformat()}Z',
+              f'**Workflow run**: ${{ github.run_id }}',
+              '',
+              '| Dataset | Tier | Targets OK | ΔS Rescue | Scoring r | Docking% | Wall(s) |',
+              '|---------|------|-----------|-----------|-----------|----------|---------|',
+          ]
+
+          for jp in all_json:
+              with jp.open() as f:
+                  r = json.load(f)
+              rr   = f\"{r.get('entropy_rescue_rate', 'n/a'):.3f}\" if isinstance(r.get('entropy_rescue_rate'), float) else 'n/a'
+              sp_r = f\"{r['scoring_power']['pearson_r']:.3f}\"       if r.get('scoring_power')  else 'n/a'
+              dp   = f\"{r['docking_power']['success_rate']:.1%}\"    if r.get('docking_power')  else 'n/a'
+              ok   = f\"{r['n_targets_success']}/{r['n_targets_total']}\"
+              wall = f\"{r['wall_time_s']:.0f}\"
+              lines.append(f'| {r[\"dataset_name\"]} | {r[\"tier\"]} | {ok} | {rr} | {sp_r} | {dp} | {wall} |')
+
+          lines += ['', '---', '', '> Generated by benchmark-tier2.yml']
+          print('\n'.join(lines))
+
+          out = pathlib.Path('${{ github.workspace }}/nightly_summary.md')
+          out.write_text('\n'.join(lines) + '\n')
+          print(f'Written: {out}')
+          "
+
+      - name: Upload aggregate summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-summary-${{ github.run_id }}
+          path: ${{ github.workspace }}/nightly_summary.md
+          retention-days: 90
+
+      - name: Post summary to GitHub step summary
+        run: cat ${{ github.workspace }}/nightly_summary.md >> $GITHUB_STEP_SUMMARY

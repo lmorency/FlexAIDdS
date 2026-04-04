@@ -1,0 +1,110 @@
+# benchmarks/datasets/dude37.yaml
+# ----------------------------------
+# DUD-E 37-Target Benchmark (Holo / Apo / AlphaFold2)
+#
+# DUD-E: Directory of Useful Decoys – Enhanced
+# Reference: Mysinger et al. J. Med. Chem. 2012, 55, 6582–6594
+# DOI: 10.1021/jm300687e
+#
+# 37 diverse drug targets selected for structural variety and
+# large active/decoy set size.  Each target is tested in three
+# receptor conformations: holo (co-crystal), apo, and AlphaFold2 prediction.
+
+name: dude37
+version: "e2012+af2"
+description: >
+  37 targets from DUD-E with actives (avg 224 per target) and property-matched
+  decoys (avg 10,000 per target).  Three receptor conformations per target:
+  holo (bound), apo (unbound), and AlphaFold2 (predicted).  Used to evaluate
+  virtual screening enrichment and selectivity across receptor-conformation bias.
+
+n_targets: 37
+protocol: virtual_screening
+tier: 2
+
+tier1_subset:
+  - aces     # acetylcholinesterase — well-behaved binding funnel
+  - egfr     # kinase, canonical ATP site
+  - cah2     # carbonic anhydrase, zinc metalloenzyme
+  - drd3     # dopamine receptor D3 (CNS relevance)
+  - akt1     # serine/threonine kinase
+
+data:
+  source: DUD-E
+  url: "http://dude.docking.org/targets"
+  local_root: "${FLEXAIDS_DATA}/dude37"
+  actives_final:  "{target}/actives_final.ism"
+  decoys_final:   "{target}/decoys_final.ism"
+  receptor_holo:  "{target}/receptor.pdb"
+  receptor_apo:   "{target}/receptor_apo.pdb"       # from separate apo PDB if available
+  receptor_af2:   "{target}/receptor_af2.pdb"       # AlphaFold2 model
+  crystal_ligand: "{target}/crystal_ligand.mol2"
+
+conformations:
+  - holo
+  - apo
+  - af2
+
+metrics:
+  primary: entropy_rescue_rate
+  secondary:
+    - enrichment_factor       # EF1%
+    - log_auc                 # LogAUC (Mysinger & Shoichet)
+    - hit_rate_top_n          # HR@100
+    - target_specificity_zscore
+
+flexaids_params:
+  ga_iterations: 150
+  population_size: 100
+  temperature: 298.15
+  use_entropy: true
+  entropy_weight: 1.0
+  n_poses: 10
+  screen_mode: true           # fast screening mode (no full docking)
+
+targets:
+  - { name: aces,   uniprot: "P22303", family: hydrolase,   n_actives: 453,  n_decoys: 10000 }
+  - { name: akt1,   uniprot: "P31749", family: kinase,      n_actives: 523,  n_decoys: 10000 }
+  - { name: akt2,   uniprot: "P31751", family: kinase,      n_actives: 198,  n_decoys: 10000 }
+  - { name: cah2,   uniprot: "P00918", family: lyase,       n_actives: 948,  n_decoys: 10000 }
+  - { name: cdk2,   uniprot: "P24941", family: kinase,      n_actives: 474,  n_decoys: 10000 }
+  - { name: cp3a4,  uniprot: "P08684", family: cytochrome,  n_actives: 228,  n_decoys: 10000 }
+  - { name: csf1r,  uniprot: "P07333", family: kinase,      n_actives: 166,  n_decoys: 10000 }
+  - { name: cxcr4,  uniprot: "P61073", family: gpcr,        n_actives: 400,  n_decoys: 10000 }
+  - { name: def,    uniprot: "Q9Y697", family: hydrolase,   n_actives: 78,   n_decoys: 10000 }
+  - { name: drd3,   uniprot: "P35462", family: gpcr,        n_actives: 480,  n_decoys: 10000 }
+  - { name: egfr,   uniprot: "P00533", family: kinase,      n_actives: 1375, n_decoys: 10000 }
+  - { name: esr1,   uniprot: "P03372", family: nuclear_rec, n_actives: 1157, n_decoys: 10000 }
+  - { name: esr2,   uniprot: "Q92731", family: nuclear_rec, n_actives: 842,  n_decoys: 10000 }
+  - { name: fa10,   uniprot: "P00742", family: protease,    n_actives: 537,  n_decoys: 10000 }
+  - { name: fa7,    uniprot: "P08709", family: protease,    n_actives: 114,  n_decoys: 10000 }
+  - { name: fgfr1,  uniprot: "P11362", family: kinase,      n_actives: 154,  n_decoys: 10000 }
+  - { name: fkb1a,  uniprot: "P62942", family: isomerase,   n_actives: 120,  n_decoys: 10000 }
+  - { name: fnta,   uniprot: "P49356", family: transferase, n_actives: 486,  n_decoys: 10000 }
+  - { name: fpps,   uniprot: "P14324", family: transferase, n_actives: 85,   n_decoys: 10000 }
+  - { name: gcr,    uniprot: "P04150", family: nuclear_rec, n_actives: 258,  n_decoys: 10000 }
+  - { name: glcm,   uniprot: "P04150", family: nuclear_rec, n_actives: 89,   n_decoys: 10000 }
+  - { name: gria2,  uniprot: "P42262", family: ion_channel, n_actives: 80,   n_decoys: 10000 }
+  - { name: grik1,  uniprot: "Q14621", family: ion_channel, n_actives: 88,   n_decoys: 10000 }
+  - { name: hivint, uniprot: "Q73368", family: integrase,   n_actives: 439,  n_decoys: 10000 }
+  - { name: hivpr,  uniprot: "P04585", family: protease,    n_actives: 536,  n_decoys: 10000 }
+  - { name: hivrt,  uniprot: "P04585", family: polymerase,  n_actives: 685,  n_decoys: 10000 }
+  - { name: hmdh,   uniprot: "P04035", family: reductase,   n_actives: 114,  n_decoys: 10000 }
+  - { name: hs90a,  uniprot: "P07900", family: chaperone,   n_actives: 261,  n_decoys: 10000 }
+  - { name: igf1r,  uniprot: "P08069", family: kinase,      n_actives: 247,  n_decoys: 10000 }
+  - { name: inha,   uniprot: "P0A5X5", family: reductase,   n_actives: 226,  n_decoys: 10000 }
+  - { name: ital,   uniprot: "Q13349", family: integrin,    n_actives: 480,  n_decoys: 10000 }
+  - { name: jak2,   uniprot: "O60674", family: kinase,      n_actives: 117,  n_decoys: 10000 }
+  - { name: kith,   uniprot: "P00507", family: kinase,      n_actives: 149,  n_decoys: 10000 }
+  - { name: kpcb,   uniprot: "P05771", family: kinase,      n_actives: 325,  n_decoys: 10000 }
+  - { name: lck,    uniprot: "P06239", family: kinase,      n_actives: 440,  n_decoys: 10000 }
+  - { name: lkha4,  uniprot: "P09917", family: lyase,       n_actives: 195,  n_decoys: 10000 }
+  - { name: mapk2,  uniprot: "P49137", family: kinase,      n_actives: 57,   n_decoys: 10000 }
+
+reproducibility:
+  seed: 37
+  note: >
+    Decoys are property-matched (MW, logP, charge, rotbonds, HBD, HBA)
+    to actives.  Do NOT use DUD-E for selectivity benchmarks — decoys
+    are not inactive compounds.  Conformation bias study: compare EF1%
+    across holo/apo/af2 for each target.

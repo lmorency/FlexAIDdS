@@ -1,0 +1,123 @@
+# benchmarks/datasets/erds_specificity.yaml
+# -------------------------------------------
+# Enamine REAL Diversity Subset — Specificity Z-Score Benchmark (ERDS)
+#
+# The ERDS specificity benchmark evaluates whether FlexAIDdS can
+# correctly discriminate between chemically similar compounds that
+# differ in target selectivity.
+#
+# Approach:
+#   1. Select a specificity panel of target pairs (e.g. D2R vs D3R).
+#   2. Screen the Enamine REAL Diversity Subset (~1M compounds, diverse).
+#   3. Compute per-compound Z-scores across panel targets.
+#   4. Validate against known selective compounds from ChEMBL.
+#
+# Enamine REAL Diversity Subset (2023):
+#   ~1,000,000 compounds, Tanimoto-filtered at 0.35 (Murcko scaffold)
+#   to maximise chemical diversity without analogue inflation.
+
+name: erds_specificity
+version: "2023"
+description: >
+  Specificity Z-score benchmark using the Enamine REAL Diversity Subset
+  (~1M diverse drug-like compounds) screened against a panel of related
+  CNS target pairs.  Validates that FlexAIDdS can rank selective binders
+  above pan-active promiscuous compounds using the ΔS component.
+  Z-score = (score_target − μ_panel) / σ_panel.
+
+n_targets: 8      # target pairs → 16 individual targets
+protocol: specificity_zscore
+tier: 2           # CPU-intensive; HPC only
+
+tier1_subset:     # reduced panel for PR checks (2 target pairs, 10k compounds)
+  - d2r_vs_d3r
+  - sert_vs_net
+
+data:
+  source: Enamine REAL Diversity Subset
+  url: "https://enamine.net/compound-libraries/real-compounds/real-diversity-subset"
+  local_root: "${FLEXAIDS_DATA}/erds"
+  library_ism:   "enamine_real_diversity_2023.ism"
+  n_compounds:   1000000
+  receptor_dir:  "{target}/receptor.pdb"
+  known_selective_csv: "erds_known_selective.csv"
+  columns:
+    compound_id: "enamine_id"
+    smiles:      "smiles"
+    target:      "target_name"
+    selectivity: "selectivity_ratio"   # Ki(off-target) / Ki(on-target)
+
+metrics:
+  primary: target_specificity_zscore
+  secondary:
+    - entropy_rescue_rate
+    - hit_rate_top_n
+    - bootstrap_ci
+
+flexaids_params:
+  ga_iterations: 100            # reduced — screening mode
+  population_size: 50
+  temperature: 310.15           # 37°C (physiological)
+  use_entropy: true
+  entropy_weight: 1.0
+  n_poses: 5
+  screen_mode: true
+  z_score_panel: true
+
+target_pairs:
+  - name: d2r_vs_d3r
+    on_target:  { name: d2r, uniprot: "P14416", pdbid: "6CM4" }
+    off_target: { name: d3r, uniprot: "P35462", pdbid: "3PBL" }
+    known_selective_chembl: ["CHEMBL393", "CHEMBL1487", "CHEMBL573"]
+    selectivity_cutoff: 10.0    # ≥10-fold selective
+
+  - name: sert_vs_net
+    on_target:  { name: sert, uniprot: "P31645", pdbid: "5I6X" }
+    off_target: { name: net,  uniprot: "P23975", pdbid: "7NN0" }
+    known_selective_chembl: ["CHEMBL14230", "CHEMBL1201112"]
+    selectivity_cutoff: 10.0
+
+  - name: 5ht2a_vs_5ht2c
+    on_target:  { name: 5ht2a, uniprot: "P28223", pdbid: "6WGT" }
+    off_target: { name: 5ht2c, uniprot: "P28335", pdbid: "6BQG" }
+    known_selective_chembl: ["CHEMBL267469", "CHEMBL388707"]
+    selectivity_cutoff: 30.0
+
+  - name: maoa_vs_maob
+    on_target:  { name: maoa, uniprot: "P21397", pdbid: "2Z5X" }
+    off_target: { name: maob, uniprot: "P27338", pdbid: "2V5Z" }
+    known_selective_chembl: ["CHEMBL1428", "CHEMBL1523"]
+    selectivity_cutoff: 10.0
+
+  - name: d1r_vs_d5r
+    on_target:  { name: d1r, uniprot: "P21728", pdbid: "7CKZ" }
+    off_target: { name: d5r, uniprot: "P21917", pdbid: "7L1U" }
+    known_selective_chembl: ["CHEMBL275835", "CHEMBL462"]
+    selectivity_cutoff: 10.0
+
+  - name: gaba_a_bz_vs_gaba_a_barb
+    on_target:  { name: gaba_a_bz,   uniprot: "P14867", pdbid: "6HUP" }
+    off_target: { name: gaba_a_barb, uniprot: "P14867", pdbid: "6X3Z" }
+    known_selective_chembl: ["CHEMBL526", "CHEMBL727"]
+    selectivity_cutoff: 20.0
+
+  - name: sigma1_vs_sigma2
+    on_target:  { name: sigma1, uniprot: "Q99720", pdbid: "5HK1" }
+    off_target: { name: sigma2, uniprot: "Q5BJF2", pdbid: "7M98" }
+    known_selective_chembl: ["CHEMBL442821", "CHEMBL1087"]
+    selectivity_cutoff: 10.0
+
+  - name: nmdar_nr2b_vs_nr2a
+    on_target:  { name: nmdar_nr2b, uniprot: "Q13224", pdbid: "5IOV" }
+    off_target: { name: nmdar_nr2a, uniprot: "Q05586", pdbid: "4PE5" }
+    known_selective_chembl: ["CHEMBL1370", "CHEMBL566"]
+    selectivity_cutoff: 10.0
+
+reproducibility:
+  seed: 2023
+  note: >
+    Z-score is computed over all 16 panel targets for each compound.
+    A Z-score > 2.0 against target T with Z < 0 against all others
+    indicates predicted selectivity.  Validate against ChEMBL known
+    selective compounds — these should appear in top-Z compounds for
+    their on-target.

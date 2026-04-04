@@ -1,0 +1,178 @@
+name: Benchmark Tier-1 (PR Sanity)
+
+# Runs on every PR — 5 CASF targets, 10-minute hard timeout.
+# Validates the DatasetRunner plumbing and metric pipeline.
+# Does NOT require actual dataset files: dry-run mode is used when
+# FLEXAIDS_DATA is not available.
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      dataset:
+        description: "Dataset to run (default: casf2016)"
+        required: false
+        default: casf2016
+      dry_run:
+        description: "Dry-run mode (skip FlexAID execution)"
+        required: false
+        default: "true"
+
+concurrency:
+  group: benchmark-tier1-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  benchmark-tier1:
+    name: Tier-1 benchmark (${{ inputs.dataset || 'casf2016' }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      BENCHMARK_TIER: "1"
+      BENCHMARK_TIMEOUT: "120"
+      MPI_DISABLED: "1"            # serial mode for CI
+      FLEXAIDS_DATA: "${{ github.workspace }}/data"
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pyyaml numpy scipy
+
+      - name: Install mpi4py (optional — graceful degradation on failure)
+        run: python -m pip install mpi4py || true
+
+      - name: Validate benchmark imports
+        run: |
+          python -c "
+          import sys, pathlib
+          sys.path.insert(0, '.')
+          from benchmarks.metrics import (
+              entropy_rescue_rate, enrichment_factor, log_auc,
+              scoring_power, docking_power, bootstrap_ci,
+              hit_rate_top_n, target_specificity_zscore,
+          )
+          from benchmarks.DatasetRunner import DatasetConfig, DatasetRunner
+          from benchmarks.ligand_prep import FLEXAID_ATOM_TYPES, validate_atom_types
+          print('All imports OK')
+          "
+
+      - name: Validate dataset YAML configs
+        run: |
+          python -c "
+          import sys, pathlib
+          sys.path.insert(0, '.')
+          from benchmarks.DatasetRunner import DatasetConfig
+          datasets_dir = pathlib.Path('benchmarks/datasets')
+          for yaml_path in sorted(datasets_dir.glob('*.yaml')):
+              cfg = DatasetConfig(yaml_path)
+              assert cfg.name, f'Missing name in {yaml_path}'
+              assert cfg.n_targets > 0, f'n_targets must be > 0 in {yaml_path}'
+              print(f'  OK: {cfg.name} ({cfg.n_targets} targets, tier1_subset={len(cfg.tier1_subset)})')
+          print('All dataset configs valid.')
+          "
+
+      - name: Run metrics unit tests
+        run: |
+          python -c "
+          import math, sys
+          sys.path.insert(0, '.')
+          from benchmarks.metrics import (
+              entropy_rescue_rate, enrichment_factor, log_auc,
+              scoring_power, docking_power, bootstrap_ci,
+              hit_rate_top_n, target_specificity_zscore,
+          )
+
+          # entropy_rescue_rate
+          er = [5, 12, 3, 15, 8]
+          sr = [3,  2, 4,  1, 9]
+          am = [True, True, False, True, False]
+          rr = entropy_rescue_rate(er, sr, am, threshold=10)
+          assert 0 <= rr <= 1, f'rescue_rate out of range: {rr}'
+          print(f'  rescue_rate={rr:.3f}  OK')
+
+          # enrichment_factor
+          scores = list(range(100))
+          labels = [1 if i < 10 else 0 for i in range(100)]
+          ef = enrichment_factor(scores, labels, fraction=0.1)
+          assert ef.ef > 1.0, f'EF should be > 1 for enriched set: {ef.ef}'
+          print(f'  EF1%={ef.ef:.2f}  OK')
+
+          # log_auc
+          la = log_auc(scores, labels)
+          print(f'  LogAUC={la:.4f}  OK')
+
+          # scoring_power
+          sp = scoring_power([1.0, 2.0, 3.0, 4.0], [1.1, 1.9, 3.2, 3.8])
+          assert sp.pearson_r > 0.99, f'r={sp.pearson_r}'
+          print(f'  scoring_power r={sp.pearson_r:.3f}  OK')
+
+          # docking_power
+          dp = docking_power([1.0, 2.5, 0.8, 3.2], threshold=2.0)
+          assert dp.success_rate == 0.5, f'dp={dp}'
+          print(f'  docking_power={dp.success_rate:.0%}  OK')
+
+          # bootstrap_ci
+          data = list(range(20))
+          ci = bootstrap_ci(lambda d: sum(d)/len(d), data, n_boot=100, seed=1)
+          assert ci.lower < ci.point < ci.upper, f'CI={ci}'
+          print(f'  bootstrap CI=[{ci.lower:.2f}, {ci.point:.2f}, {ci.upper:.2f}]  OK')
+
+          # hit_rate_top_n
+          hr = hit_rate_top_n(scores, labels, n=10)
+          assert 0 <= hr <= 1
+          print(f'  hit_rate_top10={hr:.2f}  OK')
+
+          # target_specificity_zscore
+          z = target_specificity_zscore([-9.0, -8.5], [-7.0, -6.5, -5.5, -6.0])
+          print(f'  z_score={z:.2f}  OK')
+
+          print('All metric tests passed.')
+          "
+
+      - name: Run Tier-1 benchmark (dry-run)
+        run: |
+          python benchmarks/DatasetRunner.py \
+            --dataset ${{ inputs.dataset || 'casf2016' }} \
+            --tier 1 \
+            --output "${{ github.workspace }}/benchmark_out" \
+            --dry-run
+        timeout-minutes: 5
+
+      - name: Verify output files
+        run: |
+          python -c "
+          import pathlib, json, sys
+          out_dir = pathlib.Path('${{ github.workspace }}/benchmark_out')
+          json_files = list(out_dir.glob('*.json'))
+          md_files   = list(out_dir.glob('*.md'))
+          assert json_files, f'No JSON report found in {out_dir}'
+          assert md_files,   f'No Markdown report found in {out_dir}'
+
+          # Validate JSON structure
+          with json_files[0].open() as f:
+              report = json.load(f)
+          assert 'dataset_name' in report, 'Missing dataset_name in report'
+          assert 'target_results' in report, 'Missing target_results in report'
+          assert report['n_targets_success'] >= 0
+          print(f'JSON report OK: {json_files[0].name}')
+          print(f'MD  report OK: {md_files[0].name}')
+          print(f'n_success={report[\"n_targets_success\"]}, n_fail={report[\"n_targets_failed\"]}')
+          "
+
+      - name: Upload benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-tier1-${{ github.run_id }}
+          path: |
+            ${{ github.workspace }}/benchmark_out/
+          retention-days: 7
