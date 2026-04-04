@@ -1627,6 +1627,23 @@ flexaids_configure_simd(test_cavity_detect)
     flexaids_configure_msvc_test(test_parallel_dock)
     add_test(NAME ParallelDockTests COMMAND test_parallel_dock)
 
+    # test_knowledge_pool — TargetKnowledgeBase + SharedPosePool + MPIMergeable
+    add_executable(test_knowledge_pool
+        tests/test_knowledge_pool.cpp
+        LIB/TargetKnowledgeBase.cpp
+        LIB/SharedPosePool.cpp
+    )
+    target_include_directories(test_knowledge_pool PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_knowledge_pool PRIVATE GTest::gtest GTest::gtest_main)
+    target_compile_features(test_knowledge_pool PRIVATE cxx_std_20)
+    if(MSVC)
+        target_compile_options(test_knowledge_pool PRIVATE /O2)
+    else()
+        target_compile_options(test_knowledge_pool PRIVATE -O2)
+    endif()
+    flexaids_configure_msvc_test(test_knowledge_pool)
+    add_test(NAME KnowledgePoolTests COMMAND test_knowledge_pool)
+
     # ── Mol2Reader / SdfReader tests ──────────────────────────────────────
     add_executable(test_mol2_sdf_reader
         tests/test_mol2_sdf_reader.cpp
