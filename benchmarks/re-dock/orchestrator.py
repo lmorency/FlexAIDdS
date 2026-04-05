@@ -1,9 +1,11 @@
 """
-RE-DOCK Campaign Orchestrator
-==============================
+RE-DOCK Campaign Orchestrator (v7)
+====================================
 
 Distributed campaign management for multi-target replica exchange docking
 across heterogeneous AI sandbox worker pools.
+
+v7 additions: bidirectional round-trip mode with Crooks/BAR analysis.
 
 Components
 ----------
@@ -13,6 +15,7 @@ Components
 - **DockingChunk**: Work packet for a single (target, temperature, generation)
   with to_worker_script() for sandbox execution
 - **BenchmarkCampaign**: Full campaign state machine with checkpoint/resume
+  and v7 bidirectional exchange + BAR analysis methods
 
 Workflow
 --------
@@ -21,9 +24,12 @@ Workflow
 3. ``dispatch_generation``: Send chunks to available workers
 4. ``process_chunk_result``: Ingest completed chunk, update replica state
 5. ``run_exchange_round``: Metropolis exchange between adjacent temperatures
-6. ``run_vant_hoff``: Van't Hoff decomposition on accumulated ΔG(T)
-7. ``check_convergence``: Monitor ΔG convergence across generations
-8. ``save_checkpoint / load_checkpoint``: Fault-tolerant persistence
+6. ``run_bidirectional_round``: v7 — forward + reverse legs with work recording
+7. ``run_bar_analysis``: v7 — BAR free energy from bidirectional work
+8. ``run_vant_hoff``: Van't Hoff decomposition on accumulated ΔG(T)
+9. ``check_convergence``: Monitor ΔG convergence across generations
+10. ``check_bidirectional_convergence``: v7 — σ_irr convergence
+11. ``save_checkpoint / load_checkpoint``: Fault-tolerant persistence
 
 Le Bonhomme Pharma / Najmanovich Research Group
 """
@@ -46,8 +52,13 @@ from .thermodynamics import (
     VantHoffResult,
     geometric_temperature_ladder,
     attempt_exchanges,
+    attempt_exchanges_with_work,
     van_t_hoff_analysis,
     shannon_entropy_of_ensemble,
+)
+from .crooks import (
+    BidirectionalExchange,
+    BidirectionalResult,
 )
 
 
@@ -243,6 +254,11 @@ class BenchmarkCampaign:
         self.created_at: float = time.time()
         self.exchange_history: List[dict] = []
 
+        # v7: Bidirectional analysis state
+        self.bidirectional_engines: Dict[str, BidirectionalExchange] = {}
+        self.bidirectional_results: Dict[str, BidirectionalResult] = {}
+        self.bidirectional_history: List[dict] = []
+
     def initialize(self, targets_file: str) -> None:
         """Initialize campaign from a targets JSON file.
 
@@ -394,6 +410,121 @@ class BenchmarkCampaign:
         recent = [p.energy_kcal for p in replica_0.poses[-window:]]
         return float(np.std(recent)) < threshold_kcal
 
+    # -------------------------------------------------------------------
+    # v7: Bidirectional round-trip methods
+    # -------------------------------------------------------------------
+
+    def run_bidirectional_round(
+        self,
+        target_id: str,
+        n_sweeps: int = 1,
+        rng: Optional[np.random.Generator] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Run a full bidirectional round-trip (forward + reverse) for a target.
+
+        1. Forward leg: heating exchanges T_low → T_high, recording W_fwd
+        2. Reverse leg: cooling exchanges T_high → T_low, recording W_rev
+
+        Parameters
+        ----------
+        target_id : str
+            PDB ID of the target.
+        n_sweeps : int
+            Number of exchange sweeps per leg.
+        rng : np.random.Generator, optional
+
+        Returns
+        -------
+        dict or None
+            Summary of the round-trip including work statistics.
+        """
+        if target_id not in self.replicas:
+            return None
+
+        replicas = self.replicas[target_id]
+
+        # Lazy-initialize bidirectional engine
+        if target_id not in self.bidirectional_engines:
+            self.bidirectional_engines[target_id] = BidirectionalExchange(
+                temperatures=[r.temperature for r in replicas],
+                reference_temperature=replicas[0].temperature,
+            )
+
+        engine = self.bidirectional_engines[target_id]
+
+        # Forward leg (heating)
+        fwd = engine.run_forward_leg(replicas, n_sweeps=n_sweeps, rng=rng)
+
+        # Reverse leg (cooling)
+        rev = engine.run_reverse_leg(replicas, n_sweeps=n_sweeps, rng=rng)
+
+        record = {
+            "target_id": target_id,
+            "generation": self.current_generation,
+            "timestamp": time.time(),
+            "forward_mean_work": fwd.mean_work,
+            "reverse_mean_work": rev.mean_work,
+            "forward_n_samples": fwd.n_samples,
+            "reverse_n_samples": rev.n_samples,
+            "forward_acceptance": fwd.acceptance_rate,
+            "reverse_acceptance": rev.acceptance_rate,
+        }
+        self.bidirectional_history.append(record)
+        return record
+
+    def run_bar_analysis(
+        self,
+        target_id: str,
+    ) -> Optional[BidirectionalResult]:
+        """Run BAR analysis on accumulated bidirectional work for a target.
+
+        Requires at least one bidirectional round to have been completed.
+
+        Parameters
+        ----------
+        target_id : str
+            PDB ID of the target.
+
+        Returns
+        -------
+        BidirectionalResult or None
+        """
+        if target_id not in self.bidirectional_engines:
+            return None
+
+        engine = self.bidirectional_engines[target_id]
+        try:
+            result = engine.analyze()
+        except ValueError:
+            return None
+
+        self.bidirectional_results[target_id] = result
+        return result
+
+    def check_bidirectional_convergence(
+        self,
+        target_id: str,
+        threshold: float = 1e-3,
+    ) -> bool:
+        """Check bidirectional convergence via σ_irr → 0.
+
+        Parameters
+        ----------
+        target_id : str
+            PDB ID of the target.
+        threshold : float
+            σ_irr convergence threshold in kcal/(mol·K).
+
+        Returns
+        -------
+        bool
+            True if σ_irr < threshold.
+        """
+        result = self.bidirectional_results.get(target_id)
+        if result is None:
+            return False
+        return result.converged
+
     def save_checkpoint(self) -> Path:
         """Serialize campaign state to JSON checkpoint."""
         checkpoint = {
@@ -415,6 +546,11 @@ class BenchmarkCampaign:
                 k: v.to_dict() for k, v in self.vant_hoff_results.items()
             },
             "exchange_history": self.exchange_history[-50:],  # Keep last 50
+            # v7: Bidirectional state
+            "bidirectional_results": {
+                k: v.to_dict() for k, v in self.bidirectional_results.items()
+            },
+            "bidirectional_history": self.bidirectional_history[-50:],
         }
 
         self.campaign_dir.mkdir(parents=True, exist_ok=True)

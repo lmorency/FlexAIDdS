@@ -71,3 +71,47 @@
 | 4djh   | -18.00  | ~-21.1       | -420     | ~-413         | 0.9999 |
 
 Units: ΔH in kcal/mol, ΔCp in cal/(mol·K)
+
+## v7 — Bidirectional Round-Trip (Crooks Fluctuation Theorem)
+
+### Core Physics Module: `crooks.py`
+- `BidirectionalExchange` class managing forward (heating) + reverse (cooling) legs
+- `bennett_acceptance_ratio()` — optimal ΔG from bidirectional work distributions
+  via self-consistent BAR equation with log-sum-exp stable Fermi functions
+- `crooks_intersection()` — ΔG where P(W_fwd) and P(-W_rev) cross, using
+  Gaussian KDE with Silverman bandwidth
+- `irreversible_entropy_production()` — σ_irr = (⟨W_F⟩ + ⟨W_R⟩ - 2ΔG) / T
+- `landauer_information_loss()` — bits erased = σ_irr / (R·ln2)
+- `shannon_energy_collapse_rate()` — dS/dT via central finite differences
+- `mutual_information()` — I(hot; cold) = S_high + S_low - S_joint
+- `convergence_check()` — physics-based: σ_irr < threshold
+- Data classes: `WorkSample`, `LegResult`, `BidirectionalResult` (all with
+  `__post_init__` validation and JSON serialization)
+
+### Hardware Acceleration: `accelerator.py`
+- `AcceleratorBackend` with auto-detection: CuPy (GPU) → Numba JIT → NumPy/BLAS
+- `vectorized_metropolis_batch()` — N exchanges in one vectorized call
+- `vectorized_work_accumulation()` — batch non-equilibrium work computation
+- `vectorized_boltzmann_weights()` — log-sum-exp stable Boltzmann weights
+- `vectorized_shannon_entropy()` — batch Shannon entropy over multiple ensembles
+- `vectorized_bar_fermi()` — numerically stable log-Fermi for BAR iterations
+- `vectorized_kde_grid()` — batch Gaussian KDE for Crooks intersection
+- `mmap_array()` — memory-mapped arrays for large campaigns
+- Numba `@njit(cache=True, fastmath=True)` kernels for hot loops
+- CuPy GPU backend with transparent CPU↔GPU transfers
+
+### Updated Modules
+- `thermodynamics.py`: ReplicaState gains `forward_work`, `reverse_work`,
+  `shannon_entropy_trace` fields; new `attempt_exchanges_with_work()` function
+- `orchestrator.py`: BenchmarkCampaign gains `run_bidirectional_round()`,
+  `run_bar_analysis()`, `check_bidirectional_convergence()` methods;
+  bidirectional state in checkpoints
+- `visualization.py`: Three new Chart.js dashboards:
+  - `crooks_crossing_plot_html()` — forward/reverse work histograms with ΔG
+  - `information_loss_plot_html()` — σ_irr and Landauer bits over generations
+  - `collapse_rate_plot_html()` — dS/dT landscape (funnel vs fracture)
+- `demo_run.py`: Full v7 demo with bidirectional analysis, σ_irr convergence
+  tracking, and all new visualizations
+- `__init__.py`: Updated module docstring for v7
+- `ARCHITECTURE.md`: v7 bidirectional protocol and accelerator documentation
+- `PROGRESS.md`: This entry

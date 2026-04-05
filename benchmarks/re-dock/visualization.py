@@ -1,6 +1,6 @@
 """
-RE-DOCK Visualization Module
-=============================
+RE-DOCK Visualization Module (v7)
+===================================
 
 Chart.js-based standalone HTML dashboard generation for docking campaign analysis.
 
@@ -10,6 +10,9 @@ Functions
 - ``convergence_trace_html``: Running ΔG average per replica over generations
 - ``shannon_landscape_html``: S_config heatmap over (temperature, target)
 - ``exchange_heatmap_html``: Replica exchange acceptance matrix with time evolution
+- ``crooks_crossing_plot_html``: v7 — P(W_fwd) and P(-W_rev) with ΔG intersection
+- ``information_loss_plot_html``: v7 — σ_irr and Landauer bits across generations
+- ``collapse_rate_plot_html``: v7 — dI/dT landscape showing funnel quality
 
 Each function returns a self-contained HTML string with embedded Chart.js (CDN).
 
@@ -378,3 +381,270 @@ Total exchange rounds: {len(exchange_history)}
 </body></html>"""
 
     return html
+
+
+# ---------------------------------------------------------------------------
+# v7: Crooks crossing plot
+# ---------------------------------------------------------------------------
+
+def crooks_crossing_plot_html(
+    w_fwd: List[float],
+    w_rev: List[float],
+    delta_G_bar: float,
+    delta_G_crooks: float,
+    target_id: str = "",
+    n_bins: int = 60,
+) -> str:
+    """Generate Crooks crossing plot: P(W_fwd) and P(-W_rev) with ΔG intersection.
+
+    Parameters
+    ----------
+    w_fwd : List[float]
+        Forward work values (kcal/mol).
+    w_rev : List[float]
+        Reverse work values (kcal/mol).
+    delta_G_bar : float
+        BAR estimate of ΔG (kcal/mol).
+    delta_G_crooks : float
+        Crooks intersection ΔG (kcal/mol).
+    target_id : str
+        PDB ID for labeling.
+    n_bins : int
+        Histogram bins.
+
+    Returns
+    -------
+    str
+        Self-contained HTML.
+    """
+    import numpy as _np
+
+    w_f = _np.array(w_fwd)
+    neg_w_r = -_np.array(w_rev)
+
+    all_w = _np.concatenate([w_f, neg_w_r])
+    w_min, w_max = float(_np.min(all_w)), float(_np.max(all_w))
+    margin = 0.1 * (w_max - w_min) if w_max > w_min else 1.0
+    edges = _np.linspace(w_min - margin, w_max + margin, n_bins + 1)
+    centers = 0.5 * (edges[:-1] + edges[1:])
+
+    hist_fwd, _ = _np.histogram(w_f, bins=edges, density=True)
+    hist_rev, _ = _np.histogram(neg_w_r, bins=edges, density=True)
+
+    labels = json.dumps([f"{c:.2f}" for c in centers])
+    fwd_data = json.dumps([float(v) for v in hist_fwd])
+    rev_data = json.dumps([float(v) for v in hist_rev])
+
+    script = f"""
+const ctx = document.getElementById('chart').getContext('2d');
+new Chart(ctx, {{
+  type: 'bar',
+  data: {{
+    labels: {labels},
+    datasets: [
+      {{
+        label: 'P(W_fwd)',
+        data: {fwd_data},
+        backgroundColor: 'rgba(220, 53, 69, 0.5)',
+        borderColor: 'rgba(220, 53, 69, 0.8)',
+        borderWidth: 1,
+      }},
+      {{
+        label: 'P(-W_rev)',
+        data: {rev_data},
+        backgroundColor: 'rgba(40, 167, 69, 0.5)',
+        borderColor: 'rgba(40, 167, 69, 0.8)',
+        borderWidth: 1,
+      }}
+    ]
+  }},
+  options: {{
+    responsive: true,
+    plugins: {{
+      title: {{ display: true, text: 'Crooks Crossing — {target_id}' }},
+    }},
+    scales: {{
+      x: {{ title: {{ display: true, text: 'Work W (kcal/mol)' }} }},
+      y: {{ title: {{ display: true, text: 'Probability density' }} }},
+    }}
+  }}
+}});
+"""
+
+    stats = (f"\\u0394G_BAR = {delta_G_bar:.3f} kcal/mol | "
+             f"\\u0394G_Crooks = {delta_G_crooks:.3f} kcal/mol | "
+             f"n_fwd = {len(w_fwd)} | n_rev = {len(w_rev)}")
+
+    return HTML_TEMPLATE.format(
+        title=f"Crooks Crossing Plot — {target_id}",
+        subtitle="Forward/reverse work distributions with \\u0394G intersection — RE-DOCK v7",
+        cdn=CHART_JS_CDN,
+        stats_html=stats,
+        chart_script=script,
+    )
+
+
+# ---------------------------------------------------------------------------
+# v7: Information loss plot
+# ---------------------------------------------------------------------------
+
+def information_loss_plot_html(
+    generations: List[int],
+    sigma_irr_values: List[float],
+    bits_lost_values: List[float],
+    target_id: str = "",
+) -> str:
+    """Generate information loss plot: sigma_irr and bits lost over generations.
+
+    Parameters
+    ----------
+    generations : List[int]
+        Generation indices.
+    sigma_irr_values : List[float]
+        Irreversible entropy production at each generation.
+    bits_lost_values : List[float]
+        Landauer bits lost at each generation.
+    target_id : str
+        PDB ID for labeling.
+
+    Returns
+    -------
+    str
+        Self-contained HTML.
+    """
+    sigma_data = json.dumps([{"x": g, "y": s} for g, s in zip(generations, sigma_irr_values)])
+    bits_data = json.dumps([{"x": g, "y": b} for g, b in zip(generations, bits_lost_values)])
+
+    script = f"""
+const ctx = document.getElementById('chart').getContext('2d');
+new Chart(ctx, {{
+  type: 'line',
+  data: {{
+    datasets: [
+      {{
+        label: '\\u03c3_irr (kcal/mol\\u00b7K)',
+        data: {sigma_data},
+        borderColor: 'rgba(220, 53, 69, 0.8)',
+        backgroundColor: 'rgba(220, 53, 69, 0.1)',
+        borderWidth: 2,
+        pointRadius: 3,
+        fill: true,
+        yAxisID: 'y',
+      }},
+      {{
+        label: 'Bits lost (Landauer)',
+        data: {bits_data},
+        borderColor: 'rgba(31, 119, 180, 0.8)',
+        backgroundColor: 'rgba(31, 119, 180, 0.1)',
+        borderWidth: 2,
+        pointRadius: 3,
+        fill: true,
+        yAxisID: 'y1',
+      }}
+    ]
+  }},
+  options: {{
+    responsive: true,
+    plugins: {{
+      title: {{ display: true, text: 'Information Loss — {target_id}' }},
+    }},
+    scales: {{
+      x: {{ type: 'linear', title: {{ display: true, text: 'Generation' }} }},
+      y: {{ type: 'linear', position: 'left',
+            title: {{ display: true, text: '\\u03c3_irr (kcal/mol\\u00b7K)' }} }},
+      y1: {{ type: 'linear', position: 'right',
+             title: {{ display: true, text: 'Bits lost' }},
+             grid: {{ drawOnChartArea: false }} }},
+    }}
+  }}
+}});
+"""
+
+    stats = (f"Final \\u03c3_irr = {sigma_irr_values[-1]:.4f} kcal/(mol\\u00b7K) | "
+             f"Final bits lost = {bits_lost_values[-1]:.2f}" if sigma_irr_values else "No data")
+
+    return HTML_TEMPLATE.format(
+        title=f"Information Loss — {target_id}",
+        subtitle="Irreversible entropy production and Landauer bits over generations — RE-DOCK v7",
+        cdn=CHART_JS_CDN,
+        stats_html=stats,
+        chart_script=script,
+    )
+
+
+# ---------------------------------------------------------------------------
+# v7: Collapse rate plot
+# ---------------------------------------------------------------------------
+
+def collapse_rate_plot_html(
+    temperatures: List[float],
+    collapse_rates: List[float],
+    target_id: str = "",
+) -> str:
+    """Generate Shannon Energy Collapse rate plot: dS/dT vs temperature.
+
+    Positive dS/dT: landscape fracturing (more states at higher T).
+    Negative dS/dT: landscape funneling (fewer dominant states).
+
+    Parameters
+    ----------
+    temperatures : List[float]
+        Temperature values (K).
+    collapse_rates : List[float]
+        dS/dT at each temperature (kcal/(mol*K^2)).
+    target_id : str
+        PDB ID for labeling.
+
+    Returns
+    -------
+    str
+        Self-contained HTML.
+    """
+    data_points = json.dumps([{"x": T, "y": r} for T, r in zip(temperatures, collapse_rates)])
+
+    script = f"""
+const ctx = document.getElementById('chart').getContext('2d');
+new Chart(ctx, {{
+  type: 'scatter',
+  data: {{
+    datasets: [
+      {{
+        label: 'dS/dT (collapse rate)',
+        data: {data_points},
+        backgroundColor: function(context) {{
+          const val = context.raw ? context.raw.y : 0;
+          return val >= 0 ? 'rgba(220, 53, 69, 0.8)' : 'rgba(40, 167, 69, 0.8)';
+        }},
+        pointRadius: 8,
+        showLine: true,
+        borderColor: 'rgba(100, 100, 100, 0.5)',
+        borderWidth: 1.5,
+        fill: false,
+      }}
+    ]
+  }},
+  options: {{
+    responsive: true,
+    plugins: {{
+      title: {{ display: true, text: 'Shannon Energy Collapse Rate — {target_id}' }},
+    }},
+    scales: {{
+      x: {{ title: {{ display: true, text: 'Temperature (K)' }} }},
+      y: {{ title: {{ display: true, text: 'dS/dT (kcal/(mol*K^2))' }} }},
+    }}
+  }}
+}});
+"""
+
+    n_funnel = sum(1 for r in collapse_rates if r < 0)
+    n_fracture = sum(1 for r in collapse_rates if r >= 0)
+    stats = (f"Funneling (dS/dT < 0): {n_funnel} rungs | "
+             f"Fracturing (dS/dT >= 0): {n_fracture} rungs")
+
+    return HTML_TEMPLATE.format(
+        title=f"Shannon Energy Collapse Rate — {target_id}",
+        subtitle="dS/dT landscape: green=funnel, red=fracture — RE-DOCK v7",
+        cdn=CHART_JS_CDN,
+        stats_html=stats,
+        chart_script=script,
+    )
