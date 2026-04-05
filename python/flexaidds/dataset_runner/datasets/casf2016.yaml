@@ -1,0 +1,88 @@
+# CASF-2016 Benchmark Configuration
+# Core Set 2016 of PDBbind — the standard four-power benchmark for structure-based scoring.
+#
+# Four evaluation powers:
+#   1. Scoring power  — Pearson r + RMSE vs experimental Ki/Kd/IC50
+#   2. Ranking power  — Spearman ρ for compound ranking within each target cluster
+#   3. Docking power  — % top-1 pose with RMSD < 2.0 Å
+#   4. Screening power — EF@1% for virtual screening across all 285 targets
+#
+# Reference: Su et al. (2019) J. Chem. Inf. Model. 59(2):895-913
+#            https://doi.org/10.1021/acs.jcim.8b00545
+
+slug: casf2016
+name: "CASF-2016"
+description: >
+  PDBbind Core Set 2016: 285 protein-ligand complexes with experimental binding
+  affinities (Ki, Kd, IC50) spanning 57 protein clusters.  The gold standard for
+  evaluating scoring, ranking, docking, and screening performance.
+
+zenodo_doi: ""
+download_url: "http://www.pdbbind.org.cn/casf.asp"
+data_format: pdb
+tier: 2
+tier1_subset_size: 5
+
+structural_states:
+  - holo
+
+# Tier-1 subset: 5 well-studied complexes spanning diverse protein families
+# Full 285-target list is fetched during dataset acquisition.
+targets:
+  - 1a30   # Neuraminidase
+  - 1gpk   # Carbonic anhydrase II
+  - 1hvr   # HIV protease
+  - 2cgr   # CDK2
+  - 2hb1   # Thrombin
+  - 1mq6   # p38 MAP kinase
+  - 1n2j   # EGFR
+  - 2cet   # Factor Xa
+  - 3arp   # Aldose reductase
+  - 3acw   # PTP1B
+  - 1owi   # Estrogen receptor α
+  - 1ydt   # Farnesyltransferase
+  - 2cbj   # Src kinase
+  - 3coy   # Aurora kinase A
+  - 2obj   # Checkpoint kinase 1
+  - 2qmj   # HSP90
+  - 2weg   # Glucokinase
+  - 2zyc   # Adenosine A2A receptor
+  - 3d4z   # β-secretase 1 (BACE-1)
+  - 3ge7   # Syk kinase
+  - 3lka   # Renin
+  - 3mss   # Vasopressin V2 receptor
+  - 4agp   # Androgen receptor
+  - 4bkt   # BTK kinase
+  - 4cra   # Colony-stimulating factor 1 receptor
+  - 4e5w   # Acetylcholinesterase
+  - 4gfm   # IDH1
+  - 4hjr   # PI3Kδ
+  - 4roe   # BRD4
+  - 5cpp   # CDK4/6
+  # NOTE: Full list of 285 targets is provided in the CASF-2016 data package.
+  # Set data_dir to the extracted CASF-2016/structures/ directory.
+
+metrics:
+  - scoring_power_pearson_r
+  - scoring_power_spearman_r
+  - scoring_power_rmse
+  - docking_power_top1
+  - docking_power_top3
+  - ef_1pct
+  - log_auc
+  - entropy_rescue_rate
+
+# Expected performance baselines for FlexAIDdS.
+# Regression is flagged when measured value drops below baseline × (1 - tolerance).
+expected_baselines:
+  scoring_power_pearson_r: 0.88
+  scoring_power_spearman_r: 0.86
+  scoring_power_rmse: 1.20
+  docking_power_top1: 0.82
+  docking_power_top3: 0.91
+  ef_1pct: 12.5
+  log_auc: 0.68
+  entropy_rescue_rate: 0.35
+
+# Fractional tolerance for regression detection (5% → flag if value < baseline × 0.95)
+baseline_tolerance: 0.05
