@@ -29,7 +29,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .thermodynamics import (
+from thermodynamics import (
     geometric_temperature_ladder,
     DockingPose,
     ReplicaState,
@@ -38,7 +38,7 @@ from .thermodynamics import (
     attempt_exchanges,
     R_KCAL,
 )
-from .visualization import (
+from visualization import (
     vant_hoff_plot_html,
     convergence_trace_html,
     shannon_landscape_html,
