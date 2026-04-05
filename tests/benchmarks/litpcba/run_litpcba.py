@@ -43,6 +43,57 @@ def load_litpcba_target(data_dir: str, target: str):
     return actives, inactives
 
 
+def load_docking_scores(results_dir: str, target: str, compounds: set) -> dict:
+    """Load FlexAIDdS docking scores for a target's compounds.
+
+    Looks for per-compound result subdirectories under
+    ``results_dir/target/`` and extracts the top-ranked CF score.
+
+    Parameters
+    ----------
+    results_dir : str
+        Top-level results directory.
+    target : str
+        Target name (subdirectory under results_dir).
+    compounds : set
+        Set of compound identifiers (SMILES) to look up.
+
+    Returns
+    -------
+    dict
+        Mapping of compound identifier → docking score (CF, lower is better).
+    """
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "python"))
+    from flexaidds import load_results
+
+    target_dir = os.path.join(results_dir, target)
+    scores = {}
+
+    if not os.path.isdir(target_dir):
+        return scores
+
+    # Each compound may have its own subdirectory
+    for entry in os.listdir(target_dir):
+        compound_dir = os.path.join(target_dir, entry)
+        if not os.path.isdir(compound_dir):
+            continue
+
+        try:
+            result = load_results(compound_dir)
+            top_mode = result.top_mode()
+            if top_mode is None or not top_mode.poses:
+                continue
+
+            top_pose = top_mode.poses[0]
+            score = top_pose.cf if top_pose.cf is not None else top_pose.cf_app
+            if score is not None:
+                scores[entry] = score
+        except Exception:
+            continue
+
+    return scores
+
+
 def main():
     parser = argparse.ArgumentParser(description="LIT-PCBA benchmark")
     parser.add_argument("--results", required=True, help="Results directory")
@@ -63,12 +114,65 @@ def main():
     report = {"targets": []}
     for target in sorted(targets):
         print(f"  Evaluating {target}...")
-        # Placeholder: load results and evaluate
-        # In a real pipeline, this would parse FlexAIDdS docking scores
-        report["targets"].append({
-            "target": target,
-            "status": "pending_results",
-        })
+        actives, inactives = load_litpcba_target(data_dir, target)
+
+        if not actives:
+            report["targets"].append({
+                "target": target,
+                "status": "no_actives",
+            })
+            continue
+
+        all_compounds = actives | inactives
+        docking_scores = load_docking_scores(
+            args.results, target, all_compounds
+        )
+
+        if not docking_scores:
+            report["targets"].append({
+                "target": target,
+                "status": "no_results",
+                "n_actives": len(actives),
+                "n_inactives": len(inactives),
+            })
+            continue
+
+        # Build score and label arrays for compounds with docking results
+        scored_compounds = []
+        for compound, score in docking_scores.items():
+            if compound in actives:
+                scored_compounds.append((score, 1))
+            elif compound in inactives:
+                scored_compounds.append((score, 0))
+
+        if not scored_compounds:
+            report["targets"].append({
+                "target": target,
+                "status": "no_matched_compounds",
+            })
+            continue
+
+        scores_arr = np.array([s for s, _ in scored_compounds])
+        labels_arr = np.array([l for _, l in scored_compounds])
+
+        metrics = evaluate_target(scores_arr, labels_arr, target)
+        metrics["status"] = "ok"
+        metrics["n_scored"] = len(scored_compounds)
+        report["targets"].append(metrics)
+
+        print(f"    {target}: EF1%={metrics['EF_1pct']:.1f} "
+              f"AUROC={metrics['AUROC']:.3f} "
+              f"({metrics['n_scored']} scored)")
+
+    # Aggregate summary
+    evaluated = [t for t in report["targets"] if t.get("status") == "ok"]
+    if evaluated:
+        report["summary"] = {
+            "n_targets_evaluated": len(evaluated),
+            "mean_EF1": float(np.mean([t["EF_1pct"] for t in evaluated])),
+            "mean_AUROC": float(np.mean([t["AUROC"] for t in evaluated])),
+            "mean_BEDROC": float(np.mean([t["BEDROC_20"] for t in evaluated])),
+        }
 
     with open(args.output, "w") as f:
         json.dump(report, f, indent=2)
@@ -77,4 +181,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-"""
