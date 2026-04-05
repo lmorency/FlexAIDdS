@@ -66,7 +66,8 @@ from pathlib import Path
 from typing import List, Dict
 
 
-def run_casf2016(results_dir: str, output_dir: Path) -> Dict[str, str]:
+def run_casf2016(results_dir: str, output_dir: Path,
+                 system_workers: int = 0) -> Dict[str, str]:
     """Run the CASF‑2016 benchmark.
 
     Parameters
@@ -75,6 +76,8 @@ def run_casf2016(results_dir: str, output_dir: Path) -> Dict[str, str]:
         Directory containing FlexAIDdS docking results for CASF‑2016.
     output_dir : Path
         Directory in which to place the output JSON report.
+    system_workers : int
+        Per-system parallelism (0 = auto-detect).
 
     Returns
     -------
@@ -86,11 +89,14 @@ def run_casf2016(results_dir: str, output_dir: Path) -> Dict[str, str]:
            str(Path(__file__).parent / "tests/benchmarks/casf2016/run_casf2016.py"),
            "--results", results_dir,
            "--output", str(output_file)]
+    if system_workers is not None:
+        cmd.extend(["--max-workers", str(system_workers)])
     subprocess.run(cmd, check=True)
     return {"benchmark": "casf2016", "report": str(output_file)}
 
 
-def run_crossdock(results_dir: str, pairs_file: str, output_dir: Path) -> Dict[str, str]:
+def run_crossdock(results_dir: str, pairs_file: str, output_dir: Path,
+                  system_workers: int = 0) -> Dict[str, str]:
     """Run the CrossDock benchmark.
 
     Parameters
@@ -99,9 +105,11 @@ def run_crossdock(results_dir: str, pairs_file: str, output_dir: Path) -> Dict[s
         Directory containing FlexAIDdS docking results for cross‑docking.
     pairs_file : str
         Path to the CSV file listing ligand, receptor and reference PDB codes
-        used for cross‑docking【991969378609606†L21-L37】.
+        used for cross‑docking.
     output_dir : Path
         Directory in which to place the output JSON report.
+    system_workers : int
+        Per-system parallelism (0 = auto-detect).
 
     Returns
     -------
@@ -114,11 +122,14 @@ def run_crossdock(results_dir: str, pairs_file: str, output_dir: Path) -> Dict[s
            "--results", results_dir,
            "--pairs", pairs_file,
            "--output", str(output_file)]
+    if system_workers is not None:
+        cmd.extend(["--max-workers", str(system_workers)])
     subprocess.run(cmd, check=True)
     return {"benchmark": "crossdock", "report": str(output_file)}
 
 
-def run_litpcba(results_dir: str, output_dir: Path) -> Dict[str, str]:
+def run_litpcba(results_dir: str, output_dir: Path,
+                system_workers: int = 0) -> Dict[str, str]:
     """Run the LIT‑PCBA benchmark.
 
     Parameters
@@ -127,6 +138,8 @@ def run_litpcba(results_dir: str, output_dir: Path) -> Dict[str, str]:
         Directory containing FlexAIDdS docking results for LIT‑PCBA.
     output_dir : Path
         Directory in which to place the output JSON report.
+    system_workers : int
+        Per-system parallelism (0 = auto-detect).
 
     Returns
     -------
@@ -138,6 +151,8 @@ def run_litpcba(results_dir: str, output_dir: Path) -> Dict[str, str]:
            str(Path(__file__).parent / "tests/benchmarks/litpcba/run_litpcba.py"),
            "--results", results_dir,
            "--output", str(output_file)]
+    if system_workers is not None:
+        cmd.extend(["--max-workers", str(system_workers)])
     subprocess.run(cmd, check=True)
     return {"benchmark": "litpcba", "report": str(output_file)}
 
@@ -178,7 +193,16 @@ def parse_args() -> argparse.Namespace:
         "--max-workers",
         type=int,
         default=1,
-        help="Maximum number of worker processes to use for parallel execution."
+        help="Maximum number of worker processes for suite-level parallel execution."
+    )
+    parser.add_argument(
+        "--system-workers",
+        type=int,
+        default=0,
+        help=(
+            "Per-system parallelism within each benchmark suite. "
+            "0 = auto-detect optimal count for this machine."
+        ),
     )
     return parser.parse_args()
 
@@ -193,30 +217,30 @@ def main() -> None:
     os.environ.setdefault("CASF2016_DATA", os.path.join(args.data_root, "CASF-2016"))
     os.environ.setdefault("LITPCBA_DATA", os.path.join(args.data_root, "LIT-PCBA"))
 
+    sw = args.system_workers
+
     tasks: List = []
     for benchmark in args.benchmarks:
         if benchmark == "casf2016":
-            # Each benchmark expects its results in a named sub‑directory
             result_path = os.path.join(args.results, "casf2016")
-            tasks.append((run_casf2016, result_path, None))
+            tasks.append((run_casf2016, result_path, None, sw))
         elif benchmark == "crossdock":
             if not args.crossdock_pairs:
                 raise ValueError("--crossdock-pairs must be specified for the crossdock benchmark")
             result_path = os.path.join(args.results, "crossdock")
-            tasks.append((run_crossdock, result_path, args.crossdock_pairs))
+            tasks.append((run_crossdock, result_path, args.crossdock_pairs, sw))
         elif benchmark == "litpcba":
             result_path = os.path.join(args.results, "litpcba")
-            tasks.append((run_litpcba, result_path, None))
+            tasks.append((run_litpcba, result_path, None, sw))
 
     results = []
-    # Use a process pool to run benchmarks concurrently if requested
     with ProcessPoolExecutor(max_workers=args.max_workers) as executor:
         future_to_bm = {}
-        for func, res_path, extra in tasks:
+        for func, res_path, extra, sys_w in tasks:
             if func is run_crossdock:
-                future = executor.submit(func, res_path, extra, output_dir)
+                future = executor.submit(func, res_path, extra, output_dir, sys_w)
             else:
-                future = executor.submit(func, res_path, output_dir)
+                future = executor.submit(func, res_path, output_dir, sys_w)
             future_to_bm[future] = func.__name__
         for future in as_completed(future_to_bm):
             bm_name = future_to_bm[future]
