@@ -1,0 +1,48 @@
+{
+  "_comment": "Example PDBbind benchmark target set for RE-DOCK campaigns",
+  "_description": "Curated subset of PDBbind v2020 refined set for replica exchange docking validation",
+  "version": "1.0",
+  "source": "PDBbind v2020 refined set",
+  "targets": [
+    {
+      "pdb_id": "1a30",
+      "receptor": "HIV-1 protease",
+      "ligand": "ABT-538 (ritonavir analog)",
+      "resolution_A": 2.0,
+      "exp_dG_kcal": -10.5,
+      "notes": "Well-studied protease inhibitor complex"
+    },
+    {
+      "pdb_id": "1err",
+      "receptor": "Estrogen receptor alpha",
+      "ligand": "Raloxifene",
+      "resolution_A": 2.6,
+      "exp_dG_kcal": -10.1,
+      "notes": "Selective estrogen receptor modulator"
+    },
+    {
+      "pdb_id": "2bm2",
+      "receptor": "Factor Xa",
+      "ligand": "RPR208815",
+      "resolution_A": 2.2,
+      "exp_dG_kcal": -9.8,
+      "notes": "Serine protease anticoagulant target"
+    },
+    {
+      "pdb_id": "3htb",
+      "receptor": "Thrombin",
+      "ligand": "Argatroban",
+      "resolution_A": 1.8,
+      "exp_dG_kcal": -8.2,
+      "notes": "Direct thrombin inhibitor"
+    },
+    {
+      "pdb_id": "4djh",
+      "receptor": "Acetylcholinesterase",
+      "ligand": "Donepezil",
+      "resolution_A": 2.35,
+      "exp_dG_kcal": -11.3,
+      "notes": "Alzheimer's disease therapeutic"
+    }
+  ]
+}

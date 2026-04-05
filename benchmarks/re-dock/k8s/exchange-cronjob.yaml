@@ -1,0 +1,116 @@
+# RE-DOCK CronJobs
+# 1. Replica exchange: every 5 minutes — Metropolis swap between adjacent T
+# 2. Van't Hoff analysis: every 15 minutes — ΔH°/ΔS°/ΔCp decomposition
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: redock-exchange
+  namespace: flexaids-redock
+  labels:
+    app: redock
+    component: exchange
+spec:
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 5
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app: redock
+            component: exchange
+        spec:
+          containers:
+            - name: exchange
+              image: ghcr.io/nrglab/flexaids-worker:latest
+              command:
+                - python
+                - -m
+                - benchmarks.re_dock.cli
+                - --campaign-dir
+                - /checkpoints/campaign
+                - exchange
+              envFrom:
+                - configMapRef:
+                    name: redock-config
+              resources:
+                requests:
+                  cpu: "500m"
+                  memory: 512Mi
+                limits:
+                  cpu: "1"
+                  memory: 1Gi
+              volumeMounts:
+                - name: data
+                  mountPath: /data
+                - name: checkpoints
+                  mountPath: /checkpoints
+          restartPolicy: OnFailure
+          volumes:
+            - name: data
+              persistentVolumeClaim:
+                claimName: redock-data
+            - name: checkpoints
+              persistentVolumeClaim:
+                claimName: redock-checkpoints
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: redock-vanthoff
+  namespace: flexaids-redock
+  labels:
+    app: redock
+    component: vanthoff
+spec:
+  schedule: "*/15 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app: redock
+            component: vanthoff
+        spec:
+          containers:
+            - name: vanthoff
+              image: ghcr.io/nrglab/flexaids-worker:latest
+              command:
+                - python
+                - -m
+                - benchmarks.re_dock.cli
+                - --campaign-dir
+                - /checkpoints/campaign
+                - analyze
+                - --fit-dcp
+              envFrom:
+                - configMapRef:
+                    name: redock-config
+              resources:
+                requests:
+                  cpu: "500m"
+                  memory: 1Gi
+                limits:
+                  cpu: "2"
+                  memory: 2Gi
+              volumeMounts:
+                - name: data
+                  mountPath: /data
+                - name: checkpoints
+                  mountPath: /checkpoints
+          restartPolicy: OnFailure
+          volumes:
+            - name: data
+              persistentVolumeClaim:
+                claimName: redock-data
+            - name: checkpoints
+              persistentVolumeClaim:
+                claimName: redock-checkpoints

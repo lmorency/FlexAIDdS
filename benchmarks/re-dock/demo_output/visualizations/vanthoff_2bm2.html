@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Van't Hoff Analysis — 2bm2</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+         margin: 2rem; background: #fafafa; color: #333; }
+  .chart-container { max-width: 900px; margin: 1rem auto;
+                      background: white; padding: 1.5rem; border-radius: 8px;
+                      box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
+  h1 { text-align: center; color: #1a1a2e; }
+  .subtitle { text-align: center; color: #666; font-size: 0.9rem; margin-top: -0.5rem; }
+  canvas { max-height: 500px; }
+  .stats { font-size: 0.85rem; color: #555; margin-top: 0.5rem; }
+</style>
+</head>
+<body>
+<h1>Van't Hoff Analysis — 2bm2</h1>
+<p class="subtitle">RE-DOCK Replica Exchange Distributed Docking</p>
+<div class="chart-container">
+<canvas id="chart"></canvas>
+<div class="stats">ΔH° = -12.08 kcal/mol | ΔS° = 12.3 cal/(mol·K) | R² = 0.9992</div>
+</div>
+<script>
+
+const ctx = document.getElementById('chart').getContext('2d');
+new Chart(ctx, {
+  type: 'scatter',
+  data: {
+    datasets: [
+      {
+        label: 'Data',
+        data: [{"x": 0.003355704697986577, "y": 26.413790257789923}, {"x": 0.0030364382400130605, "y": 24.28395273888288}, {"x": 0.002747547241253256, "y": 21.135951059194124}, {"x": 0.0024861417378559654, "y": 17.611186587841118}, {"x": 0.0022496067211896765, "y": 12.443727244923455}, {"x": 0.0020355759782167983, "y": 8.132440547225592}, {"x": 0.0018419084207314247, "y": 2.584391640697759}, {"x": 0.0016666666666666663, "y": -3.1402025757381105}],
+        backgroundColor: 'rgba(220, 53, 69, 0.8)',
+        pointRadius: 6,
+      },
+      {
+        label: 'Linear fit (R²=0.9992)',
+        data: [{"x": 0.003355704697986577, "y": 26.600707032568867}, {"x": 0.0030364382400130605, "y": 24.659349750875357}, {"x": 0.002747547241253256, "y": 22.90269592755208}, {"x": 0.0024861417378559654, "y": 21.313172616158113}, {"x": 0.0022496067211896765, "y": 19.874878785057675}, {"x": 0.0020355759782167983, "y": 18.57342624909746}, {"x": 0.0018419084207314247, "y": 17.395795735267487}, {"x": 0.0016666666666666663, "y": 16.33020664247722}],
+        type: 'line',
+        borderColor: 'rgba(40, 167, 69, 0.8)',
+        borderWidth: 2,
+        pointRadius: 0,
+        fill: false,
+      }
+    ]
+  },
+  options: {
+    responsive: true,
+    plugins: {
+      title: { display: true, text: "Van\'t Hoff Plot — 2bm2" },
+    },
+    scales: {
+      x: { title: { display: true, text: '1/T (K⁻¹)' } },
+      y: { title: { display: true, text: 'ln(K)' } },
+    }
+  }
+});
+
+</script>
+</body>
+</html>
