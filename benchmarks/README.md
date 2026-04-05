@@ -74,6 +74,16 @@ python -m benchmarks.run --dataset casf2016 --dataset psychopharm23 --tier 2
 mpirun -n 8 python -m benchmarks.run --all --tier 2 --distributed --nodes 8
 ```
 
+### One-command distributed validation (tests + benchmark dry-run)
+
+```bash
+# Runs C++ tests in parallel, then a tier-1 benchmark dry-run with MPI when available
+MPI_RANKS=8 CTEST_JOBS=$(nproc) BENCH_WORKERS=$(nproc) bash benchmarks/run_distributed_validation.sh
+
+# If build artifacts already exist, skip configure/build/ctest and run only benchmark dry-run
+SKIP_BUILD=1 BENCH_TIER=1 bash benchmarks/run_distributed_validation.sh
+```
+
 ### Use as a library
 
 ```python
