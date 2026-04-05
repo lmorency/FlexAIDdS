@@ -27,6 +27,15 @@ struct HardwareCapabilities {
     int         cuda_sm_minor     = 0;
     std::size_t cuda_global_mem   = 0;  // bytes
 
+    // ── GPU: ROCm/HIP (AMD) ──
+    bool        has_rocm          = false;
+    int         rocm_device_count = 0;
+    std::string rocm_device_name;       // e.g. "AMD Instinct MI300X"
+    std::string rocm_arch;              // e.g. "gfx90a"
+    int         rocm_compute_units = 0;
+    std::size_t rocm_global_mem    = 0; // bytes
+    int         rocm_wavefront     = 0; // typically 64
+
     // ── GPU: Metal (Apple) ──
     bool        has_metal         = false;
     std::string metal_gpu_name;         // e.g. "Apple M3 Max"

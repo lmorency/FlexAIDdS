@@ -4,12 +4,13 @@
 // automatically selects the optimal backend at runtime:
 //
 //   1. CUDA GPU         (highest throughput, requires NVIDIA GPU)
-//   2. Metal GPU        (Apple Silicon, unified memory, zero-copy)
-//   3. AVX-512 + OpenMP (16-wide SIMD × N threads)
-//   4. AVX-512          (16-wide SIMD, single thread)
-//   5. AVX2 + OpenMP    (8-wide SIMD × N threads)
-//   6. OpenMP scalar    (multi-threaded scalar)
-//   7. Scalar           (baseline fallback)
+//   2. ROCm/HIP GPU     (AMD Instinct / Radeon via HIP runtime)
+//   3. Metal GPU        (Apple Silicon, unified memory, zero-copy)
+//   4. AVX-512 + OpenMP (16-wide SIMD × N threads)
+//   5. AVX-512          (16-wide SIMD, single thread)
+//   6. AVX2 + OpenMP    (8-wide SIMD × N threads)
+//   7. OpenMP scalar    (multi-threaded scalar)
+//   8. Scalar           (baseline fallback)
 //
 // The dispatch layer also provides hardware-accelerated primitives for
 // statistical mechanics computations (partition functions, Boltzmann
@@ -38,11 +39,12 @@ namespace flexaids {
 // Backend selection priority (highest → lowest)
 enum class HardwareBackend : uint8_t {
     CUDA    = 0,
-    METAL   = 1,
-    AVX512  = 2,
-    AVX2    = 3,
-    OPENMP  = 4,
-    SCALAR  = 5,
+    ROCM    = 1,
+    METAL   = 2,
+    AVX512  = 3,
+    AVX2    = 4,
+    OPENMP  = 5,
+    SCALAR  = 6,
 };
 
 // Human-readable backend name

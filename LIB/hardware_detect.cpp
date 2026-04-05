@@ -47,6 +47,10 @@
 #  include <cuda_runtime.h>
 #endif
 
+#ifdef FLEXAIDS_USE_ROCM
+#  include <hip/hip_runtime.h>
+#endif
+
 namespace flexaids {
 
 static void detect_x86_simd(HardwareCapabilities& hw) {
@@ -124,6 +128,38 @@ static void detect_metal(HardwareCapabilities& hw) {
 #endif
 }
 
+static void detect_rocm(HardwareCapabilities& hw) {
+#ifdef FLEXAIDS_USE_ROCM
+    int count = 0;
+    hipError_t err = hipGetDeviceCount(&count);
+    if (err != hipSuccess || count <= 0) return;
+
+    hw.has_rocm = true;
+    hw.rocm_device_count = count;
+
+    hipDeviceProp_t prop{};
+    if (hipGetDeviceProperties(&prop, 0) == hipSuccess) {
+        hw.rocm_device_name   = prop.name;
+        hw.rocm_compute_units = prop.multiProcessorCount;
+        hw.rocm_global_mem    = prop.totalGlobalMem;
+        hw.rocm_wavefront     = prop.warpSize;
+#if defined(__HIP_PLATFORM_AMD__) || defined(__HIP_PLATFORM_HCC__)
+        if (prop.gcnArchName[0] != '\0') {
+            hw.rocm_arch = prop.gcnArchName;
+        } else if (prop.gcnArch > 0) {
+            hw.rocm_arch = "gfx" + std::to_string(prop.gcnArch);
+        } else {
+            hw.rocm_arch = "gfx-unknown";
+        }
+#else
+        hw.rocm_arch = "hip-generic";
+#endif
+    }
+#else
+    (void)hw;
+#endif
+}
+
 std::string HardwareCapabilities::summary() const {
     std::ostringstream os;
     os << "[HW] Hardware Capabilities:\n";
@@ -139,6 +175,13 @@ std::string HardwareCapabilities::summary() const {
         os << "[HW]   Metal: " << metal_gpu_name << "\n";
     else
         os << "[HW]   Metal: not available\n";
+
+    if (has_rocm)
+        os << "[HW]   ROCm: " << rocm_device_name
+           << " (" << rocm_arch << ", "
+           << (rocm_global_mem >> 20) << " MB)\n";
+    else
+        os << "[HW]   ROCm: not available\n";
 
     if (has_avx512)
         os << "[HW]   AVX-512: F+DQ+BW"
@@ -166,6 +209,7 @@ const HardwareCapabilities& detect_hardware() {
         detect_openmp(caps);
         detect_eigen(caps);
         detect_cuda(caps);
+        detect_rocm(caps);
         detect_metal(caps);
         return caps;
     }();

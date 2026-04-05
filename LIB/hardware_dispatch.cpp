@@ -4,7 +4,7 @@
 //   – Boltzmann weight computation (partition function inner loop)
 //   – Log-sum-exp reduction (numerical stability critical path)
 //
-// Dispatch priority: CUDA > Metal > AVX-512 > AVX2 > OpenMP > Scalar
+// Dispatch priority: CUDA > ROCm > Metal > AVX-512 > AVX2 > OpenMP > Scalar
 // Metal path uses persistent device/pipeline caching from ShannonMetalBridge.
 //
 // Apache-2.0 © 2026 Le Bonhomme Pharma
@@ -69,6 +69,7 @@ static DispatchTelemetry make_telemetry(
 const char* backend_name(HardwareBackend b) noexcept {
     switch (b) {
         case HardwareBackend::CUDA:   return "CUDA";
+        case HardwareBackend::ROCM:   return "ROCm";
         case HardwareBackend::METAL:  return "Metal";
         case HardwareBackend::AVX512: return "AVX-512";
         case HardwareBackend::AVX2:   return "AVX2";
@@ -86,6 +87,9 @@ HardwareBackend select_backend() {
     // GPU backends take priority for large batches
     if (hw.has_cuda && hw.cuda_sm_major >= 7)
         return HardwareBackend::CUDA;
+
+    if (hw.has_rocm)
+        return HardwareBackend::ROCM;
 
     if (hw.has_metal)
         return HardwareBackend::METAL;
@@ -408,6 +412,9 @@ DispatchReport get_dispatch_report() {
 #ifdef FLEXAIDS_HAS_METAL_SHANNON
             reason += " [Boltzmann + LogSumExp + Histogram kernels cached]";
 #endif
+            break;
+        case HardwareBackend::ROCM:
+            reason = "ROCm GPU detected (" + hw.rocm_device_name + ", " + hw.rocm_arch + ")";
             break;
         case HardwareBackend::AVX512:
             reason = "AVX-512 F+DQ+BW detected on CPU";
