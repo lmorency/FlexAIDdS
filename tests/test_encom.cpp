@@ -48,6 +48,33 @@ TEST(ENCoMEngine, AllBelowCutoffZeroEntropy) {
     EXPECT_EQ(result.n_modes, 0);
 }
 
+TEST(ENCoMEngine, AllNegativeEigenvaluesZeroEntropy) {
+    // All negative eigenvalues should be filtered out, giving zero entropy
+    auto modes = make_modes(5, -1.0);  // negative eigenvalues
+    auto result = ENCoMEngine::compute_vibrational_entropy(modes, 300.0, 1e-6);
+    EXPECT_NEAR(result.S_vib_kcal_mol_K, 0.0, TOL);
+    EXPECT_EQ(result.n_modes, 0);
+    EXPECT_NEAR(result.omega_eff, 0.0, TOL);
+}
+
+TEST(ENCoMEngine, MixedPositiveNegativeEigenvalues) {
+    // Only positive eigenvalues above cutoff should contribute
+    std::vector<encom::NormalMode> modes;
+    double eigenvalues[] = {-2.0, -1.0, 0.0, 0.5, 1.0, 2.0};
+    for (int i = 0; i < 6; ++i) {
+        encom::NormalMode m;
+        m.index = i + 1;
+        m.eigenvalue = eigenvalues[i];
+        m.frequency = std::sqrt(std::abs(eigenvalues[i]));
+        modes.push_back(m);
+    }
+    auto result = ENCoMEngine::compute_vibrational_entropy(modes, 300.0, 1e-6);
+    // Only 0.5, 1.0, 2.0 should contribute (3 modes)
+    EXPECT_EQ(result.n_modes, 3);
+    EXPECT_GT(result.omega_eff, 0.0);
+    EXPECT_TRUE(std::isfinite(result.S_vib_kcal_mol_K));
+}
+
 TEST(ENCoMEngine, PositiveEntropyForValidModes) {
     auto modes = make_modes(10, 1.0);
     auto result = ENCoMEngine::compute_vibrational_entropy(modes, 300.0);

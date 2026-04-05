@@ -81,6 +81,13 @@ jobs:
             cc: gcc
             cxx: g++
             cmake_extra: "-DFLEXAIDS_USE_MPI=ON"
+          - name: linux-gcc-asan
+            os: ubuntu-latest
+            cc: gcc
+            cxx: g++
+            cmake_extra: >-
+              -DCMAKE_CXX_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer -g'
+              -DCMAKE_EXE_LINKER_FLAGS='-fsanitize=address,undefined'
           # windows-msvc excluded: deep MSVC C++20 incompatibilities in legacy sources
     steps:
       - uses: actions/checkout@v6
@@ -126,7 +133,7 @@ jobs:
       - name: Build
         run: cmake --build build --parallel
       - name: Test
-        if: matrix.name == 'linux-gcc' || matrix.name == 'linux-clang' || matrix.name == 'linux-gcc-mpi'
+        if: matrix.name == 'linux-gcc' || matrix.name == 'linux-clang' || matrix.name == 'linux-gcc-mpi' || matrix.name == 'linux-gcc-asan'
         run: ctest --test-dir build --output-on-failure
 
   python_bindings_smoke:

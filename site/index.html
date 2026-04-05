@@ -37,7 +37,7 @@
     }
   },
   "softwareVersion": "2.0.0",
-  "datePublished": "2026-04-04",
+  "datePublished": "2026-04-05",
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
 }
 </script>
@@ -78,6 +78,7 @@
         <a href="#install">Install</a>
         <a href="#usage">Usage</a>
         <a href="#architecture">Architecture</a>
+        <a href="#docs">Docs</a>
         <a href="#publications">Publications</a>
       </nav>
       <div class="header-actions">
@@ -615,7 +616,7 @@ tENCoM wildtype.pdb conf1.pdb conf2.pdb conf3.pdb -T 300</code></pre>
         <h2>Repository</h2>
         <div class="stats-grid">
           <div class="stat-card">
-            <span class="stat-value" data-count="678">0</span>
+            <span class="stat-value" data-count="704">0</span>
             <span class="stat-label">Commits</span>
           </div>
           <div class="stat-card">
@@ -623,7 +624,7 @@ tENCoM wildtype.pdb conf1.pdb conf2.pdb conf3.pdb -T 300</code></pre>
             <span class="stat-label">Stars</span>
           </div>
           <div class="stat-card">
-            <span class="stat-value"><span id="latest-release">—</span></span>
+            <span class="stat-value"><span id="latest-release">v2.0.0</span></span>
             <span class="stat-label">Release</span>
           </div>
           <div class="stat-card">
@@ -640,24 +641,24 @@ tENCoM wildtype.pdb conf1.pdb conf2.pdb conf3.pdb -T 300</code></pre>
           </div>
         </div>
         <div class="lang-bar" aria-label="Language breakdown">
-          <div class="lang-segment" style="width:58.5%;background:var(--lang-cpp)" title="C++ 58.5%"></div>
-          <div class="lang-segment" style="width:19.8%;background:var(--lang-python)" title="Python 19.8%"></div>
-          <div class="lang-segment" style="width:8.3%;background:var(--lang-swift)" title="Swift 8.3%"></div>
-          <div class="lang-segment" style="width:3.4%;background:var(--lang-ts)" title="TypeScript 3.4%"></div>
+          <div class="lang-segment" style="width:58.3%;background:var(--lang-cpp)" title="C++ 58.3%"></div>
+          <div class="lang-segment" style="width:20.2%;background:var(--lang-python)" title="Python 20.2%"></div>
+          <div class="lang-segment" style="width:8.1%;background:var(--lang-swift)" title="Swift 8.1%"></div>
+          <div class="lang-segment" style="width:3.3%;background:var(--lang-ts)" title="TypeScript 3.3%"></div>
           <div class="lang-segment" style="width:2.2%;background:var(--lang-cmake)" title="CMake 2.2%"></div>
-          <div class="lang-segment" style="width:2.1%;background:var(--lang-objcpp)" title="Obj-C++ 2.1%"></div>
+          <div class="lang-segment" style="width:2.0%;background:var(--lang-objcpp)" title="Obj-C++ 2.0%"></div>
           <div class="lang-segment" style="width:1.2%;background:var(--lang-cuda)" title="CUDA 1.2%"></div>
-          <div class="lang-segment" style="width:4.5%;background:var(--lang-other)" title="Other 4.5%"></div>
+          <div class="lang-segment" style="width:4.6%;background:var(--lang-other)" title="Other 4.6%"></div>
         </div>
         <div class="lang-legend">
-          <span><i style="background:var(--lang-cpp)"></i>C++ 58.5%</span>
-          <span><i style="background:var(--lang-python)"></i>Python 19.8%</span>
-          <span><i style="background:var(--lang-swift)"></i>Swift 8.3%</span>
-          <span><i style="background:var(--lang-ts)"></i>TypeScript 3.4%</span>
+          <span><i style="background:var(--lang-cpp)"></i>C++ 58.3%</span>
+          <span><i style="background:var(--lang-python)"></i>Python 20.2%</span>
+          <span><i style="background:var(--lang-swift)"></i>Swift 8.1%</span>
+          <span><i style="background:var(--lang-ts)"></i>TypeScript 3.3%</span>
           <span><i style="background:var(--lang-cmake)"></i>CMake 2.2%</span>
-          <span><i style="background:var(--lang-objcpp)"></i>Obj-C++ 2.1%</span>
+          <span><i style="background:var(--lang-objcpp)"></i>Obj-C++ 2.0%</span>
           <span><i style="background:var(--lang-cuda)"></i>CUDA 1.2%</span>
-          <span><i style="background:var(--lang-other)"></i>Other 4.5%</span>
+          <span><i style="background:var(--lang-other)"></i>Other 4.6%</span>
         </div>
       </div>
     </section>
@@ -707,6 +708,124 @@ tENCoM wildtype.pdb conf1.pdb conf2.pdb conf3.pdb -T 300</code></pre>
             <code>HardwareDispatch</code>
             <span>Unified runtime backend selection</span>
           </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- What's New -->
+    <section class="whats-new-section" id="whats-new">
+      <div class="container">
+        <h2>What's New in v2.0</h2>
+        <p class="section-subtitle">Released 2026-04-04 &mdash; complete rewrite of the FlexAID engine</p>
+        <div class="timeline">
+          <div class="timeline-item">
+            <div class="timeline-marker"></div>
+            <div class="timeline-content">
+              <h4>Entropy-Driven Scoring</h4>
+              <p>Full canonical ensemble thermodynamics via Shannon information theory. Computes &Delta;G, &Delta;H, -T&Delta;S, and C<sub>v</sub> from the GA conformational ensemble.</p>
+            </div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-marker"></div>
+            <div class="timeline-content">
+              <h4>Multi-Format Input with SMILES</h4>
+              <p>Dock directly from SMILES strings with automatic 3D coordinate generation. Pure C++20 SMILES parser &mdash; no RDKit or Boost dependency. Also supports PDB, CIF/mmCIF, MOL2, SDF.</p>
+            </div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-marker"></div>
+            <div class="timeline-content">
+              <h4>tENCoM Vibrational Entropy</h4>
+              <p>Torsional Elastic Network Contact Model computes backbone vibrational entropy differentials between apo and holo structures via Jacobi diagonalization.</p>
+            </div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-marker"></div>
+            <div class="timeline-content">
+              <h4>Unified Hardware Dispatch</h4>
+              <p>Automatic runtime backend selection: CUDA &gt; Metal &gt; AVX-512 &gt; AVX2 &gt; OpenMP &gt; scalar. LTO-optimized binaries with <code>-march=native</code>.</p>
+            </div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-marker"></div>
+            <div class="timeline-content">
+              <h4>Full Ligand Flexibility</h4>
+              <p>Non-aromatic ring conformer sampling (chair/boat/twist/envelope), sugar pucker pseudorotation, and explicit R/S chiral center discrimination &mdash; all enabled by default.</p>
+            </div>
+          </div>
+          <div class="timeline-item">
+            <div class="timeline-marker"></div>
+            <div class="timeline-content">
+              <h4>Python Package &amp; PyMOL Plugin</h4>
+              <p><code>flexaidds</code> package with docking API, result I/O, CLI inspector, and PyMOL visualization plugin for binding mode analysis and entropy heatmaps.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Documentation -->
+    <section class="docs-section" id="docs">
+      <div class="container">
+        <h2>Documentation</h2>
+        <p class="section-subtitle">Guides, references, and deep dives into the FlexAID&Delta;S engine</p>
+        <div class="docs-grid">
+          <a href="https://github.com/lmorency/FlexAIDdS/blob/master/docs/INSTALLATION.md" target="_blank" rel="noopener noreferrer" class="doc-card">
+            <div class="doc-card-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2v13m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+            </div>
+            <h4>Installation Guide</h4>
+            <p>Prerequisites, build instructions, platform-specific notes for Linux, macOS, and Windows</p>
+          </a>
+          <a href="https://github.com/lmorency/FlexAIDdS/blob/master/docs/USERGUIDE.md" target="_blank" rel="noopener noreferrer" class="doc-card">
+            <div class="doc-card-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25"/></svg>
+            </div>
+            <h4>User Guide</h4>
+            <p>Full parameter reference, JSON configuration, Python API, PyMOL plugin commands</p>
+          </a>
+          <a href="https://github.com/lmorency/FlexAIDdS/blob/master/docs/SUPPORT_MATRIX.md" target="_blank" rel="noopener noreferrer" class="doc-card">
+            <div class="doc-card-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 17.25v1.007a3 3 0 01-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0115 18.257V17.25m6-12V15a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 15V5.25m18 0A2.25 2.25 0 0018.75 3H5.25A2.25 2.25 0 003 5.25m18 0V12a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 12V5.25"/></svg>
+            </div>
+            <h4>Support Matrix</h4>
+            <p>Supported platforms, compilers, GPU backends, and CI test coverage</p>
+          </a>
+          <a href="https://github.com/lmorency/FlexAIDdS/blob/master/docs/BENCHMARKS.md" target="_blank" rel="noopener noreferrer" class="doc-card">
+            <div class="doc-card-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"/></svg>
+            </div>
+            <h4>Benchmarks</h4>
+            <p>ITC-187, CASF-2016, LIT-PCBA, and cross-docking validation results</p>
+          </a>
+          <a href="https://github.com/lmorency/FlexAIDdS/blob/master/docs/REPRODUCIBILITY.md" target="_blank" rel="noopener noreferrer" class="doc-card">
+            <div class="doc-card-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/></svg>
+            </div>
+            <h4>Reproducibility</h4>
+            <p>Benchmark claim policy, dataset provenance, and reproducibility bundles</p>
+          </a>
+          <a href="https://github.com/lmorency/FlexAIDdS/blob/master/docs/docs/scoring/overview.md" target="_blank" rel="noopener noreferrer" class="doc-card">
+            <div class="doc-card-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M15.75 15.75V18m-7.5-6.75h.008v.008H8.25v-.008zm0 2.25h.008v.008H8.25V13.5zm0 2.25h.008v.008H8.25v-.008zm0 2.25h.008v.008H8.25V18zm2.498-6.75h.007v.008h-.007v-.008zm0 2.25h.007v.008h-.007V13.5zm0 2.25h.007v.008h-.007v-.008zm0 2.25h.007v.008h-.007V18zm2.504-6.75h.008v.008h-.008v-.008zm0 2.25h.008v.008h-.008V13.5zm0 2.25h.008v.008h-.008v-.008zm0 2.25h.008v.008h-.008V18zm2.498-6.75h.008v.008h-.008v-.008zm0 2.25h.008v.008h-.008V13.5zM8.25 6h7.5v2.25h-7.5V6zM12 2.25c-1.892 0-3.758.11-5.593.322C5.307 2.7 4.5 3.65 4.5 4.757V19.5a2.25 2.25 0 002.25 2.25h10.5a2.25 2.25 0 002.25-2.25V4.757c0-1.108-.806-2.057-1.907-2.185A48.507 48.507 0 0012 2.25z"/></svg>
+            </div>
+            <h4>Scoring Functions</h4>
+            <p>Voronoi CF, H-bond potential, GIST desolvation, and multi-component scoring</p>
+          </a>
+          <a href="https://github.com/lmorency/FlexAIDdS/blob/master/docs/docs/ga/overview.md" target="_blank" rel="noopener noreferrer" class="doc-card">
+            <div class="doc-card-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5m.75-9l3-3 2.148 2.148A12.061 12.061 0 0116.5 7.605"/></svg>
+            </div>
+            <h4>Genetic Algorithm</h4>
+            <p>Fitness models, diversity monitoring, hyperparameter tuning with GAOptimizer</p>
+          </a>
+          <a href="https://github.com/lmorency/FlexAIDdS/blob/master/docs/docs/api/python.md" target="_blank" rel="noopener noreferrer" class="doc-card">
+            <div class="doc-card-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3l-4.5 16.5"/></svg>
+            </div>
+            <h4>Python API</h4>
+            <p>StatMechEngine, ENCoMEngine, dock(), load_results(), ML rescoring bridge</p>
+          </a>
         </div>
       </div>
     </section>
@@ -881,11 +1000,13 @@ tENCoM wildtype.pdb conf1.pdb conf2.pdb conf3.pdb -T 300</code></pre>
         </div>
         <div class="footer-links">
           <a href="https://github.com/lmorency/FlexAIDdS" target="_blank" rel="noopener noreferrer">GitHub</a>
+          <a href="#docs">Documentation</a>
+          <a href="#whats-new">What's New</a>
           <a href="https://scholar.google.ca/citations?user=amFCT0oAAAAJ&amp;hl=en" target="_blank" rel="noopener noreferrer">Google Scholar</a>
           <a href="https://opensource.org/licenses/Apache-2.0" target="_blank" rel="noopener noreferrer">Apache 2.0 License</a>
         </div>
         <div class="footer-meta">
-          <span id="last-updated">Last updated: 2026-04-04</span>
+          <span id="last-updated">Last updated: 2026-04-05</span>
           &middot; Built by Le Bonhomme Pharma, 2026
         </div>
       </div>
