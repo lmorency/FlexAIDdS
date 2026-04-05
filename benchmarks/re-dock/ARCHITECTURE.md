@@ -154,15 +154,72 @@ Cold replicas get more resources (precision matters). Hot replicas get less
 ./deploy.sh vercel   # Coordinator API
 ```
 
+## v7: Bidirectional Round-Trip (Crooks Fluctuation Theorem)
+
+### Core Insight
+
+The v6 system only performs a **forward pass** (heating sweep, Van't Hoff fit).
+v7 adds a **bidirectional round-trip** where both forward (heating) and reverse
+(cooling) non-equilibrium work are measured, enabling:
+
+- **Crooks Fluctuation Theorem**: P(W_fwd)/P(-W_rev) = exp[beta(W - DG)]
+- **Bennett Acceptance Ratio (BAR)**: Optimal DG from both work distributions
+- **Irreversible entropy production**: sigma_irr = <W_fwd> + <W_rev> - 2*DG
+- **Landauer information loss**: sigma_irr / (k_B ln 2) = bits erased
+- **Shannon Energy Collapse rate**: dI/dT showing funnel quality
+- **Physics-based convergence**: sigma_irr -> 0 (not arbitrary threshold)
+
+### Bidirectional Protocol
+
+```
+Forward leg (heating T_low -> T_high):
+  For each adjacent pair (i, i+1):
+    W_fwd = -(beta_j - beta_i)(E_j - E_i)
+    Attempt Metropolis exchange
+    Record work sample
+
+Reverse leg (cooling T_high -> T_low):
+  For each adjacent pair (i+1, i) [descending]:
+    W_rev = -(beta_i - beta_j)(E_i - E_j)
+    Attempt Metropolis exchange
+    Record work sample
+
+Analysis:
+  DG_BAR = BAR(W_fwd, W_rev)          -- statistically optimal
+  DG_Crooks = intersection(P_fwd, P_rev)  -- graphically intuitive
+  sigma_irr = (<W_fwd> + <W_rev> - 2*DG) / T
+  bits_lost = sigma_irr / (R * ln 2)
+  converged = sigma_irr < threshold
+```
+
+### Hardware Acceleration (accelerator.py)
+
+Auto-detecting backend stack with transparent dispatch:
+
+```
+CuPy (CUDA GPU) -> Numba JIT (CPU SIMD) -> NumPy/SciPy (CPU BLAS)
+```
+
+Vectorized hot-path operations:
+- Batch Metropolis acceptance (N exchanges in one call)
+- Non-equilibrium work accumulation
+- Boltzmann weight computation (log-sum-exp stable)
+- Shannon entropy over multiple ensembles
+- BAR Fermi function evaluation
+- Gaussian KDE for Crooks intersection
+- Memory-mapped arrays for large campaigns
+
 ## Module Reference
 
 | Module              | Purpose                                              |
 |---------------------|------------------------------------------------------|
-| thermodynamics.py   | Van't Hoff, Metropolis, Shannon entropy, WHAM        |
-| orchestrator.py     | Campaign management, worker dispatch, checkpointing  |
+| thermodynamics.py   | Van't Hoff, Metropolis, Shannon entropy, WHAM, v7 work tracking |
+| crooks.py           | **v7** Bidirectional engine: BAR, Crooks CFT, sigma_irr, Landauer |
+| accelerator.py      | **v7** Hardware acceleration: NumPy/CuPy/Numba dispatch |
+| orchestrator.py     | Campaign management, worker dispatch, v7 bidirectional rounds |
 | cli.py              | Human-in-the-loop CLI                                |
-| visualization.py    | Chart.js HTML dashboards                             |
-| demo_run.py         | Simulated campaign with synthetic thermodynamics     |
+| visualization.py    | Chart.js HTML dashboards (v7: Crooks, info loss, collapse rate) |
+| demo_run.py         | Simulated campaign with v7 bidirectional thermodynamics |
 | gdrive_store.py     | Google Drive distributed checkpoint store            |
 | hf_space/app.py     | HuggingFace Space worker node                        |
 | vercel_coordinator/ | Serverless coordinator API                           |

@@ -1,14 +1,16 @@
 """
-RE-DOCK Thermodynamics Module
-=============================
+RE-DOCK Thermodynamics Module (v7)
+===================================
 
 Van't Hoff analysis, replica exchange thermodynamics, Shannon entropy,
-and WHAM free energy surface reconstruction for distributed docking campaigns.
+WHAM free energy surface reconstruction, and bidirectional work tracking
+for distributed docking campaigns.
 
 Components
 ----------
 - **DockingPose**: Lightweight pose data (energy, RMSD, coordinates hash)
-- **ReplicaState**: Full state of one temperature replica (poses, energies, generation)
+- **ReplicaState**: Full state of one temperature replica (poses, energies,
+  generation, and v7 bidirectional work accumulators)
 - **VantHoffResult**: Fitted ΔH°, ΔS°, ΔCp with statistics
 
 Functions
@@ -16,6 +18,7 @@ Functions
 - geometric_temperature_ladder: Generate T_i = T_min * (T_max/T_min)^(i/(N-1))
 - metropolis_exchange_criterion: Δ = (β_i - β_j)(E_i - E_j), accept if Δ<0 or rand<exp(-Δ)
 - attempt_exchanges: Sweep adjacent pairs with even/odd alternation
+- attempt_exchanges_with_work: v7 — exchanges that record non-equilibrium work
 - van_t_hoff_analysis: Linear ln(K) vs 1/T and nonlinear ΔCp fit
 - shannon_entropy_of_ensemble: S_config = -k_B Σ p_i ln(p_i), log-sum-exp stable
 - free_energy_surface: WHAM over temperature-biased histograms
@@ -68,7 +71,10 @@ class DockingPose:
 
 @dataclass
 class ReplicaState:
-    """Full thermodynamic state of one temperature replica."""
+    """Full thermodynamic state of one temperature replica.
+
+    v7 additions: work accumulators for bidirectional (Crooks) analysis.
+    """
     replica_index: int
     temperature: float  # Kelvin
     poses: List[DockingPose] = field(default_factory=list)
@@ -77,6 +83,14 @@ class ReplicaState:
     generation: int = 0
     exchange_count: int = 0
     exchange_accepted: int = 0
+
+    # v7: Bidirectional work tracking
+    forward_work: List[float] = field(default_factory=list)
+    """Non-equilibrium work values W_fwd from heating exchanges (kcal/mol)."""
+    reverse_work: List[float] = field(default_factory=list)
+    """Non-equilibrium work values W_rev from cooling exchanges (kcal/mol)."""
+    shannon_entropy_trace: List[float] = field(default_factory=list)
+    """Shannon entropy S_config at each measurement point (kcal/(mol·K))."""
 
     @property
     def beta(self) -> float:
@@ -260,6 +274,76 @@ def attempt_exchanges(
             ri.current_energy, rj.current_energy = rj.current_energy, ri.current_energy
 
         results.append((i, j, accepted, delta))
+
+    return results
+
+
+def attempt_exchanges_with_work(
+    replicas: List[ReplicaState],
+    direction: str = "forward",
+    rng: Optional[np.random.Generator] = None,
+) -> List[Tuple[int, int, bool, float, float]]:
+    """Attempt exchanges and record non-equilibrium work (v7 bidirectional).
+
+    Like ``attempt_exchanges``, but also computes and stores the
+    non-equilibrium work W for each exchange attempt in the replica's
+    ``forward_work`` or ``reverse_work`` accumulator.
+
+    .. math::
+
+        W = -(\\beta_j - \\beta_i)(E_j - E_i)
+
+    Parameters
+    ----------
+    replicas : List[ReplicaState]
+        Sorted by temperature (ascending).
+    direction : str
+        ``"forward"`` (low→high sweep) or ``"reverse"`` (high→low sweep).
+    rng : np.random.Generator, optional
+
+    Returns
+    -------
+    List of (i, j, accepted, delta, work) tuples.
+    """
+    if rng is None:
+        rng = np.random.default_rng()
+
+    results = []
+
+    if direction == "forward":
+        indices = range(len(replicas) - 1)
+    else:
+        indices = range(len(replicas) - 2, -1, -1)
+
+    for idx in indices:
+        i, j = idx, idx + 1
+        ri, rj = replicas[i], replicas[j]
+
+        # Non-equilibrium work
+        work = -((rj.beta - ri.beta) * (rj.current_energy - ri.current_energy))
+
+        # Metropolis criterion
+        accepted, delta = metropolis_exchange_criterion(
+            ri.beta, rj.beta, ri.current_energy, rj.current_energy, rng
+        )
+
+        ri.exchange_count += 1
+        rj.exchange_count += 1
+
+        if accepted:
+            ri.exchange_accepted += 1
+            rj.exchange_accepted += 1
+            ri.current_energy, rj.current_energy = rj.current_energy, ri.current_energy
+
+        # Store work in the appropriate accumulator
+        if direction == "forward":
+            ri.forward_work.append(work)
+            rj.forward_work.append(work)
+        else:
+            ri.reverse_work.append(work)
+            rj.reverse_work.append(work)
+
+        results.append((i, j, accepted, delta, work))
 
     return results
 
