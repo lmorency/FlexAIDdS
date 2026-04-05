@@ -73,6 +73,17 @@ from .ml_rescore import (
     MLRescorer,
 )
 
+# Dataset runner (requires numpy + pyyaml optional deps)
+try:
+    from .dataset_runner import (
+        DatasetRunner,
+        DatasetConfig,
+        DatasetResult,
+        BenchmarkReport,
+    )
+except ImportError:
+    pass  # numpy/pyyaml not installed; dataset_runner not available
+
 from .supercluster import SuperCluster
 from .tencom_results import FlexModeResult, FlexPopulationResult, parse_tencom_pdb, parse_tencom_json
 from .energy_matrix import (
@@ -248,6 +259,11 @@ __all__ = [
     "write_dat_file",
     "SYBYL_TYPE_NAMES",
     "SYBYL_RADII",
+    # Dataset runner
+    "DatasetRunner",
+    "DatasetConfig",
+    "DatasetResult",
+    "BenchmarkReport",
     # GA hyperparameter optimizer
     "GAOptimizer",
     "OptimizationResult",
