@@ -17,12 +17,15 @@
 
 // ─── Error-checking helper ──────────────────────────────────────────────────
 
+#include "flexaid_exception.h"
+#include <string>
+
 #define TQ_CUDA_CHECK(call) do {                                              \
     cudaError_t err__ = (call);                                               \
     if (err__ != cudaSuccess) {                                               \
-        fprintf(stderr, "[TurboQuant.cu] CUDA error at %s:%d — %s\n",        \
-                __FILE__, __LINE__, cudaGetErrorString(err__));               \
-        return;                                                               \
+        throw FlexAIDException(std::string("[TurboQuant.cu] CUDA error at ") +\
+            __FILE__ + ":" + std::to_string(__LINE__) + " — " +              \
+            cudaGetErrorString(err__));                                       \
     }                                                                         \
 } while (0)
 

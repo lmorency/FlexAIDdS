@@ -17,7 +17,8 @@ inline constexpr int GPU_THRESHOLD = 256;
 
 // One-time device context initialisation.
 // Returns true if a CUDA-capable device is available.
-bool init();
+// device_id: CUDA device index (-1 or out-of-range defaults to device 0).
+bool init(int device_id = 0);
 void shutdown();
 bool is_available();
 

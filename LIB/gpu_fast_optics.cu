@@ -30,11 +30,15 @@
 #include <algorithm>
 
 // ─── error-checking macro ─────────────────────────────────────────────────────
+#include "flexaid_exception.h"
+#include <string>
+
 #define GPU_FOPTICS_CHECK(call) do {                                          \
     cudaError_t _e = (call);                                                  \
     if (_e != cudaSuccess) {                                                  \
-        fprintf(stderr, "CUDA error %s:%d  %s\n", __FILE__, __LINE__,         \
-                cudaGetErrorString(_e));                                       \
+        throw FlexAIDException(std::string("[gpu_fast_optics] CUDA error at ")\
+            + __FILE__ + ":" + std::to_string(__LINE__) + " — "              \
+            + cudaGetErrorString(_e));                                        \
     }                                                                         \
 } while (0)
 

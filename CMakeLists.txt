@@ -357,7 +357,7 @@ if(ENABLE_TENCOM_BENCHMARK)
         LIB/tENCoM/tencm.cpp
         LIB/statmech.cpp
         LIB/TurboQuant.cpp
-        LIB/hardware_dispatch.cpp
+        LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
         LIB/encom.cpp
     )
@@ -394,7 +394,7 @@ if(ENABLE_TENCOM_TOOL)
         LIB/tENCoM/tencm.cpp
         LIB/statmech.cpp
         LIB/TurboQuant.cpp
-        LIB/hardware_dispatch.cpp
+        LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
         LIB/encom.cpp
     )
@@ -538,7 +538,7 @@ option(ENABLE_DISPATCH_BENCHMARK "Build the hardware dispatch benchmark binary" 
 if(ENABLE_DISPATCH_BENCHMARK)
     add_executable(benchmark_dispatch
         LIB/benchmark_dispatch.cpp
-        LIB/HardwareDispatch.cpp
+        LIB/UnifiedHardwareDispatch.cpp
     )
     target_include_directories(benchmark_dispatch PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
     if(MSVC)
@@ -613,7 +613,7 @@ if(BUILD_TESTING)
     # test_statmech — StatMechEngine unit tests
     add_executable(test_statmech tests/test_statmech.cpp LIB/statmech.cpp
         LIB/TurboQuant.cpp
-                   LIB/hardware_dispatch.cpp LIB/hardware_detect.cpp)
+                   LIB/UnifiedHardwareDispatch.cpp LIB/hardware_detect.cpp)
     target_include_directories(test_statmech PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
     target_link_libraries(test_statmech PRIVATE GTest::gtest GTest::gtest_main)
     if(MSVC)
@@ -648,7 +648,7 @@ if(BUILD_TESTING)
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         LIB/statmech.cpp
         LIB/TurboQuant.cpp
-        LIB/hardware_dispatch.cpp
+        LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
         LIB/tENCoM/tencm.cpp)
     target_include_directories(test_hardware_dispatch PRIVATE
@@ -673,7 +673,7 @@ if(BUILD_TESTING)
     add_executable(test_hardware_detect_dispatch
         tests/test_hardware_detect_dispatch.cpp
         LIB/hardware_detect.cpp
-        LIB/hardware_dispatch.cpp
+        LIB/UnifiedHardwareDispatch.cpp
         LIB/statmech.cpp
         LIB/TurboQuant.cpp)
     target_include_directories(test_hardware_detect_dispatch PRIVATE
@@ -713,7 +713,7 @@ if(BUILD_TESTING)
         LIB/tENCoM/tencm.cpp
         LIB/statmech.cpp
         LIB/TurboQuant.cpp
-        LIB/hardware_dispatch.cpp
+        LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
         LIB/encom.cpp
     )
@@ -773,7 +773,7 @@ if(BUILD_TESTING)
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
         LIB/NATURaL/NucleationDetector.cpp
-        LIB/hardware_dispatch.cpp
+        LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
     )
     target_include_directories(test_gaboom PRIVATE
@@ -1015,7 +1015,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
         LIB/NATURaL/NucleationDetector.cpp
-        LIB/hardware_dispatch.cpp
+        LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
     )
     target_include_directories(test_binding_mode_statmech PRIVATE
@@ -1059,7 +1059,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
         LIB/NATURaL/NucleationDetector.cpp
-        LIB/hardware_dispatch.cpp
+        LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
     )
     target_include_directories(test_ccbm PRIVATE
@@ -1103,7 +1103,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
         LIB/NATURaL/NucleationDetector.cpp
-        LIB/hardware_dispatch.cpp
+        LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
     )
     target_include_directories(test_binding_mode_advanced PRIVATE
@@ -1147,7 +1147,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
         LIB/NATURaL/NucleationDetector.cpp
-        LIB/hardware_dispatch.cpp
+        LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
     )
     target_include_directories(test_ga_core PRIVATE
@@ -1191,7 +1191,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
         LIB/NATURaL/NucleationDetector.cpp
-        LIB/hardware_dispatch.cpp
+        LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
     )
     target_include_directories(test_ga_validation PRIVATE
@@ -1224,7 +1224,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/TurboQuant.cpp
             LIB/encom.cpp
             LIB/tENCoM/tencm.cpp
-            LIB/hardware_dispatch.cpp
+            LIB/UnifiedHardwareDispatch.cpp
             LIB/hardware_detect.cpp
         )
         target_include_directories(test_soft_contact_matrix PRIVATE
@@ -1307,7 +1307,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
         LIB/NATURaL/NucleationDetector.cpp
-        LIB/hardware_dispatch.cpp
+        LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
     )
     target_include_directories(test_entropy_ga PRIVATE
@@ -1350,7 +1350,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/SharedPosePool.cpp
         LIB/statmech.cpp
         LIB/TurboQuant.cpp
-        LIB/hardware_dispatch.cpp
+        LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
     )
     target_include_directories(test_parallel_dock PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
@@ -1457,7 +1457,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
         LIB/NATURaL/NucleationDetector.cpp
-        LIB/hardware_dispatch.cpp
+        LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
     )
     target_include_directories(test_binding_mode_vibrational PRIVATE
@@ -1504,7 +1504,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/tENCoM/tencm.cpp
         LIB/statmech.cpp
         LIB/TurboQuant.cpp
-        LIB/hardware_dispatch.cpp
+        LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
         LIB/encom.cpp
     )
@@ -1544,7 +1544,7 @@ flexaids_configure_simd(test_cavity_detect)
         tests/test_grand_partition.cpp
         LIB/GrandPartitionFunction.cpp
         LIB/statmech.cpp
-        LIB/hardware_dispatch.cpp
+        LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
     )
     target_include_directories(test_grand_partition PRIVATE
@@ -1572,7 +1572,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/GrandPartitionFunction.cpp
         LIB/TargetKnowledgeBase.cpp
         LIB/statmech.cpp
-        LIB/hardware_dispatch.cpp
+        LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
     )
     target_include_directories(test_target_server PRIVATE
@@ -1748,7 +1748,7 @@ if(BUILD_SWIFT_BRIDGE)
     # test_unified_dispatch — runtime HardwareDispatcher tests
     add_executable(test_unified_dispatch
         tests/test_unified_dispatch.cpp
-        LIB/HardwareDispatch.cpp
+        LIB/UnifiedHardwareDispatch.cpp
     )
     target_include_directories(test_unified_dispatch PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
