@@ -83,8 +83,8 @@ class TestVersionNewer:
 
 class TestCheckForUpdates:
     FAKE_RELEASE = {
-        "tag_name": "v2.0.0",
-        "html_url": "https://github.com/lmorency/FlexAIDdS/releases/tag/v2.0.0",
+        "tag_name": "v99.0.0",
+        "html_url": "https://github.com/lmorency/FlexAIDdS/releases/tag/v99.0.0",
         "body": "Release notes here",
         "published_at": "2026-01-15T00:00:00Z",
         "assets": [
@@ -109,7 +109,7 @@ class TestCheckForUpdates:
 
         assert info is not None
         assert isinstance(info, UpdateInfo)
-        assert info.latest_version == "v2.0.0"
+        assert info.latest_version == "v99.0.0"
         assert info.update_available is True
         assert len(info.assets) == 1
         assert info.assets[0].name == "flexaidds-linux-x86_64.tar.gz"
