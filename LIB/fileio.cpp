@@ -1,8 +1,9 @@
 #include "fileio.h"
+#include "flexaid_exception.h"
+#include <string>
 
 void Terminate(int status){
-  printf("Exit code: %d\n",status);
-  exit(status);
+  throw FlexAIDException("FlexAID terminated with exit code " + std::to_string(status), status);
 }
 
 int OpenFile_B(char* filename, const char* mode, FILE **f){

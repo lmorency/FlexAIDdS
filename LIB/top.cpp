@@ -1,5 +1,6 @@
 #include "gaboom.h"
 #include "fileio.h"
+#include "flexaid_exception.h"
 #include "Vcontacts.h"
 #include "config_parser.h"
 #include "config_defaults.h"
@@ -140,7 +141,7 @@ static void print_usage(const char* progname) {
 }
 
 int main(int argc, char **argv){
-
+  try {
 	int   i,j;
 	int   natm;
 
@@ -1559,8 +1560,14 @@ int main(int argc, char **argv){
 	//////////////////////////////////////////
 
 	printf("Done.\n");
-    
-	Terminate(0);
 
 	return (0);
+  } catch (const FlexAIDException& e) {
+	if (e.exit_code() == 0) return 0;
+	fprintf(stderr, "FlexAID Error: %s\n", e.what());
+	return e.exit_code();
+  } catch (const std::exception& e) {
+	fprintf(stderr, "Fatal error: %s\n", e.what());
+	return 1;
+  }
 }

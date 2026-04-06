@@ -1,6 +1,7 @@
 #include "gaboom.h"
 #include "Vcontacts.h"
 #include "fileio.h"
+#include "flexaid_exception.h"
 #include "hardware_dispatch.h"
 #include "MIFGrid.h"
 #include "CavityDetect/SpatialGrid.h"

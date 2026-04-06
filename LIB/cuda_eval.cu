@@ -26,12 +26,14 @@
 #include <cmath>
 
 // ─── error-checking macro ─────────────────────────────────────────────────────
+#include "flexaid_exception.h"
+#include <string>
 #define CUDA_CHECK(call) do {                                             \
     cudaError_t _e = (call);                                              \
     if (_e != cudaSuccess) {                                              \
-        fprintf(stderr, "CUDA error %s:%d  %s\n", __FILE__, __LINE__,    \
-                cudaGetErrorString(_e));                                  \
-        exit(EXIT_FAILURE);                                               \
+        throw FlexAIDException(std::string("CUDA error at ") +           \
+            __FILE__ + ":" + std::to_string(__LINE__) + "  " +           \
+            cudaGetErrorString(_e));                                      \
     }                                                                     \
 } while (0)
 

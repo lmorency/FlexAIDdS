@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "flexaid_exception.h"
+
 #define MAX_PATH__ 255
 #define MAX_NUM_FILES 15
 
@@ -12,7 +14,7 @@
 int    OpenFile_B(char* filename, const char* mode, FILE **f);
 void   CloseFile_B(FILE **f, const char* mode);
 
-// Program termination
-void   Terminate(int status);
+// Legacy termination — now throws FlexAIDException instead of calling exit()
+[[noreturn]] void Terminate(int status);
 
 #endif // FILEIO_H

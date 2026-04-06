@@ -34,6 +34,8 @@
 #include <map>
 #include <cstdint>
 
+#include "flexaid_exception.h"
+
 //const int endian_t = 1;
 //#define IS_BIG_ENDIAN() ( ( *(char *) &endian_t ) == 0 ) // cross-platform development
 
@@ -86,8 +88,7 @@ constexpr float KWALL = 1.0e6f;
 #define Rw 1.4f
 
 #define NEW(p,type)     if ((p=(type *) malloc (sizeof(type))) == NULL) { \
-		printf("Out of Memory!\n");				\
-		exit(0);						\
+		throw FlexAIDException("Out of Memory allocating " #type);	\
 	}
 
 #define FREE(p)         if (p) { free ((char *) p); p = NULL; }

@@ -22,6 +22,8 @@
 #include "tencm.h"
 #include "../encom.h"
 
+#include "../flexaid_exception.h"
+
 #include <iostream>
 #include <fstream>
 #include <iomanip>
@@ -73,14 +75,13 @@ static void print_usage(const char* progname) {
         << "  Summary table          Printed to stdout\n\n";
 }
 
-// Safe numeric parser — exits with clear error on invalid input
+// Safe numeric parser — throws on invalid input
 static double parse_double(const char* str, const char* flag) {
     char* endptr = nullptr;
     errno = 0;
     double val = std::strtod(str, &endptr);
     if (errno != 0 || endptr == str || *endptr != '\0') {
-        std::cerr << "Error: invalid numeric value for " << flag << ": \"" << str << "\"\n";
-        std::exit(1);
+        throw FlexAIDException(std::string("Invalid numeric value for ") + flag + ": \"" + str + "\"");
     }
     return val;
 }
@@ -90,7 +91,7 @@ static Options parse_args(int argc, char* argv[]) {
 
     if (argc < 2) {
         print_usage(argv[0]);
-        std::exit(1);
+        throw FlexAIDException("Insufficient arguments: reference PDB required");
     }
 
     for (int i = 1; i < argc; ++i) {
@@ -98,11 +99,10 @@ static Options parse_args(int argc, char* argv[]) {
 
         if (arg == "-h" || arg == "--help") {
             print_usage(argv[0]);
-            std::exit(0);
+            throw FlexAIDException("Help requested", 0);
         } else if (arg == "-T") {
             if (i + 1 >= argc) {
-                std::cerr << "Error: -T requires a temperature value or range (start:end:step).\n";
-                std::exit(1);
+                throw FlexAIDException("-T requires a temperature value or range (start:end:step)");
             }
             std::string targ = argv[++i];
             // Check if it's a range: start:end:step
@@ -110,19 +110,16 @@ static Options parse_args(int argc, char* argv[]) {
             if (c1 != std::string::npos) {
                 size_t c2 = targ.find(':', c1 + 1);
                 if (c2 == std::string::npos) {
-                    std::cerr << "Error: temperature range requires format start:end:step.\n";
-                    std::exit(1);
+                    throw FlexAIDException("Temperature range requires format start:end:step");
                 }
                 double t_start = parse_double(targ.substr(0, c1).c_str(), "-T start");
                 double t_end   = parse_double(targ.substr(c1+1, c2-c1-1).c_str(), "-T end");
                 double t_step  = parse_double(targ.substr(c2+1).c_str(), "-T step");
                 if (t_start <= 0 || t_end <= 0 || t_step <= 0) {
-                    std::cerr << "Error: temperature range values must be positive.\n";
-                    std::exit(1);
+                    throw FlexAIDException("Temperature range values must be positive");
                 }
                 if (t_start > t_end) {
-                    std::cerr << "Error: temperature range start must be <= end.\n";
-                    std::exit(1);
+                    throw FlexAIDException("Temperature range start must be <= end");
                 }
                 for (double t = t_start; t <= t_end + t_step * 0.01; t += t_step) {
                     opts.temperatures.push_back(t);
@@ -133,32 +130,27 @@ static Options parse_args(int argc, char* argv[]) {
             }
         } else if (arg == "-r") {
             if (i + 1 >= argc) {
-                std::cerr << "Error: -r requires a cutoff value.\n";
-                std::exit(1);
+                throw FlexAIDException("-r requires a cutoff value");
             }
             opts.cutoff = static_cast<float>(parse_double(argv[++i], "-r"));
         } else if (arg == "-k") {
             if (i + 1 >= argc) {
-                std::cerr << "Error: -k requires a spring constant value.\n";
-                std::exit(1);
+                throw FlexAIDException("-k requires a spring constant value");
             }
             opts.k0 = static_cast<float>(parse_double(argv[++i], "-k"));
         } else if (arg == "-o") {
             if (i + 1 >= argc) {
-                std::cerr << "Error: -o requires an output prefix.\n";
-                std::exit(1);
+                throw FlexAIDException("-o requires an output prefix");
             }
             opts.prefix = argv[++i];
         } else if (arg == "--list") {
             if (i + 1 >= argc) {
-                std::cerr << "Error: --list requires a file path.\n";
-                std::exit(1);
+                throw FlexAIDException("--list requires a file path");
             }
             std::string listfile = argv[++i];
             std::ifstream lfs(listfile);
             if (!lfs.is_open()) {
-                std::cerr << "Error: cannot open list file: " << listfile << "\n";
-                std::exit(1);
+                throw FlexAIDException("Cannot open list file: " + listfile);
             }
             std::string pdb_line;
             while (std::getline(lfs, pdb_line)) {
@@ -176,8 +168,7 @@ static Options parse_args(int argc, char* argv[]) {
             opts.verbosity = 0;
         } else if (arg == "-f") {
             if (i + 1 >= argc) {
-                std::cerr << "Error: -f requires a format: pdb, json, csv, or all.\n";
-                std::exit(1);
+                throw FlexAIDException("-f requires a format: pdb, json, csv, or all");
             }
             std::string fmt = argv[++i];
             if (fmt == "pdb") {
@@ -189,45 +180,37 @@ static Options parse_args(int argc, char* argv[]) {
             } else if (fmt == "all") {
                 opts.output_pdb = true; opts.output_json = true; opts.output_csv = true;
             } else {
-                std::cerr << "Error: unknown format '" << fmt
-                          << "'. Use pdb, json, csv, or all.\n";
-                std::exit(1);
+                throw FlexAIDException("Unknown format '" + fmt + "'. Use pdb, json, csv, or all");
             }
         } else if (arg[0] == '-') {
-            std::cerr << "Unknown option: " << arg << "\n";
             print_usage(argv[0]);
-            std::exit(1);
+            throw FlexAIDException("Unknown option: " + arg);
         } else {
             opts.pdb_files.push_back(arg);
         }
     }
 
     if (opts.pdb_files.empty()) {
-        std::cerr << "Error: reference PDB is required.\n";
         print_usage(argv[0]);
-        std::exit(1);
+        throw FlexAIDException("Reference PDB is required");
     }
 
     // Validate numeric parameters
     if (opts.temperature <= 0.0) {
-        std::cerr << "Error: temperature must be positive (got " << opts.temperature << " K).\n";
-        std::exit(1);
+        throw FlexAIDException("Temperature must be positive (got " + std::to_string(opts.temperature) + " K)");
     }
     if (opts.cutoff <= 0.0f) {
-        std::cerr << "Error: contact cutoff must be positive (got " << opts.cutoff << " A).\n";
-        std::exit(1);
+        throw FlexAIDException("Contact cutoff must be positive (got " + std::to_string(opts.cutoff) + " A)");
     }
     if (opts.k0 <= 0.0f) {
-        std::cerr << "Error: spring constant must be positive (got " << opts.k0 << ").\n";
-        std::exit(1);
+        throw FlexAIDException("Spring constant must be positive (got " + std::to_string(opts.k0) + ")");
     }
 
     // Verify PDB files exist
     for (const auto& path : opts.pdb_files) {
         std::ifstream test(path);
         if (!test.is_open()) {
-            std::cerr << "Error: cannot open PDB file: " << path << "\n";
-            std::exit(1);
+            throw FlexAIDException("Cannot open PDB file: " + path);
         }
     }
 
@@ -323,6 +306,7 @@ static void run_analysis_at_temperature(
 }
 
 int main(int argc, char* argv[]) {
+  try {
     Options opts = parse_args(argc, argv);
 
     // If no explicit temperature range, use single temperature
@@ -461,4 +445,12 @@ int main(int argc, char* argv[]) {
     if (V >= 1) std::cout << "\ntENCoM analysis complete.\n";
 
     return 0;
+  } catch (const FlexAIDException& e) {
+    if (e.exit_code() == 0) return 0;  // help requested
+    std::cerr << "FlexAID Error: " << e.what() << "\n";
+    return e.exit_code();
+  } catch (const std::exception& e) {
+    std::cerr << "Fatal error: " << e.what() << "\n";
+    return 1;
+  }
 }
