@@ -58,7 +58,7 @@ jobs:
 
       - name: Cache build
         id: cache-build
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: build
           key: tier1-build-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'LIB/**/*.cpp', 'LIB/**/*.h') }}
@@ -86,7 +86,7 @@ jobs:
           fi
 
       - name: Cache benchmark datasets
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: benchmark_data/${{ env.DATASET }}
           key: bench-data-${{ env.DATASET }}-v1
