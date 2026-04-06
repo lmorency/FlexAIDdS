@@ -76,7 +76,7 @@ int reproduce(FA_Global* FA,GB_Global* GB,VC_Global* VC, chromosome* chrom, cons
                atom* atoms,resid* residue,gridpoint* cleftgrid,char* repmodel,
                double mutprob, double crossprob, int print,
                std::function<int32_t()> & dice,
-               std::map<std::string, int> & duplicates,
+               std::unordered_map<size_t, int> & duplicates,
                cfstr (*target)(FA_Global*,VC_Global*,atom*,resid*,gridpoint*,int,double*),
                GAContext& ctx);
 
@@ -314,7 +314,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	//	   i,(*gene_lim)[i].min,(*gene_lim)[i].max,(*gene_lim)[i].del);
 	//PAUSE;
 
-	std::map<std::string, int> duplicates;
+	std::unordered_map<size_t, int> duplicates;
 
 	populate_chromosomes(FA,GB,VC,(*chrom),(*gene_lim),atoms,residue,(*cleftgrid),
 			     GB->pop_init_method,target,GB->pop_init_file,at,0,print,dice,duplicates);
@@ -886,7 +886,7 @@ int reproduce(FA_Global* FA,GB_Global* GB,VC_Global* VC, chromosome* chrom, cons
                atom* atoms,resid* residue,gridpoint* cleftgrid,char* repmodel,
                double mutprob, double crossprob, int print,
 	       std::function<int32_t()> & dice,
-	       std::map<std::string, int> & duplicates,
+	       std::unordered_map<size_t, int> & duplicates,
                cfstr (*target)(FA_Global*,VC_Global*,atom*,resid*,gridpoint*,int,double*),
                GAContext& ctx){
 
@@ -967,8 +967,8 @@ int reproduce(FA_Global* FA,GB_Global* GB,VC_Global* VC, chromosome* chrom, cons
 			chrop2_gen[j].to_ic = genetoic(&gene_lim[j],chrop2_gen[j].to_int32);
 		}
 
-		std::string sig1 = generate_sig(chrop1_gen,GB->num_genes);
-		std::string sig2 = generate_sig(chrop2_gen,GB->num_genes);
+		size_t sig1 = hash_genes(chrop1_gen,GB->num_genes);
+		size_t sig2 = hash_genes(chrop2_gen,GB->num_genes);
 
 		/************************************/
 		/****** CHECK DUPLICATION  ********/
@@ -1036,11 +1036,11 @@ int reproduce(FA_Global* FA,GB_Global* GB,VC_Global* VC, chromosome* chrom, cons
 	return nrejected;
 }
 
-std::string generate_sig(gene genes[], int num_genes){
-	std::stringstream ss;
-	for(int i=0;i<num_genes;i++)
-		ss << (int)(genes[i].to_ic+0.5) << "/";
-	return ss.str();
+size_t hash_genes(const gene* g, int n){
+	size_t h = 0;
+	for(int i = 0; i < n; ++i)
+		h ^= std::hash<int32_t>{}(static_cast<int32_t>(g[i].to_ic + 0.5)) + 0x9e3779b9 + (h << 6) + (h >> 2);
+	return h;
 }
 
 /***********************************************************************/
@@ -1922,7 +1922,7 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
                           cfstr (*target)(FA_Global*,VC_Global*,atom*,resid*,gridpoint*,int,double*),
                           char file[], long int at, int popoffset, int print,
                           std::function<int32_t()> & dice,
-                          std::map<std::string, int> & duplicates){
+                          std::unordered_map<size_t, int> & duplicates){
 
 	int i,j;
 
@@ -1979,7 +1979,7 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 					                                       static_cast<double>(grid_idx));
 				}
 
-				sig = generate_sig(chrom[i].genes,GB->num_genes);
+				sig = hash_genes(chrom[i].genes,GB->num_genes);
 				if(GB->duplicates || duplicates.find(sig) == duplicates.end()){
 					break;
 				}
