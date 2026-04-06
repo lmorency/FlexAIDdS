@@ -30,7 +30,7 @@ jobs:
             artifact_name: flexaidds-windows
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
