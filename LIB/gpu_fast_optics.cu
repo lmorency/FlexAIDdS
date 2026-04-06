@@ -79,7 +79,9 @@ __global__ void gpuFastOPTICSKernel(const float* __restrict__ d_points,
     // Thread-local top-k storage (small k assumed, typically 4–20)
     // We use a simple insertion approach: each thread processes a strided
     // subset of candidate points and keeps its own local best-k.
-    constexpr int LOCAL_K_MAX = 32;
+    // LOCAL_K_MAX capped at 20 to keep shared memory under 48 KB:
+    //   BLOCK_SIZE(256) × LOCAL_K_MAX(20) × (sizeof(float)+sizeof(int)) = 40 KB
+    constexpr int LOCAL_K_MAX = 20;
     float local_dist[LOCAL_K_MAX];
     int   local_idx[LOCAL_K_MAX];
     int   local_count = 0;
@@ -125,8 +127,8 @@ __global__ void gpuFastOPTICSKernel(const float* __restrict__ d_points,
     // For the moderate N values in docking (hundreds to low thousands), this
     // is efficient enough and avoids complex warp-level merge logic.
 
-    __shared__ float  s_dist[BLOCK_SIZE * 32];  // BLOCK_SIZE × LOCAL_K_MAX
-    __shared__ int    s_idx[BLOCK_SIZE * 32];
+    __shared__ float  s_dist[BLOCK_SIZE * 20];  // BLOCK_SIZE × LOCAL_K_MAX
+    __shared__ int    s_idx[BLOCK_SIZE * 20];
     __shared__ int    s_count[BLOCK_SIZE];
 
     int base = threadIdx.x * LOCAL_K_MAX;

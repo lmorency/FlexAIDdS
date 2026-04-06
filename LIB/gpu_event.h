@@ -57,14 +57,24 @@ public:
     {
         switch (backend_) {
 #ifdef FLEXAIDS_USE_CUDA
-        case EventBackend::CUDA:
-            cudaEventCreateWithFlags(&cuda_event_, cudaEventDisableTiming);
+        case EventBackend::CUDA: {
+            cudaError_t err = cudaEventCreateWithFlags(&cuda_event_, cudaEventDisableTiming);
+            if (err != cudaSuccess) {
+                backend_ = EventBackend::CPU;
+                cpu_complete_.store(true, std::memory_order_release);
+            }
             break;
+        }
 #endif
 #ifdef FLEXAIDS_USE_ROCM
-        case EventBackend::ROCM:
-            hipEventCreateWithFlags(&hip_event_, hipEventDisableTiming);
+        case EventBackend::ROCM: {
+            hipError_t err = hipEventCreateWithFlags(&hip_event_, hipEventDisableTiming);
+            if (err != hipSuccess) {
+                backend_ = EventBackend::CPU;
+                cpu_complete_.store(true, std::memory_order_release);
+            }
             break;
+        }
 #endif
         case EventBackend::METAL:
             // Metal events are signalled via command-buffer completion handlers
@@ -161,16 +171,9 @@ public:
         }
     }
 
-    // ── Elapsed time (optional, requires timing-enabled events) ─────────
-
-#ifdef FLEXAIDS_USE_CUDA
-    // Elapsed milliseconds between two CUDA events.
-    static float elapsed_ms(const GPUEvent& start, const GPUEvent& end) {
-        float ms = 0.0f;
-        cudaEventElapsedTime(&ms, start.cuda_event_, end.cuda_event_);
-        return ms;
-    }
-#endif
+    // NOTE: elapsed_ms() is NOT provided because events are created with
+    // cudaEventDisableTiming for lower overhead.  Use wall-clock timing
+    // (e.g. std::chrono) for profiling instead.
 
     EventBackend backend() const noexcept { return backend_; }
 

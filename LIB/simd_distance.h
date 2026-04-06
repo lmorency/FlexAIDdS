@@ -256,9 +256,6 @@ inline void distance2_1x8(const float* FLEXAIDS_RESTRICT ax,
 inline float sum_sq_distances(const float* FLEXAIDS_RESTRICT a_xyz,
                                const float* FLEXAIDS_RESTRICT b_xyz,
                                int N) noexcept {
-#if FLEXAIDS_HAS_AVX512
-    return sum_sq_distances_avx512(a_xyz, b_xyz, N);
-#else
     __m256 acc = _mm256_setzero_ps();
     int i = 0;
     for (; i <= N - 8; i += 8) {
@@ -278,7 +275,6 @@ inline float sum_sq_distances(const float* FLEXAIDS_RESTRICT a_xyz,
             sum += sq(a_xyz[i*3+c] - b_xyz[i*3+c]);
     }
     return sum;
-#endif
 }
 
 // Lennard-Jones r^-12 wall energy for 8 distances simultaneously.
@@ -311,9 +307,6 @@ inline void lj_wall_8x(const float* FLEXAIDS_RESTRICT r2,
 inline void dot3_batch(const float* FLEXAIDS_RESTRICT a,
                        const float* FLEXAIDS_RESTRICT b,
                        float* FLEXAIDS_RESTRICT out, int N) noexcept {
-#if FLEXAIDS_HAS_AVX512
-    dot3_batch_avx512(a, b, out, N);
-#else
     int i = 0;
     for (; i <= N - 8; i += 8) {
         __m256 s = _mm256_setzero_ps();
@@ -330,7 +323,6 @@ inline void dot3_batch(const float* FLEXAIDS_RESTRICT a,
     }
     for (; i < N; ++i)
         out[i] = a[i*3]*b[i*3] + a[i*3+1]*b[i*3+1] + a[i*3+2]*b[i*3+2];
-#endif
 }
 
 // ─── AVX-512 implementations (16-wide float, 8-wide double) ─────────────────

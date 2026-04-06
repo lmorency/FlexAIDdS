@@ -73,7 +73,15 @@ public:
                 cuda_ctx_ = nullptr;
             }
             lock.unlock();
-            auto* new_ctx = init_fn();
+            CudaEvalCtx* new_ctx = nullptr;
+            try {
+                new_ctx = init_fn();
+            } catch (...) {
+                lock.lock();
+                cuda_rebuilding_ = false;
+                cuda_cv_.notify_all();
+                throw;
+            }
             lock.lock();
 
             cuda_ctx_   = new_ctx;
@@ -119,7 +127,15 @@ public:
                 metal_ctx_ = nullptr;
             }
             lock.unlock();
-            auto* new_ctx = init_fn();
+            MetalEvalCtx* new_ctx = nullptr;
+            try {
+                new_ctx = init_fn();
+            } catch (...) {
+                lock.lock();
+                metal_rebuilding_ = false;
+                metal_cv_.notify_all();
+                throw;
+            }
             lock.lock();
 
             metal_ctx_   = new_ctx;
@@ -185,7 +201,14 @@ public:
                 rocm_initialised_ = false;
             }
             lock.unlock();
-            init_fn(device_id, max_pop);
+            try {
+                init_fn(device_id, max_pop);
+            } catch (...) {
+                lock.lock();
+                rocm_rebuilding_ = false;
+                rocm_cv_.notify_all();
+                throw;
+            }
             lock.lock();
 
             rocm_device_id_   = device_id;

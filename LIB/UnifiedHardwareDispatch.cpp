@@ -549,12 +549,14 @@ double UnifiedHardwareDispatch::log_sum_exp(const std::vector<double>& values, B
 
     Backend b = (backend == Backend::AUTO) ? best_backend(KernelType::PARTITION_FUNC) : backend;
 
-    if (info_.has_eigen) return lse_eigen(values);
-
     switch (b) {
         case Backend::AVX512: return lse_avx512(values);
         case Backend::OPENMP: return lse_openmp(values);
-        default:              return lse_scalar(values);
+        case Backend::SCALAR: return lse_scalar(values);
+        default:
+            // For AUTO and GPU backends, prefer Eigen if available
+            if (info_.has_eigen) return lse_eigen(values);
+            return lse_scalar(values);
     }
 }
 
