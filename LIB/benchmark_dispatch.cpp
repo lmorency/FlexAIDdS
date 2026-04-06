@@ -96,10 +96,21 @@ static void print_row(const BenchResult& r) {
               << "\n";
 }
 
+// Warmup helper: run kernel once to prime caches and branch predictor
+template <typename Fn>
+static void warmup(Fn&& fn, int warmup_iters = 3) {
+    volatile double sink = 0;
+    for (int i = 0; i < warmup_iters; ++i) sink = fn();
+    (void)sink;
+}
+
 static void bench_shannon(hw::HardwareDispatcher& disp, int n, int reps,
                            std::vector<BenchResult>& results) {
     auto data = random_doubles(n, -10.0, 5.0);
     int bins = 20;
+
+    // Warmup: prime caches and branch predictor before timing
+    warmup([&]{ return disp.compute_shannon_entropy(data, bins, hw::Backend::SCALAR); });
 
     // Scalar baseline
     Timer t;
@@ -114,6 +125,7 @@ static void bench_shannon(hw::HardwareDispatcher& disp, int n, int reps,
 
     // OpenMP
     if (disp.is_available(hw::Backend::OPENMP)) {
+        warmup([&]{ return disp.compute_shannon_entropy(data, bins, hw::Backend::OPENMP); });
         t.start();
         for (int r = 0; r < reps; ++r)
             sink = disp.compute_shannon_entropy(data, bins, hw::Backend::OPENMP);
@@ -137,6 +149,8 @@ static void bench_lse(hw::HardwareDispatcher& disp, int n, int reps,
                        std::vector<BenchResult>& results) {
     auto data = random_doubles(n, -10.0, 5.0);
 
+    warmup([&]{ return disp.log_sum_exp(data, hw::Backend::SCALAR); });
+
     Timer t;
     t.start();
     volatile double sink = 0;
@@ -148,6 +162,7 @@ static void bench_lse(hw::HardwareDispatcher& disp, int n, int reps,
     (void)sink;
 
     if (disp.is_available(hw::Backend::OPENMP)) {
+        warmup([&]{ return disp.log_sum_exp(data, hw::Backend::OPENMP); });
         t.start();
         for (int r = 0; r < reps; ++r)
             sink = disp.log_sum_exp(data, hw::Backend::OPENMP);
@@ -162,6 +177,9 @@ static void bench_boltzmann(hw::HardwareDispatcher& disp, int n, int reps,
     auto data = random_doubles(n, -15.0, 5.0);
     double beta = 1.0 / (0.001987206 * 298.15);
 
+    // Warmup
+    { auto w = disp.compute_boltzmann_weights(data, beta, hw::Backend::SCALAR); }
+
     Timer t;
     t.start();
     for (int r = 0; r < reps; ++r) {
@@ -171,7 +189,8 @@ static void bench_boltzmann(hw::HardwareDispatcher& disp, int n, int reps,
     results.push_back({"BoltzmannWeights", "scalar", n, scalar_ms / reps,
                         n * reps / (scalar_ms * 1e-3), 1.0});
 
-    // AUTO (best available)
+    // AUTO (best available) — warmup + timed
+    { auto w = disp.compute_boltzmann_weights(data, beta, hw::Backend::AUTO); }
     t.start();
     for (int r = 0; r < reps; ++r) {
         auto w = disp.compute_boltzmann_weights(data, beta, hw::Backend::AUTO);
@@ -191,6 +210,9 @@ static void bench_rmsd(hw::HardwareDispatcher& disp, int n_atoms, int reps,
     Timer t;
     volatile float sink = 0;
 
+    // Warmup
+    sink = disp.rmsd(a.data(), b.data(), n_atoms, hw::Backend::SCALAR);
+
     // Scalar
     t.start();
     for (int r = 0; r < reps; ++r)
@@ -201,6 +223,7 @@ static void bench_rmsd(hw::HardwareDispatcher& disp, int n_atoms, int reps,
     (void)sink;
 
     if (disp.is_available(hw::Backend::AVX2)) {
+        sink = disp.rmsd(a.data(), b.data(), n_atoms, hw::Backend::AVX2);
         t.start();
         for (int r = 0; r < reps; ++r)
             sink = disp.rmsd(a.data(), b.data(), n_atoms, hw::Backend::AVX2);
@@ -210,6 +233,7 @@ static void bench_rmsd(hw::HardwareDispatcher& disp, int n_atoms, int reps,
     }
 
     if (disp.is_available(hw::Backend::AVX512)) {
+        sink = disp.rmsd(a.data(), b.data(), n_atoms, hw::Backend::AVX512);
         t.start();
         for (int r = 0; r < reps; ++r)
             sink = disp.rmsd(a.data(), b.data(), n_atoms, hw::Backend::AVX512);
@@ -219,6 +243,7 @@ static void bench_rmsd(hw::HardwareDispatcher& disp, int n_atoms, int reps,
     }
 
     if (disp.is_available(hw::Backend::OPENMP)) {
+        sink = disp.rmsd(a.data(), b.data(), n_atoms, hw::Backend::OPENMP);
         t.start();
         for (int r = 0; r < reps; ++r)
             sink = disp.rmsd(a.data(), b.data(), n_atoms, hw::Backend::OPENMP);
@@ -242,6 +267,10 @@ static void bench_distance2_batch(hw::HardwareDispatcher& disp, int n, int reps,
 
     Timer t;
 
+    // Warmup
+    disp.distance2_batch(ax.data(), ay.data(), az.data(), bx, by, bz,
+                          out.data(), n, hw::Backend::SCALAR);
+
     // Scalar
     t.start();
     for (int r = 0; r < reps; ++r)
@@ -251,7 +280,9 @@ static void bench_distance2_batch(hw::HardwareDispatcher& disp, int n, int reps,
     results.push_back({"Distance2Batch", "scalar", n, scalar_ms / reps,
                         n * reps / (scalar_ms * 1e-3), 1.0});
 
-    // AUTO
+    // AUTO — warmup + timed
+    disp.distance2_batch(ax.data(), ay.data(), az.data(), bx, by, bz,
+                          out.data(), n, hw::Backend::AUTO);
     t.start();
     for (int r = 0; r < reps; ++r)
         disp.distance2_batch(ax.data(), ay.data(), az.data(), bx, by, bz,
@@ -285,7 +316,8 @@ int main(int argc, char** argv) {
     disp.detect();
 
     std::cout << disp.hardware_report() << "\n";
-    std::cout << "Benchmark: size=" << size << ", reps=" << reps << "\n\n";
+    std::cout << "Benchmark: size=" << size << ", reps=" << reps
+              << ", warmup=3 iters per backend\n\n";
 
     std::vector<BenchResult> results;
 

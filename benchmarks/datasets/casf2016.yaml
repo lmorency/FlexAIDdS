@@ -19,6 +19,8 @@ description: >
 
 zenodo_doi: ""
 download_url: "http://www.pdbbind.org.cn/casf.asp"
+dataset_version: "2016.1"
+sha256_digest: ""  # Populate after first download: python -c "from benchmarks.DatasetRunner import DatasetConfig; c=DatasetConfig(slug='casf2016', name='CASF-2016', description=''); c.data_dir=...; print(c.compute_data_checksum())"
 data_format: pdb
 tier: 2
 tier1_subset_size: 5

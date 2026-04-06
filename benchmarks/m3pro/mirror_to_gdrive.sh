@@ -99,6 +99,57 @@ for dir in "${DIRS_TO_SYNC[@]}"; do
     fi
 done
 
+# ─── Post-sync integrity verification ────────────────────────────────────────
+
+MANIFEST="$LOG_DIR/sync_manifest_${TIMESTAMP}.json"
+VERIFY_FAILURES=0
+
+log ""
+log "Verifying sync integrity..."
+
+{
+    echo "{"
+    echo "  \"timestamp\": \"${TIMESTAMP}\","
+    echo "  \"directories\": {"
+    FIRST_DIR=true
+    for dir in "${DIRS_TO_SYNC[@]}"; do
+        SRC="$FLEXAIDDS_ICLOUD/$dir/"
+        DST="$FLEXAIDDS_GDRIVE/$dir/"
+        [[ ! -d "$SRC" ]] && continue
+
+        SRC_COUNT=$(find "$SRC" -type f 2>/dev/null | wc -l | tr -d ' ')
+        DST_COUNT=$(find "$DST" -type f 2>/dev/null | wc -l | tr -d ' ')
+
+        if [[ "$SRC_COUNT" -ne "$DST_COUNT" ]]; then
+            log "  VERIFY FAIL: $dir/ — source=$SRC_COUNT files, mirror=$DST_COUNT files"
+            VERIFY_FAILURES=$((VERIFY_FAILURES + 1))
+            MATCH="false"
+        else
+            log "  VERIFY OK: $dir/ — $SRC_COUNT files match"
+            MATCH="true"
+        fi
+
+        if [[ "$FIRST_DIR" == true ]]; then
+            FIRST_DIR=false
+        else
+            echo ","
+        fi
+        printf '    "%s": {"source_files": %d, "mirror_files": %d, "match": %s}' \
+            "$dir" "$SRC_COUNT" "$DST_COUNT" "$MATCH"
+    done
+    echo ""
+    echo "  },"
+    echo "  \"verify_failures\": $VERIFY_FAILURES"
+    echo "}"
+} > "$MANIFEST"
+
+log "Manifest: $MANIFEST"
+
+if [[ $VERIFY_FAILURES -gt 0 ]]; then
+    log "WARNING: $VERIFY_FAILURES dir(s) have mismatched file counts"
+    FAILURES=$((FAILURES + VERIFY_FAILURES))
+fi
+
 # ─── Summary ─────────────────────────────────────────────────────────────────
 
 log ""

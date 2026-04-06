@@ -103,6 +103,99 @@ mkdir -p "$LOGS"
 
 GLOBAL_START=$(date +%s)
 
+# ─── Thermal throttle detection ──────────────────────────────────────────────
+# M3 Pro in 14" chassis throttles under sustained load. Log thermal state
+# before and after each phase to detect if results are affected.
+
+check_thermal() {
+    local label="$1"
+    local cpu_temp
+    # pmset thermalPressureLevel: 0=nominal, 1=moderate, 2=heavy, 3=trapping, 4=sleeping
+    local thermal_level
+    thermal_level=$(pmset -g therm 2>/dev/null | grep -o 'CPU_Scheduler_Limit.*' | head -1 || echo "unavailable")
+    local speed_limit
+    speed_limit=$(pmset -g therm 2>/dev/null | grep -o 'CPU_Speed_Limit.*' | head -1 || echo "unavailable")
+
+    # powermetrics requires sudo; fall back to pmset thermal data
+    local pressure
+    pressure=$(pmset -g therm 2>/dev/null | grep -i 'thermal' | head -1 || echo "unknown")
+
+    echo "  Thermal [$label]: $pressure | $thermal_level | $speed_limit" | tee -a "$MASTER_LOG"
+
+    # Check for throttling (speed limit < 100 means throttled)
+    if echo "$speed_limit" | grep -qE '[0-9]+' 2>/dev/null; then
+        local limit_val
+        limit_val=$(echo "$speed_limit" | grep -o '[0-9]*' | head -1)
+        if [[ -n "$limit_val" ]] && [[ "$limit_val" -lt 100 ]]; then
+            warn "THERMAL THROTTLING DETECTED: CPU speed limited to ${limit_val}%"
+            warn "Results from this phase may show degraded performance."
+            echo "  WARNING: THROTTLED to ${limit_val}%" >> "$MASTER_LOG"
+            return 1
+        fi
+    fi
+    return 0
+}
+
+# ─── Memory pressure guard ───────────────────────────────────────────────────
+# 18GB unified RAM shared with Metal GPU. Detect swap pressure before starting
+# benchmarks and between phases.
+
+check_memory_pressure() {
+    local label="$1"
+    local page_size
+    page_size=$(pagesize 2>/dev/null || echo 16384)
+
+    # vm_stat gives page counts; compute swap and compressed memory
+    local vm_out
+    vm_out=$(vm_stat 2>/dev/null || true)
+
+    local swap_used_bytes=0
+    if [[ -n "$vm_out" ]]; then
+        local swapins swapouts
+        swapins=$(echo "$vm_out" | awk '/Swapins/{gsub(/\./,"",$2); print $2}')
+        swapouts=$(echo "$vm_out" | awk '/Swapouts/{gsub(/\./,"",$2); print $2}')
+        local compressed
+        compressed=$(echo "$vm_out" | awk '/stored in compressor/{gsub(/\./,"",$NF); print $NF}')
+
+        # memory_pressure command (macOS) gives system/user pressure
+        local pressure_level
+        pressure_level=$(memory_pressure 2>/dev/null | grep -o 'System-wide.*level' | head -1 || echo "unknown")
+
+        local free_pages
+        free_pages=$(echo "$vm_out" | awk '/Pages free/{gsub(/\./,"",$NF); print $NF}')
+        local free_mb=0
+        if [[ -n "$free_pages" ]]; then
+            free_mb=$(( (free_pages * page_size) / 1048576 ))
+        fi
+
+        echo "  Memory [$label]: free=${free_mb}MB, compressed=${compressed:-?} pages, swapins=${swapins:-0}, pressure=${pressure_level:-unknown}" | tee -a "$MASTER_LOG"
+
+        # Warn if free memory is below 1GB (1024MB)
+        if [[ "$free_mb" -lt 1024 ]]; then
+            warn "LOW MEMORY: Only ${free_mb}MB free — benchmark timings may be unreliable"
+            echo "  WARNING: LOW MEMORY ${free_mb}MB" >> "$MASTER_LOG"
+            return 1
+        fi
+
+        # Warn if significant swap activity
+        if [[ -n "$swapins" ]] && [[ "$swapins" -gt 1000 ]]; then
+            warn "SWAP PRESSURE: ${swapins} swap-ins detected — results may be unreliable"
+            echo "  WARNING: SWAP PRESSURE swapins=$swapins" >> "$MASTER_LOG"
+            return 1
+        fi
+    else
+        echo "  Memory [$label]: vm_stat unavailable" | tee -a "$MASTER_LOG"
+    fi
+    return 0
+}
+
+# ─── Pre-flight checks ──────────────────────────────────────────────────────
+
+echo "Pre-flight environment checks:" | tee -a "$MASTER_LOG"
+check_thermal "pre-flight"
+check_memory_pressure "pre-flight"
+echo "" | tee -a "$MASTER_LOG"
+
 # ─── Helper: async mirror ───────────────────────────────────────────────────
 
 trigger_mirror() {
@@ -163,6 +256,8 @@ if [[ "$RUN_KERNELS" == true ]]; then
     echo "Phase 1 (Kernels): COMPLETE" >> "$MASTER_LOG"
     cat "$KERNEL_REPORT" >> "$MASTER_LOG"
 
+    check_thermal "post-phase1"
+    check_memory_pressure "post-phase1"
     trigger_mirror
 fi
 
@@ -194,6 +289,8 @@ if [[ "$RUN_TIER1" == true ]]; then
     fi
 
     echo "Phase 2 (Tier-1): exit=$TIER1_EXIT" >> "$MASTER_LOG"
+    check_thermal "post-phase2"
+    check_memory_pressure "post-phase2"
     trigger_mirror
 fi
 
@@ -239,6 +336,10 @@ if [[ "$RUN_TIER2" == true ]]; then
 
         echo "  $ds: exit=$DS_EXIT, duration=${DS_DURATION}s" >> "$MASTER_LOG"
 
+        # Check environment health between datasets
+        check_thermal "post-$ds"
+        check_memory_pressure "post-$ds"
+
         # Mirror after each dataset for incremental backup
         trigger_mirror
     done
@@ -265,6 +366,65 @@ GLOBAL_DURATION=$((GLOBAL_END - GLOBAL_START))
     echo "  Log:              $MASTER_LOG"
     echo ""
 } | tee -a "$MASTER_LOG"
+
+# ─── Cross-run baseline comparison ───────────────────────────────────────────
+
+BASELINES_DIR="$RESULTS/baselines"
+mkdir -p "$BASELINES_DIR"
+
+# Find most recent tier-2 JSON report (if any tier-2 ran)
+LATEST_REPORT=""
+if [[ "$RUN_TIER2" == true ]]; then
+    LATEST_REPORT=$(ls -t "$RESULTS/tier2/"*_${TIMESTAMP}.json 2>/dev/null | head -1 || true)
+elif [[ "$RUN_TIER1" == true ]]; then
+    LATEST_REPORT=$(ls -t "$RESULTS/tier1/"*_${TIMESTAMP}.json 2>/dev/null | head -1 || true)
+fi
+
+if [[ -n "$LATEST_REPORT" ]] && [[ -f "$LATEST_REPORT" ]]; then
+    GIT_SHA=$(cd "$REPO" && git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+
+    # Save current result as baseline for this commit
+    BASELINE_FILE="$BASELINES_DIR/baseline_${GIT_SHA}.json"
+    cp "$LATEST_REPORT" "$BASELINE_FILE"
+    ok "Baseline saved: $BASELINE_FILE"
+
+    # Compare against previous baseline (if one exists)
+    PREV_BASELINE=$(ls -t "$BASELINES_DIR"/baseline_*.json 2>/dev/null | grep -v "$GIT_SHA" | head -1 || true)
+    if [[ -n "$PREV_BASELINE" ]] && [[ -f "$PREV_BASELINE" ]]; then
+        info "Comparing against previous baseline: $(basename "$PREV_BASELINE")"
+        python3 -c "
+import json, sys
+cur = json.load(open('$LATEST_REPORT'))
+prev = json.load(open('$PREV_BASELINE'))
+drifted = []
+for cd, pd in zip(cur.get('datasets',[]), prev.get('datasets',[])):
+    if cd.get('dataset') != pd.get('dataset'):
+        continue
+    for metric, val in cd.get('metrics',{}).items():
+        pval = pd.get('metrics',{}).get(metric)
+        if pval is None or pval == 0:
+            continue
+        change = (val - pval) / abs(pval)
+        if 'rmse' in metric or 'mae' in metric:
+            change = -change
+        if change < -0.02:
+            drifted.append(f'  {cd[\"dataset\"]}/{metric}: {pval:.4f} -> {val:.4f} ({change*100:+.1f}%)')
+if drifted:
+    print(f'DRIFT DETECTED ({len(drifted)} metrics):')
+    for d in drifted:
+        print(d)
+    sys.exit(0)
+else:
+    print(f'No drift (>2%) vs {prev.get(\"git_sha\",\"unknown\")}')
+" 2>&1 | tee -a "$MASTER_LOG"
+    else
+        info "No previous baseline found — this is the first run"
+    fi
+fi
+
+# Final thermal/memory check
+check_thermal "final"
+check_memory_pressure "final"
 
 # Final sync: foreground (blocking) to guarantee both copies are complete
 info "Running final blocking mirror to Google Drive..."

@@ -30,6 +30,7 @@ MPI distributed run::
 from __future__ import annotations
 
 import datetime
+import hashlib
 import json
 import logging
 import os
@@ -106,6 +107,58 @@ class DatasetConfig:
     data_dir: Optional[Path] = None
     data_format: str = "pdb"
     active_label_field: str = "is_active"
+    sha256_digest: str = ""
+    dataset_version: str = ""
+
+    # ------------------------------------------------------------------
+    # Dataset integrity verification
+    # ------------------------------------------------------------------
+
+    def compute_data_checksum(self) -> str:
+        """Compute SHA-256 over all data files in ``data_dir``.
+
+        Hashes file paths (relative, sorted) and contents for
+        deterministic verification across machines and runs.
+        Returns hex digest string, or empty string if data_dir missing.
+        """
+        if not self.data_dir or not self.data_dir.is_dir():
+            return ""
+        h = hashlib.sha256()
+        exts = {".pdb", ".mol2", ".sdf", ".mmcif", ".cif"}
+        files = sorted(
+            p for p in self.data_dir.rglob("*")
+            if p.is_file() and p.suffix.lower() in exts
+        )
+        for f in files:
+            rel = f.relative_to(self.data_dir)
+            h.update(str(rel).encode())
+            h.update(f.read_bytes())
+        return h.hexdigest()
+
+    def verify_integrity(self) -> bool:
+        """Verify dataset files match the expected SHA-256 digest.
+
+        Returns True if:
+          - No digest is configured (verification skipped), or
+          - Computed digest matches ``sha256_digest``.
+        Logs a warning and returns False on mismatch.
+        """
+        if not self.sha256_digest:
+            logger.debug("No SHA-256 digest configured for %s — skipping verification",
+                         self.slug)
+            return True
+        computed = self.compute_data_checksum()
+        if not computed:
+            logger.warning("Cannot verify %s: data_dir missing or empty", self.slug)
+            return False
+        if computed != self.sha256_digest:
+            logger.warning(
+                "INTEGRITY MISMATCH for %s: expected %s, got %s",
+                self.slug, self.sha256_digest[:16] + "...", computed[:16] + "...",
+            )
+            return False
+        logger.info("Integrity verified for %s (SHA-256 %s...)", self.slug, computed[:16])
+        return True
 
     @classmethod
     def from_yaml(cls, yaml_path: Path) -> "DatasetConfig":
@@ -133,6 +186,8 @@ class DatasetConfig:
             baseline_tolerance=float(raw.pop("baseline_tolerance", 0.05)),
             data_format=str(raw.pop("data_format", "pdb")),
             active_label_field=str(raw.pop("active_label_field", "is_active")),
+            sha256_digest=str(raw.pop("sha256_digest", "")),
+            dataset_version=str(raw.pop("dataset_version", "")),
         )
         if data_dir_raw:
             config.data_dir = Path(data_dir_raw)
@@ -387,6 +442,93 @@ class BenchmarkReport:
             runner_info=data.get("runner_info", {}),
         )
 
+    # ------------------------------------------------------------------
+    # Cross-run baseline comparison
+    # ------------------------------------------------------------------
+
+    def save_as_baseline(self, baselines_dir: Union[str, Path]) -> Path:
+        """Save this report as a per-commit baseline for future comparison.
+
+        Writes to ``baselines_dir/baseline_{git_sha}.json``.
+        Returns the path to the saved baseline file.
+        """
+        baselines_dir = Path(baselines_dir)
+        baselines_dir.mkdir(parents=True, exist_ok=True)
+        sha = self.git_sha or "unknown"
+        path = baselines_dir / f"baseline_{sha}.json"
+        path.write_text(self.to_json())
+        logger.info("Baseline saved: %s", path)
+        return path
+
+    @classmethod
+    def load_latest_baseline(cls, baselines_dir: Union[str, Path]) -> Optional["BenchmarkReport"]:
+        """Load the most recent baseline from ``baselines_dir``.
+
+        Returns None if no baseline files exist.
+        """
+        baselines_dir = Path(baselines_dir)
+        if not baselines_dir.is_dir():
+            return None
+        files = sorted(baselines_dir.glob("baseline_*.json"), key=lambda p: p.stat().st_mtime)
+        if not files:
+            return None
+        return cls.load(files[-1])
+
+    def compare_to(self, previous: "BenchmarkReport", drift_threshold: float = 0.02) -> Dict[str, Any]:
+        """Compare this report against a previous baseline.
+
+        Flags metrics that changed by more than ``drift_threshold`` (default 2%)
+        relative to the previous value — even if they still pass the static
+        YAML baseline. This catches gradual performance drift between commits.
+
+        Returns:
+            Dict with ``drifted`` (list of drift entries) and ``summary`` string.
+        """
+        prev_by_slug: Dict[str, Dict[str, float]] = {}
+        for dr in previous.datasets:
+            prev_by_slug[dr.config.slug] = dr.metrics
+
+        drifted: List[Dict[str, Any]] = []
+        for dr in self.datasets:
+            prev_metrics = prev_by_slug.get(dr.config.slug)
+            if prev_metrics is None:
+                continue
+            for metric, value in dr.metrics.items():
+                prev_val = prev_metrics.get(metric)
+                if prev_val is None or prev_val == 0:
+                    continue
+                rel_change = (value - prev_val) / abs(prev_val)
+                # For error metrics (lower is better), invert the sign
+                if "rmse" in metric or "mae" in metric:
+                    rel_change = -rel_change
+                if rel_change < -drift_threshold:
+                    drifted.append({
+                        "dataset": dr.config.slug,
+                        "metric": metric,
+                        "previous": prev_val,
+                        "current": value,
+                        "change_pct": round(rel_change * 100, 2),
+                    })
+
+        summary_lines = []
+        if drifted:
+            summary_lines.append(
+                f"DRIFT DETECTED: {len(drifted)} metric(s) changed >{drift_threshold*100:.0f}% "
+                f"vs baseline {previous.git_sha or 'unknown'}"
+            )
+            for d in drifted:
+                summary_lines.append(
+                    f"  {d['dataset']}/{d['metric']}: "
+                    f"{d['previous']:.4f} -> {d['current']:.4f} ({d['change_pct']:+.1f}%)"
+                )
+        else:
+            summary_lines.append(
+                f"No drift detected vs baseline {previous.git_sha or 'unknown'} "
+                f"(threshold: {drift_threshold*100:.0f}%)"
+            )
+
+        return {"drifted": drifted, "summary": "\n".join(summary_lines)}
+
 
 # ---------------------------------------------------------------------------
 # Helper: Git SHA + env info
@@ -537,6 +679,9 @@ class DatasetRunner:
                 cfg = DatasetConfig.from_yaml(yaml_path)
                 if cfg.data_dir is None:
                     cfg.data_dir = self.cache_dir / cfg.slug
+                if not cfg.verify_integrity():
+                    logger.warning("Skipping %s due to integrity check failure", cfg.slug)
+                    continue
                 configs.append(cfg)
                 logger.debug("Loaded dataset config: %s (%d targets)",
                              cfg.slug, len(cfg.targets))
