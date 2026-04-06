@@ -121,6 +121,10 @@ add_library(flexaid_core OBJECT
     SdfReader.cpp
     # ── CavityDetect ──
     CavityDetect/CavityDetect.cpp
+    # ── CPU fallbacks for GPU evaluations ──
+    cpu_eval.cpp
+    cpu_fast_optics.cpp
+    tENCoM/tencm_cpu_fallback.cpp
     # ── PTMAttachment ──
     PTMAttachment/PTMAttachment.cpp
     # ── JSON config parser ──
