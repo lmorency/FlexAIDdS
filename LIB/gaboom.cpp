@@ -21,9 +21,7 @@
 #include <omp.h>
 #endif
 
-#ifdef FLEXAIDS_HAS_EIGEN
 #include <Eigen/Dense>
-#endif
 
 #ifdef FLEXAIDS_USE_CUDA
 #include "cuda_eval.cuh"
@@ -1271,7 +1269,6 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 		const size_t total = static_cast<size_t>(n_types) * n_types * n_samples;
 		std::vector<float> out(total, 0.0f);
 
-#ifdef FLEXAIDS_HAS_EIGEN
 		// Build the x-sample linspace via Eigen (vectorised).
 		Eigen::ArrayXd xs = Eigen::ArrayXd::LinSpaced(n_samples, 0.0, 1.0);
 		for (int t1 = 0; t1 < n_types; ++t1) {
@@ -1283,19 +1280,6 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 					dst[k] = static_cast<float>(get_yval(em, xs[k]));
 			}
 		}
-#else
-		for (int t1 = 0; t1 < n_types; ++t1) {
-			for (int t2 = 0; t2 < n_types; ++t2) {
-				struct energy_matrix* em = &FA->energy_matrix[t1 * n_types + t2];
-				if (em->energy_values == NULL) continue;
-				for (int k = 0; k < n_samples; ++k) {
-					double x = static_cast<double>(k) / (n_samples - 1);
-					out[(t1 * n_types + t2) * n_samples + k] =
-						static_cast<float>(get_yval(em, x));
-				}
-			}
-		}
-#endif
 		return out;
 	};
 
@@ -2886,7 +2870,6 @@ void print_chrom(const gene* genes, int num_genes, int real_flag){
  ********************************************************************************/
 
 double calc_rmsp(int npar, const gene* g1, const gene* g2, const optmap* map_par, gridpoint* cleftgrid){
-#ifdef FLEXAIDS_HAS_EIGEN
 	// Vectorised RMSP using Eigen strided Map over the to_ic field.
 	// gene_struct lays out {int32_t to_int32; double to_ic}, so stride = sizeof(gene).
 	using EMap = Eigen::Map<const Eigen::VectorXd,
@@ -2897,12 +2880,6 @@ double calc_rmsp(int npar, const gene* g1, const gene* g2, const optmap* map_par
 	Eigen::VectorXd diff(npar);
 	for (int ii = 0; ii < npar; ++ii) diff[ii] = g1[ii].to_ic - g2[ii].to_ic;
 	return std::sqrt(diff.squaredNorm() / (double)npar);
-#else
-	double rmsp = 0.0;
-	for(int i = 0; i < npar; ++i)
-		rmsp += (g1[i].to_ic - g2[i].to_ic) * (g1[i].to_ic - g2[i].to_ic);
-	return sqrt(rmsp / (double)npar);
-#endif
 }
 
 double genetoic(const genlim* gene_lim, int32_t gene){
