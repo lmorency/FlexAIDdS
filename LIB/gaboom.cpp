@@ -1,6 +1,8 @@
 #include "gaboom.h"
 #include "Vcontacts.h"
 #include "fileio.h"
+#include "flexaid_exception.h"
+#include "ga_constants.h"
 #include "hardware_dispatch.h"
 #include "MIFGrid.h"
 #include "CavityDetect/SpatialGrid.h"
@@ -20,9 +22,7 @@
 #include <omp.h>
 #endif
 
-#ifdef FLEXAIDS_HAS_EIGEN
 #include <Eigen/Dense>
-#endif
 
 #ifdef FLEXAIDS_USE_CUDA
 #include "cuda_eval.cuh"
@@ -43,7 +43,7 @@
 #include "NATURaL/NATURaLDualAssembly.h"
 
 // in milliseconds
-# define SLEEP 25
+# define SLEEP GA_SLEEP_MS
 
 #ifdef _WIN32
 # include <windows.h>
@@ -112,15 +112,15 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	char gridfile[MAX_PATH__];
 	char gridfilename[MAX_PATH__];
 
-	int geninterval=50;
-	int popszpartition=100;
+	int geninterval=GA_DEFAULT_GEN_INTERVAL;
+	int popszpartition=GA_DEFAULT_POP_PARTITION;
 
 	int  state=0;
 	char PAUSEFILE[MAX_PATH__];
 	char ABORTFILE[MAX_PATH__];
 	char STOPFILE[MAX_PATH__];
 
-	const int INTERVAL = 1; // sleep interval between checking file state
+	const int INTERVAL = GA_STATE_CHECK_INTERVAL; // sleep interval between checking file state
 
 	*memchrom=0; //num chrom allocated in memory
 
@@ -158,15 +158,15 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	if (gainpfile[0] != '\0') {
 		//GB->rrg_skip=0;
 		GB->adaptive_ga=0;
-		GB->num_print=10;
-		GB->print_int=1;
-		GB->seed = 0;
+		GB->num_print=GA_DEFAULT_NUM_PRINT;
+		GB->print_int=GA_DEFAULT_PRINT_INT;
+		GB->seed = GA_DEFAULT_SEED;
 
 	// Entropy convergence defaults (opt-in)
 	GB->entropy_convergence    = 0;
-	GB->entropy_check_interval = 10;
-	GB->entropy_window         = 5;
-	GB->entropy_rel_threshold  = 0.01;
+	GB->entropy_check_interval = GA_DEFAULT_ENTROPY_CHECK_INTERVAL;
+	GB->entropy_window         = GA_DEFAULT_ENTROPY_WINDOW;
+	GB->entropy_rel_threshold  = GA_DEFAULT_ENTROPY_REL_THRESHOLD;
 
 	printf("file in GA is <%s>\n",gainpfile);
 
@@ -534,7 +534,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 
 	// Thermodynamic analysis of the final conformational ensemble
 	if(n_chrom_snapshot > 0) {
-		double T_K = (FA->temperature > 0) ? static_cast<double>(FA->temperature) : 300.0;
+		double T_K = (FA->temperature > 0) ? static_cast<double>(FA->temperature) : GA_DEFAULT_TEMPERATURE_K;
 		statmech::StatMechEngine sme(T_K);
 		for(int s = 0; s < n_chrom_snapshot; ++s)
 			sme.add_sample((*chrom_snapshot)[s].evalue);
@@ -545,7 +545,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 			for (int s = 0; s < n_chrom_snapshot; ++s)
 				energy_pts[s].coords = { (*chrom_snapshot)[s].evalue };
 
-			fast_optics::FastOPTICS foptics(energy_pts, std::max(4, n_chrom_snapshot / 20));
+			fast_optics::FastOPTICS foptics(energy_pts, std::max(GA_FOPTICS_MIN_POINTS, n_chrom_snapshot / GA_FOPTICS_DIVISOR));
 			auto sc_indices = foptics.extractSuperCluster(fast_optics::ClusterMode::SUPER_CLUSTER_ONLY);
 
 			if (!sc_indices.empty() && sc_indices.size() < static_cast<size_t>(n_chrom_snapshot)) {
@@ -582,14 +582,14 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		//
 		// TurboQuant MSE bound: D_mse ≤ sqrt(3π/2) · 1/4^b ≈ 2.7/4^b
 		// At b=3 bits/coordinate: D_mse ≈ 0.03 (97% fidelity)
-		if (n_chrom_snapshot > 64) {
-			constexpr int TQ_BITS = 3;  // 3 bits/coord → 97% fidelity, 10.7× compression
+		if (n_chrom_snapshot > GA_TQENS_MIN_SNAPSHOTS) {
+			constexpr int TQ_BITS = GA_TQENS_BITS;  // 3 bits/coord → 97% fidelity, 10.7× compression
 
 			if (FA->use_tqens) {
 				// ── Multi-dimensional QuantizedEnsemble (full TurboQuantProd) ──
 				// Energy descriptor: (com, wal, sas, elec) → 4 dimensions
 				// Each chromosome's cfstr provides these component values.
-				constexpr int TQ_EDIM = 4;
+				constexpr int TQ_EDIM = GA_TQENS_ENERGY_DIM;
 				turboquant::QuantizedEnsemble qens(TQ_EDIM, TQ_BITS);
 				qens.reserve(n_chrom_snapshot);
 
@@ -694,7 +694,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 			if (ncfg.enabled) {
 				ncfg.temperature_K = (FA->temperature > 0)
 				                     ? static_cast<double>(FA->temperature)
-				                     : 310.0;
+				                     : GA_NATURAL_DEFAULT_TEMP;
 				natural::DualAssemblyEngine engine(
 					ncfg, FA, VC, atoms, residue, FA->MIN_NUM_RESIDUE);
 				auto trajectory = engine.run();
@@ -863,7 +863,7 @@ void adapt_prob(GB_Global* GB,double fit1, double fit2, double* mutp, double* cr
 
 	//calculate new probabilities (pc/pm)
 	double denom = GB->fit_max - GB->fit_avg;
-	if (denom < 1e-15) denom = 1e-15;  // prevent division by zero when converged
+	if (denom < GA_FITNESS_DENOM_FLOOR) denom = GA_FITNESS_DENOM_FLOOR;  // prevent division by zero when converged
 
 	if (GB->fit_high > GB->fit_avg) *crossp = GB->k1*(GB->fit_max-GB->fit_high)/denom;
 	else *crossp = GB->k3;
@@ -1272,7 +1272,6 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 		const size_t total = static_cast<size_t>(n_types) * n_types * n_samples;
 		std::vector<float> out(total, 0.0f);
 
-#ifdef FLEXAIDS_HAS_EIGEN
 		// Build the x-sample linspace via Eigen (vectorised).
 		Eigen::ArrayXd xs = Eigen::ArrayXd::LinSpaced(n_samples, 0.0, 1.0);
 		for (int t1 = 0; t1 < n_types; ++t1) {
@@ -1284,19 +1283,6 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 					dst[k] = static_cast<float>(get_yval(em, xs[k]));
 			}
 		}
-#else
-		for (int t1 = 0; t1 < n_types; ++t1) {
-			for (int t2 = 0; t2 < n_types; ++t2) {
-				struct energy_matrix* em = &FA->energy_matrix[t1 * n_types + t2];
-				if (em->energy_values == NULL) continue;
-				for (int k = 0; k < n_samples; ++k) {
-					double x = static_cast<double>(k) / (n_samples - 1);
-					out[(t1 * n_types + t2) * n_samples + k] =
-						static_cast<float>(get_yval(em, x));
-				}
-			}
-		}
-#endif
 		return out;
 	};
 
@@ -1660,7 +1646,7 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 		   and is parallelised with OpenMP.
 		*/
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) default(none) \
+#pragma omp parallel for schedule(dynamic) default(none) \
 	shared(chrom, GB, FA, cleftgrid)
 #endif
 		for(int pi=0; pi<GB->num_chrom; pi++){
@@ -1718,7 +1704,7 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 			const double w = GB->entropy_weight;
 
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) default(none) \
+#pragma omp parallel for schedule(dynamic) default(none) \
 	shared(chrom, GB, FA, cleftgrid, max_bw, w)
 #endif
 			for (int pi = 0; pi < GB->num_chrom; pi++) {
@@ -1746,7 +1732,7 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 			}
 
 			// Log ensemble thermodynamics periodically.
-			if (gen_id % 50 == 0) {
+			if (gen_id % GA_SMFREE_LOG_INTERVAL == 0) {
 				fprintf(stderr, "[SMFREE] gen=%d  F=%.3f  <E>=%.3f  S=%.6f  Cv=%.4f  σ_E=%.3f\n",
 				        gen_id, thermo.free_energy, thermo.mean_energy,
 				        thermo.entropy, thermo.heat_capacity, thermo.std_energy);
@@ -2240,7 +2226,7 @@ int cmp_chrom2pop(const chromosome* chrom,const gene* genes, int num_genes,int s
 		for(j=0;j<num_genes;j++){
 			//printf("individuals[%d][%d].gene[%d]=%.3f\t%.3f\n", start-1, i, j,
 			//       genes[j].to_ic, chrom[i].genes[j].to_ic);
-			flag += abs(genes[j].to_ic - chrom[i].genes[j].to_ic) < 0.1;
+			flag += abs(genes[j].to_ic - chrom[i].genes[j].to_ic) < GA_GENE_MATCH_TOLERANCE;
 		}
 
 		//printf("flag=%d\n",flag);
@@ -2887,7 +2873,6 @@ void print_chrom(const gene* genes, int num_genes, int real_flag){
  ********************************************************************************/
 
 double calc_rmsp(int npar, const gene* g1, const gene* g2, const optmap* map_par, gridpoint* cleftgrid){
-#ifdef FLEXAIDS_HAS_EIGEN
 	// Vectorised RMSP using Eigen strided Map over the to_ic field.
 	// gene_struct lays out {int32_t to_int32; double to_ic}, so stride = sizeof(gene).
 	using EMap = Eigen::Map<const Eigen::VectorXd,
@@ -2898,12 +2883,6 @@ double calc_rmsp(int npar, const gene* g1, const gene* g2, const optmap* map_par
 	Eigen::VectorXd diff(npar);
 	for (int ii = 0; ii < npar; ++ii) diff[ii] = g1[ii].to_ic - g2[ii].to_ic;
 	return std::sqrt(diff.squaredNorm() / (double)npar);
-#else
-	double rmsp = 0.0;
-	for(int i = 0; i < npar; ++i)
-		rmsp += (g1[i].to_ic - g2[i].to_ic) * (g1[i].to_ic - g2[i].to_ic);
-	return sqrt(rmsp / (double)npar);
-#endif
 }
 
 double genetoic(const genlim* gene_lim, int32_t gene){

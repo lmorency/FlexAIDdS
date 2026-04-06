@@ -36,7 +36,8 @@ option(FLEXAIDS_USE_METAL   "Enable Metal GPU acceleration"       OFF)
 option(FLEXAIDS_USE_AVX2    "Enable AVX2 SIMD acceleration"       ON)
 option(FLEXAIDS_USE_AVX512  "Enable AVX-512 SIMD acceleration"    OFF)
 option(FLEXAIDS_USE_OPENMP  "Enable OpenMP thread parallelism"    ON)
-option(FLEXAIDS_USE_EIGEN   "Enable Eigen3 vectorised linear algebra" ON)
+# Eigen3 is a hard requirement — no option to disable
+set(FLEXAIDS_USE_EIGEN ON)
 option(FLEXAIDS_USE_256_MATRIX "Enable 256×256 soft contact matrix" ON)
 option(FLEXAIDS_USE_MPI     "Enable MPI distributed parallel docking" OFF)
 option(BUILD_PYTHON_BINDINGS "Build Python bindings via pybind11" OFF)
@@ -119,48 +120,44 @@ if(FLEXAIDS_USE_OPENMP)
     find_package(OpenMP)
 endif()
 
-# ─── Eigen3 (header-only; optional but strongly recommended) ──────────────────────
-if(FLEXAIDS_BUILD_CORE AND NOT FLEXAIDS_USE_EIGEN)
-    message(FATAL_ERROR
-        "Core executable build requires Eigen3 headers. "
-        "Either configure with -DFLEXAIDS_USE_EIGEN=ON "
-        "or disable core targets via -DFLEXAIDS_BUILD_CORE=OFF.")
-endif()
-
-if(FLEXAIDS_USE_EIGEN)
-    find_package(Eigen3 3.4 QUIET NO_MODULE)
-    if(Eigen3_FOUND)
-        message(STATUS "Eigen3 ${Eigen3_VERSION} found — enabling vectorised entropy/geometry")
-    else()
-        # Try pkg-config fallback
-        find_package(PkgConfig QUIET)
-        if(PKG_CONFIG_FOUND)
-            pkg_check_modules(EIGEN3 QUIET eigen3)
-        endif()
-        if(EIGEN3_FOUND)
-            message(STATUS "Eigen3 found via pkg-config")
-            add_library(Eigen3::Eigen INTERFACE IMPORTED)
-            set_target_properties(Eigen3::Eigen PROPERTIES
-                INTERFACE_INCLUDE_DIRECTORIES "${EIGEN3_INCLUDE_DIRS}")
-            set(Eigen3_FOUND TRUE)
-        else()
-            # FetchContent fallback — download header-only Eigen tarball
-            # Use FetchContent_Populate (not MakeAvailable) to avoid pulling
-            # in Eigen's own 15 000 tests/benchmarks via add_subdirectory.
-            message(STATUS "Eigen3 not found locally — fetching via FetchContent")
-            include(FetchContent)
-            FetchContent_Declare(eigen3
-                URL      https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz
-                URL_HASH SHA256=8586084f71f9bde545ee7fa6d00288b264a2b7ac3607b974e54d13e7162c1c72
-                DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
-            FetchContent_Populate(eigen3)
-            add_library(Eigen3::Eigen INTERFACE IMPORTED)
-            set_target_properties(Eigen3::Eigen PROPERTIES
-                INTERFACE_INCLUDE_DIRECTORIES "${eigen3_SOURCE_DIR}")
-            set(Eigen3_FOUND TRUE)
-            message(STATUS "Eigen3 3.4.0 fetched via FetchContent (headers only)")
-        endif()
+# ─── Eigen3 (header-only; REQUIRED) ─────────────────────────────────────────────
+find_package(Eigen3 3.4 QUIET NO_MODULE)
+if(Eigen3_FOUND)
+    message(STATUS "Eigen3 ${Eigen3_VERSION} found — enabling vectorised entropy/geometry")
+else()
+    # Try pkg-config fallback
+    find_package(PkgConfig QUIET)
+    if(PKG_CONFIG_FOUND)
+        pkg_check_modules(EIGEN3 QUIET eigen3)
     endif()
+    if(EIGEN3_FOUND)
+        message(STATUS "Eigen3 found via pkg-config")
+        add_library(Eigen3::Eigen INTERFACE IMPORTED)
+        set_target_properties(Eigen3::Eigen PROPERTIES
+            INTERFACE_INCLUDE_DIRECTORIES "${EIGEN3_INCLUDE_DIRS}")
+        set(Eigen3_FOUND TRUE)
+    else()
+        # FetchContent fallback — download header-only Eigen tarball
+        # Use FetchContent_Populate (not MakeAvailable) to avoid pulling
+        # in Eigen's own 15 000 tests/benchmarks via add_subdirectory.
+        message(STATUS "Eigen3 not found locally — fetching via FetchContent")
+        include(FetchContent)
+        FetchContent_Declare(eigen3
+            URL      https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz
+            URL_HASH SHA256=8586084f71f9bde545ee7fa6d00288b264a2b7ac3607b974e54d13e7162c1c72
+            DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+        FetchContent_Populate(eigen3)
+        add_library(Eigen3::Eigen INTERFACE IMPORTED)
+        set_target_properties(Eigen3::Eigen PROPERTIES
+            INTERFACE_INCLUDE_DIRECTORIES "${eigen3_SOURCE_DIR}")
+        set(Eigen3_FOUND TRUE)
+        message(STATUS "Eigen3 3.4.0 fetched via FetchContent (headers only)")
+    endif()
+endif()
+if(NOT Eigen3_FOUND)
+    message(FATAL_ERROR
+        "Eigen3 is required but was not found. "
+        "Install: apt install libeigen3-dev / brew install eigen")
 endif()
 
 if(FLEXAIDS_BUILD_CORE)
@@ -225,6 +222,9 @@ else()
         message(STATUS "Metal acceleration available but disabled (use -DFLEXAIDS_USE_METAL=ON)")
     endif()
 endif()
+
+# ─── Core library (LIB/) ────────────────────────────────────────────────
+add_subdirectory(LIB)
 
 # ─── executable ─────────────────────────────────────────────────────────
 if(FLEXAIDS_BUILD_CORE)
@@ -410,13 +410,7 @@ endif()
 # ─── MPI (optional, for distributed parallel docking) ──────────────────
 if(FLEXAIDS_USE_MPI)
     find_package(MPI REQUIRED)
-    target_sources(FlexAID PRIVATE LIB/MPITransport.cpp)
-    target_link_libraries(FlexAID PRIVATE MPI::MPI_CXX)
-    target_compile_definitions(FlexAID PRIVATE FLEXAIDS_USE_MPI)
     message(STATUS "MPI enabled — distributed parallel docking active")
-else()
-    # No-MPI stubs (single-rank fallback)
-    target_sources(FlexAID PRIVATE LIB/MPITransport.cpp)
 endif()
 
 # ─── CUDA sources ───────────────────────────────────────────────────────
@@ -538,45 +532,7 @@ if(FLEXAIDS_USE_METAL)
 endif()
 
 # ─── Python bindings (pybind11 module) ─────────────────────────────────────────
-if(BUILD_PYTHON_BINDINGS AND pybind11_FOUND)
-    pybind11_add_module(_core
-        python/bindings/core_bindings.cpp
-        LIB/statmech.cpp
-        LIB/TurboQuant.cpp
-        LIB/hardware_dispatch.cpp
-        LIB/hardware_detect.cpp
-        LIB/encom.cpp
-        LIB/ShannonThermoStack/ShannonThermoStack.cpp
-        LIB/tENCoM/tencm.cpp
-        LIB/fast_optics.cpp
-        # BindingMode requires full GA infrastructure
-        # Partial exposure for now (thermodynamics only)
-    )
-    # Conditionally add 256×256 matrix bindings
-    if(FLEXAIDS_USE_256_MATRIX)
-        target_sources(_core PRIVATE python/bindings/bindings_matrix.cpp)
-        target_compile_definitions(_core PRIVATE FLEXAIDS_USE_256_MATRIX)
-    endif()
-    target_include_directories(_core PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ShannonThermoStack
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/tENCoM
-    )
-    target_compile_definitions(_core PRIVATE VERSION_INFO=${PROJECT_VERSION})
-    if(MSVC)
-        target_compile_definitions(_core PRIVATE
-            _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES NOMINMAX)
-    endif()
-
-    # Link Eigen3 if available
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(_core PRIVATE Eigen3::Eigen)
-        target_compile_definitions(_core PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
-
-    message(STATUS "Python bindings enabled — build target: _core.so")
-    message(STATUS "Install with: pip install -e python/")
-endif()
+add_subdirectory(python)
 
 # ─── TeNCoM benchmark (optional standalone binary) ────────────────────────────────
 option(ENABLE_TENCOM_BENCHMARK "Build the TeNCoM benchmark binary" OFF)
@@ -602,10 +558,9 @@ if(ENABLE_TENCOM_BENCHMARK)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(benchmark_tencom PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(benchmark_tencom PRIVATE Eigen3::Eigen)
-        target_compile_definitions(benchmark_tencom PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(benchmark_tencom PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(benchmark_tencom PRIVATE FLEXAIDS_HAS_EIGEN)
     if(MSVC)
         target_compile_definitions(benchmark_tencom PRIVATE
             _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES NOMINMAX)
@@ -650,10 +605,9 @@ if(ENABLE_TENCOM_TOOL)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(tENCoM PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(tENCoM PRIVATE Eigen3::Eigen)
-        target_compile_definitions(tENCoM PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(tENCoM PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(tENCoM PRIVATE FLEXAIDS_HAS_EIGEN)
     if(FLEXAIDS_USE_ROCM)
         target_compile_definitions(tENCoM PRIVATE FLEXAIDS_USE_ROCM)
         target_include_directories(tENCoM PRIVATE ${hip_INCLUDE_DIRS})
@@ -736,13 +690,10 @@ if(BUILD_FLEXAIDDS_FAST)
 
     flexaids_configure_simd(FlexAIDdS)
 
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(FlexAIDdS PRIVATE Eigen3::Eigen)
-        target_compile_definitions(FlexAIDdS PRIVATE FLEXAIDS_HAS_EIGEN)
-    elseif(FLEXAIDS_USE_EIGEN AND EIGEN3_FOUND)
-        target_include_directories(FlexAIDdS PRIVATE ${EIGEN3_INCLUDE_DIRS})
-        target_compile_definitions(FlexAIDdS PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(FlexAIDdS PRIVATE Eigen3::Eigen)
+
+
+    target_compile_definitions(FlexAIDdS PRIVATE FLEXAIDS_HAS_EIGEN)
 
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(FlexAIDdS PRIVATE OpenMP::OpenMP_CXX)
@@ -785,13 +736,9 @@ if(ENABLE_NATURAL_HAMMERHEAD)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(natural_hammerhead PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(natural_hammerhead PRIVATE Eigen3::Eigen)
-        target_compile_definitions(natural_hammerhead PRIVATE FLEXAIDS_HAS_EIGEN)
-    elseif(FLEXAIDS_USE_EIGEN AND EIGEN3_FOUND)
-        target_include_directories(natural_hammerhead PRIVATE ${EIGEN3_INCLUDE_DIRS})
-        target_compile_definitions(natural_hammerhead PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(natural_hammerhead PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(natural_hammerhead PRIVATE FLEXAIDS_HAS_EIGEN)
     message(STATUS "NATURaL HHRz simulation enabled — build target: natural_hammerhead")
 endif()
 
@@ -812,13 +759,9 @@ if(ENABLE_DISPATCH_BENCHMARK)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(benchmark_dispatch PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(benchmark_dispatch PRIVATE Eigen3::Eigen)
-        target_compile_definitions(benchmark_dispatch PRIVATE FLEXAIDS_HAS_EIGEN)
-    elseif(FLEXAIDS_USE_EIGEN AND EIGEN3_FOUND)
-        target_include_directories(benchmark_dispatch PRIVATE ${EIGEN3_INCLUDE_DIRS})
-        target_compile_definitions(benchmark_dispatch PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(benchmark_dispatch PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(benchmark_dispatch PRIVATE FLEXAIDS_HAS_EIGEN)
     message(STATUS "Dispatch benchmark enabled — build target: benchmark_dispatch")
 endif()
 
@@ -892,13 +835,9 @@ if(BUILD_TESTING)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(test_statmech PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(test_statmech PRIVATE Eigen3::Eigen)
-        target_compile_definitions(test_statmech PRIVATE FLEXAIDS_HAS_EIGEN)
-    elseif(FLEXAIDS_USE_EIGEN AND EIGEN3_FOUND)
-        target_include_directories(test_statmech PRIVATE ${EIGEN3_INCLUDE_DIRS})
-        target_compile_definitions(test_statmech PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(test_statmech PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(test_statmech PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_statmech)
     add_test(NAME StatMechTests COMMAND test_statmech)
 
@@ -936,13 +875,9 @@ if(BUILD_TESTING)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(test_hardware_dispatch PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(test_hardware_dispatch PRIVATE Eigen3::Eigen)
-        target_compile_definitions(test_hardware_dispatch PRIVATE FLEXAIDS_HAS_EIGEN)
-    elseif(FLEXAIDS_USE_EIGEN AND EIGEN3_FOUND)
-        target_include_directories(test_hardware_dispatch PRIVATE ${EIGEN3_INCLUDE_DIRS})
-        target_compile_definitions(test_hardware_dispatch PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(test_hardware_dispatch PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(test_hardware_dispatch PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_hardware_dispatch)
     add_test(NAME HardwareDispatchTests COMMAND test_hardware_dispatch)
 
@@ -965,13 +900,9 @@ if(BUILD_TESTING)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(test_hardware_detect_dispatch PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(test_hardware_detect_dispatch PRIVATE Eigen3::Eigen)
-        target_compile_definitions(test_hardware_detect_dispatch PRIVATE FLEXAIDS_HAS_EIGEN)
-    elseif(FLEXAIDS_USE_EIGEN AND EIGEN3_FOUND)
-        target_include_directories(test_hardware_detect_dispatch PRIVATE ${EIGEN3_INCLUDE_DIRS})
-        target_compile_definitions(test_hardware_detect_dispatch PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(test_hardware_detect_dispatch PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(test_hardware_detect_dispatch PRIVATE FLEXAIDS_HAS_EIGEN)
     if(FLEXAIDS_USE_CUDA)
         target_compile_definitions(test_hardware_detect_dispatch PRIVATE FLEXAIDS_USE_CUDA)
         target_link_libraries(test_hardware_detect_dispatch PRIVATE CUDA::cudart)
@@ -1012,10 +943,9 @@ if(BUILD_TESTING)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(test_tencom_diff PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(test_tencom_diff PRIVATE Eigen3::Eigen)
-        target_compile_definitions(test_tencom_diff PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(test_tencom_diff PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(test_tencom_diff PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_tencom_diff)
     add_test(NAME TENCoMDiffTests COMMAND test_tencom_diff)
 
@@ -1077,10 +1007,9 @@ if(BUILD_TESTING)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(test_gaboom PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(test_gaboom PRIVATE Eigen3::Eigen)
-        target_compile_definitions(test_gaboom PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(test_gaboom PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(test_gaboom PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_gaboom)
     add_test(NAME GABoomTests COMMAND test_gaboom)
 
@@ -1222,10 +1151,9 @@ if(BUILD_TESTING)
     else()
         target_compile_options(test_sugar_pucker PRIVATE -O2)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(test_sugar_pucker PRIVATE Eigen3::Eigen)
-        target_compile_definitions(test_sugar_pucker PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(test_sugar_pucker PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(test_sugar_pucker PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_sugar_pucker)
     add_test(NAME SugarPuckerTests COMMAND test_sugar_pucker)
 
@@ -1244,10 +1172,9 @@ if(BUILD_TESTING)
     else()
         target_compile_options(test_chiral_center PRIVATE -O2)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(test_chiral_center PRIVATE Eigen3::Eigen)
-        target_compile_definitions(test_chiral_center PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(test_chiral_center PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(test_chiral_center PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_chiral_center)
     add_test(NAME ChiralCenterTests COMMAND test_chiral_center)
 
@@ -1372,10 +1299,9 @@ flexaids_configure_simd(test_cavity_detect)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(test_binding_mode_statmech PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(test_binding_mode_statmech PRIVATE Eigen3::Eigen)
-        target_compile_definitions(test_binding_mode_statmech PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(test_binding_mode_statmech PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(test_binding_mode_statmech PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_binding_mode_statmech)
     add_test(NAME BindingModeStatMechTests COMMAND test_binding_mode_statmech)
 
@@ -1418,10 +1344,9 @@ flexaids_configure_simd(test_cavity_detect)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(test_ccbm PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(test_ccbm PRIVATE Eigen3::Eigen)
-        target_compile_definitions(test_ccbm PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(test_ccbm PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(test_ccbm PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_ccbm)
     add_test(NAME CCBMTests COMMAND test_ccbm)
 
@@ -1464,10 +1389,9 @@ flexaids_configure_simd(test_cavity_detect)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(test_binding_mode_advanced PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(test_binding_mode_advanced PRIVATE Eigen3::Eigen)
-        target_compile_definitions(test_binding_mode_advanced PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(test_binding_mode_advanced PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(test_binding_mode_advanced PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_binding_mode_advanced)
     add_test(NAME BindingModeAdvancedTests COMMAND test_binding_mode_advanced)
 
@@ -1510,10 +1434,9 @@ flexaids_configure_simd(test_cavity_detect)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(test_ga_core PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(test_ga_core PRIVATE Eigen3::Eigen)
-        target_compile_definitions(test_ga_core PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(test_ga_core PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(test_ga_core PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_ga_core)
     add_test(NAME GACoreTests COMMAND test_ga_core)
 
@@ -1556,10 +1479,9 @@ flexaids_configure_simd(test_cavity_detect)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(test_ga_validation PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(test_ga_validation PRIVATE Eigen3::Eigen)
-        target_compile_definitions(test_ga_validation PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(test_ga_validation PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(test_ga_validation PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_ga_validation)
     add_test(NAME GAValidationTests COMMAND test_ga_validation)
 
@@ -1589,10 +1511,9 @@ flexaids_configure_simd(test_cavity_detect)
         if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
             target_link_libraries(test_soft_contact_matrix PRIVATE OpenMP::OpenMP_CXX)
         endif()
-        if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-            target_link_libraries(test_soft_contact_matrix PRIVATE Eigen3::Eigen)
-            target_compile_definitions(test_soft_contact_matrix PRIVATE FLEXAIDS_HAS_EIGEN)
-        endif()
+        target_link_libraries(test_soft_contact_matrix PRIVATE Eigen3::Eigen)
+
+        target_compile_definitions(test_soft_contact_matrix PRIVATE FLEXAIDS_HAS_EIGEN)
         add_test(NAME SoftContactMatrixTests COMMAND test_soft_contact_matrix)
     endif()
 
@@ -1615,10 +1536,9 @@ flexaids_configure_simd(test_cavity_detect)
         if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
             target_link_libraries(test_compare_energy_matrices PRIVATE OpenMP::OpenMP_CXX)
         endif()
-        if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-            target_link_libraries(test_compare_energy_matrices PRIVATE Eigen3::Eigen)
-            target_compile_definitions(test_compare_energy_matrices PRIVATE FLEXAIDS_HAS_EIGEN)
-        endif()
+        target_link_libraries(test_compare_energy_matrices PRIVATE Eigen3::Eigen)
+
+        target_compile_definitions(test_compare_energy_matrices PRIVATE FLEXAIDS_HAS_EIGEN)
         add_test(NAME CompareEnergyMatricesTests COMMAND test_compare_energy_matrices)
     endif()
 
@@ -1677,10 +1597,9 @@ flexaids_configure_simd(test_cavity_detect)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(test_entropy_ga PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(test_entropy_ga PRIVATE Eigen3::Eigen)
-        target_compile_definitions(test_entropy_ga PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(test_entropy_ga PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(test_entropy_ga PRIVATE FLEXAIDS_HAS_EIGEN)
     add_test(NAME EntropyGATests COMMAND test_entropy_ga)
 
     # test_cube_grid — GridKey reproducibility, diagonal formula, neighbor probing
@@ -1717,13 +1636,9 @@ flexaids_configure_simd(test_cavity_detect)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(test_parallel_dock PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(test_parallel_dock PRIVATE Eigen3::Eigen)
-        target_compile_definitions(test_parallel_dock PRIVATE FLEXAIDS_HAS_EIGEN)
-    elseif(FLEXAIDS_USE_EIGEN AND EIGEN3_FOUND)
-        target_include_directories(test_parallel_dock PRIVATE ${EIGEN3_INCLUDE_DIRS})
-        target_compile_definitions(test_parallel_dock PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(test_parallel_dock PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(test_parallel_dock PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_parallel_dock)
     add_test(NAME ParallelDockTests COMMAND test_parallel_dock)
 
@@ -1770,13 +1685,9 @@ flexaids_configure_simd(test_cavity_detect)
     else()
         target_compile_options(test_turboquant PRIVATE -O2)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(test_turboquant PRIVATE Eigen3::Eigen)
-        target_compile_definitions(test_turboquant PRIVATE FLEXAIDS_HAS_EIGEN)
-    elseif(FLEXAIDS_USE_EIGEN AND EIGEN3_FOUND)
-        target_include_directories(test_turboquant PRIVATE ${EIGEN3_INCLUDE_DIRS})
-        target_compile_definitions(test_turboquant PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(test_turboquant PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(test_turboquant PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_turboquant)
     add_test(NAME TurboQuantTests COMMAND test_turboquant)
 
@@ -1840,10 +1751,9 @@ flexaids_configure_simd(test_cavity_detect)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(test_binding_mode_vibrational PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(test_binding_mode_vibrational PRIVATE Eigen3::Eigen)
-        target_compile_definitions(test_binding_mode_vibrational PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(test_binding_mode_vibrational PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(test_binding_mode_vibrational PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_binding_mode_vibrational)
     add_test(NAME BindingModeVibrationalTests COMMAND test_binding_mode_vibrational)
 
@@ -1884,13 +1794,9 @@ flexaids_configure_simd(test_cavity_detect)
         target_compile_options(test_tencom_entropy_diff PRIVATE -O2)
     endif()
     flexaids_configure_simd(test_tencom_entropy_diff)
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(test_tencom_entropy_diff PRIVATE Eigen3::Eigen)
-        target_compile_definitions(test_tencom_entropy_diff PRIVATE FLEXAIDS_HAS_EIGEN)
-    elseif(FLEXAIDS_USE_EIGEN AND EIGEN3_FOUND)
-        target_include_directories(test_tencom_entropy_diff PRIVATE ${EIGEN3_INCLUDE_DIRS})
-        target_compile_definitions(test_tencom_entropy_diff PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(test_tencom_entropy_diff PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(test_tencom_entropy_diff PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_tencom_entropy_diff)
     add_test(NAME TencomEntropyDiffTests COMMAND test_tencom_entropy_diff)
 
@@ -1930,13 +1836,9 @@ flexaids_configure_simd(test_cavity_detect)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(test_grand_partition PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(test_grand_partition PRIVATE Eigen3::Eigen)
-        target_compile_definitions(test_grand_partition PRIVATE FLEXAIDS_HAS_EIGEN)
-    elseif(FLEXAIDS_USE_EIGEN AND EIGEN3_FOUND)
-        target_include_directories(test_grand_partition PRIVATE ${EIGEN3_INCLUDE_DIRS})
-        target_compile_definitions(test_grand_partition PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(test_grand_partition PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(test_grand_partition PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_grand_partition)
     add_test(NAME GrandPartitionTests COMMAND test_grand_partition)
 
@@ -1963,13 +1865,9 @@ flexaids_configure_simd(test_cavity_detect)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(test_target_server PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(test_target_server PRIVATE Eigen3::Eigen)
-        target_compile_definitions(test_target_server PRIVATE FLEXAIDS_HAS_EIGEN)
-    elseif(FLEXAIDS_USE_EIGEN AND EIGEN3_FOUND)
-        target_include_directories(test_target_server PRIVATE ${EIGEN3_INCLUDE_DIRS})
-        target_compile_definitions(test_target_server PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(test_target_server PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(test_target_server PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_target_server)
     add_test(NAME TargetServerTests COMMAND test_target_server)
 
@@ -2077,10 +1975,9 @@ flexaids_configure_simd(test_cavity_detect)
     else()
         target_compile_options(test_ga_context PRIVATE -O2)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(test_ga_context PRIVATE Eigen3::Eigen)
-        target_compile_definitions(test_ga_context PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(test_ga_context PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(test_ga_context PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_ga_context)
     add_test(NAME GAContextTests COMMAND test_ga_context)
 
@@ -2145,13 +2042,9 @@ if(BUILD_SWIFT_BRIDGE)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(test_unified_dispatch PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(test_unified_dispatch PRIVATE Eigen3::Eigen)
-        target_compile_definitions(test_unified_dispatch PRIVATE FLEXAIDS_HAS_EIGEN)
-    elseif(FLEXAIDS_USE_EIGEN AND EIGEN3_FOUND)
-        target_include_directories(test_unified_dispatch PRIVATE ${EIGEN3_INCLUDE_DIRS})
-        target_compile_definitions(test_unified_dispatch PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(test_unified_dispatch PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(test_unified_dispatch PRIVATE FLEXAIDS_HAS_EIGEN)
     add_test(NAME UnifiedDispatchTests COMMAND test_unified_dispatch)
 
     # test_coarse_screen — NRGRank CoarseScreen + TwoStageScreen unit tests
