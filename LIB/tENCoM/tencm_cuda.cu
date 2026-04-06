@@ -8,6 +8,7 @@
 #ifdef FLEXAIDS_USE_CUDA
 
 #include "tencm_cuda.cuh"
+#include "../gpu_buffer.h"
 #include <cuda_runtime.h>
 #include <cstdio>
 #include <cmath>
@@ -138,45 +139,33 @@ int build_contacts_gpu(const float* ca_xyz, int N,
 
     int max_contacts = static_cast<int>(total_pairs);  // worst case
 
-    // Device allocations
-    float* d_ca;
-    int*   d_contacts_ij;
-    float* d_contacts_k;
-    float* d_contacts_r0;
-    int*   d_count;
+    // Device allocations (RAII — freed automatically on scope exit or exception)
+    GPUBuffer<float> d_ca(N * 3, GPUBackend::CUDA);
+    GPUBuffer<int>   d_contacts_ij(max_contacts * 2, GPUBackend::CUDA);
+    GPUBuffer<float> d_contacts_k(max_contacts, GPUBackend::CUDA);
+    GPUBuffer<float> d_contacts_r0(max_contacts, GPUBackend::CUDA);
+    GPUBuffer<int>   d_count(1, GPUBackend::CUDA);
 
-    cudaMalloc(&d_ca, N * 3 * sizeof(float));
-    cudaMalloc(&d_contacts_ij, max_contacts * 2 * sizeof(int));
-    cudaMalloc(&d_contacts_k, max_contacts * sizeof(float));
-    cudaMalloc(&d_contacts_r0, max_contacts * sizeof(float));
-    cudaMalloc(&d_count, sizeof(int));
-
-    cudaMemcpyAsync(d_ca, ca_xyz, N*3*sizeof(float), cudaMemcpyHostToDevice, s_stream);
-    cudaMemsetAsync(d_count, 0, sizeof(int), s_stream);
+    cudaMemcpyAsync(d_ca.data(), ca_xyz, N*3*sizeof(float), cudaMemcpyHostToDevice, s_stream);
+    cudaMemsetAsync(d_count.data(), 0, sizeof(int), s_stream);
 
     int block_size = 256;
     int grid_size = (static_cast<int>(total_pairs) + block_size - 1) / block_size;
 
     contact_discovery_kernel<<<grid_size, block_size, 0, s_stream>>>(
-        d_ca, N, cutoff*cutoff, cutoff, k0,
-        d_contacts_ij, d_contacts_k, d_contacts_r0,
-        d_count, max_contacts);
+        d_ca.data(), N, cutoff*cutoff, cutoff, k0,
+        d_contacts_ij.data(), d_contacts_k.data(), d_contacts_r0.data(),
+        d_count.data(), max_contacts);
 
     int h_count = 0;
-    cudaMemcpyAsync(&h_count, d_count, sizeof(int), cudaMemcpyDeviceToHost, s_stream);
+    cudaMemcpyAsync(&h_count, d_count.data(), sizeof(int), cudaMemcpyDeviceToHost, s_stream);
     cudaStreamSynchronize(s_stream);
 
     if (h_count > 0 && h_count <= max_contacts) {
-        cudaMemcpy(contacts_ij_out, d_contacts_ij, h_count*2*sizeof(int), cudaMemcpyDeviceToHost);
-        cudaMemcpy(contacts_k_out, d_contacts_k, h_count*sizeof(float), cudaMemcpyDeviceToHost);
-        cudaMemcpy(contacts_r0_out, d_contacts_r0, h_count*sizeof(float), cudaMemcpyDeviceToHost);
+        d_contacts_ij.download(contacts_ij_out, h_count * 2);
+        d_contacts_k.download(contacts_k_out, h_count);
+        d_contacts_r0.download(contacts_r0_out, h_count);
     }
-
-    cudaFree(d_ca);
-    cudaFree(d_contacts_ij);
-    cudaFree(d_contacts_k);
-    cudaFree(d_contacts_r0);
-    cudaFree(d_count);
 
     return h_count;
 }
@@ -247,42 +236,29 @@ void assemble_hessian_gpu(const float* ca_xyz, int N,
         bond_pivot[k*3+2] = 0.5f*(ca_xyz[k*3+2] + ca_xyz[(k+1)*3+2]);
     }
 
-    // Device allocations
-    float*  d_ca;
-    float*  d_axis;
-    float*  d_pivot;
-    int*    d_contacts_ij;
-    float*  d_contacts_k;
-    double* d_H;
+    // Device allocations (RAII — freed automatically on scope exit or exception)
+    GPUBuffer<float>  d_ca(N * 3, GPUBackend::CUDA);
+    GPUBuffer<float>  d_axis(M * 3, GPUBackend::CUDA);
+    GPUBuffer<float>  d_pivot(M * 3, GPUBackend::CUDA);
+    GPUBuffer<int>    d_contacts_ij(C * 2, GPUBackend::CUDA);
+    GPUBuffer<float>  d_contacts_k(C, GPUBackend::CUDA);
+    GPUBuffer<double> d_H(M * M, GPUBackend::CUDA);
 
-    cudaMalloc(&d_ca, N*3*sizeof(float));
-    cudaMalloc(&d_axis, M*3*sizeof(float));
-    cudaMalloc(&d_pivot, M*3*sizeof(float));
-    cudaMalloc(&d_contacts_ij, C*2*sizeof(int));
-    cudaMalloc(&d_contacts_k, C*sizeof(float));
-    cudaMalloc(&d_H, M*M*sizeof(double));
-
-    cudaMemsetAsync(d_H, 0, M*M*sizeof(double), s_stream);
-    cudaMemcpyAsync(d_ca, ca_xyz, N*3*sizeof(float), cudaMemcpyHostToDevice, s_stream);
-    cudaMemcpyAsync(d_axis, bond_axis.data(), M*3*sizeof(float), cudaMemcpyHostToDevice, s_stream);
-    cudaMemcpyAsync(d_pivot, bond_pivot.data(), M*3*sizeof(float), cudaMemcpyHostToDevice, s_stream);
-    cudaMemcpyAsync(d_contacts_ij, contacts_ij, C*2*sizeof(int), cudaMemcpyHostToDevice, s_stream);
-    cudaMemcpyAsync(d_contacts_k, contacts_k, C*sizeof(float), cudaMemcpyHostToDevice, s_stream);
+    d_H.zero();
+    cudaMemcpyAsync(d_ca.data(), ca_xyz, N*3*sizeof(float), cudaMemcpyHostToDevice, s_stream);
+    cudaMemcpyAsync(d_axis.data(), bond_axis.data(), M*3*sizeof(float), cudaMemcpyHostToDevice, s_stream);
+    cudaMemcpyAsync(d_pivot.data(), bond_pivot.data(), M*3*sizeof(float), cudaMemcpyHostToDevice, s_stream);
+    cudaMemcpyAsync(d_contacts_ij.data(), contacts_ij, C*2*sizeof(int), cudaMemcpyHostToDevice, s_stream);
+    cudaMemcpyAsync(d_contacts_k.data(), contacts_k, C*sizeof(float), cudaMemcpyHostToDevice, s_stream);
 
     // Launch: one block per contact, 256 threads per block
     int block_size = 256;
     hessian_assembly_kernel<<<C, block_size, 0, s_stream>>>(
-        d_ca, N, d_axis, d_pivot, d_contacts_ij, d_contacts_k, M, d_H);
+        d_ca.data(), N, d_axis.data(), d_pivot.data(),
+        d_contacts_ij.data(), d_contacts_k.data(), M, d_H.data());
 
-    cudaMemcpyAsync(H_out, d_H, M*M*sizeof(double), cudaMemcpyDeviceToHost, s_stream);
+    cudaMemcpyAsync(H_out, d_H.data(), M*M*sizeof(double), cudaMemcpyDeviceToHost, s_stream);
     cudaStreamSynchronize(s_stream);
-
-    cudaFree(d_ca);
-    cudaFree(d_axis);
-    cudaFree(d_pivot);
-    cudaFree(d_contacts_ij);
-    cudaFree(d_contacts_k);
-    cudaFree(d_H);
 }
 
 }}  // namespace tencm::cuda

@@ -20,6 +20,7 @@
 #ifdef FLEXAIDS_USE_CUDA
 
 #include "FOPTICS.h"
+#include "gpu_buffer.h"
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
 #include <cstdio>
@@ -221,29 +222,25 @@ void gpu_foptics_knn(const std::vector<std::pair<chromosome*, std::vector<float>
         }
     }
 
-    // Device allocations
-    float* d_points   = nullptr;
-    int*   d_knn_idx  = nullptr;
-    float* d_knn_dist = nullptr;
+    // Device allocations (RAII — freed automatically on scope exit or exception)
+    GPUBuffer<float> d_points(N * nDim, GPUBackend::CUDA);
+    GPUBuffer<int>   d_knn_idx(N * k, GPUBackend::CUDA);
+    GPUBuffer<float> d_knn_dist(N * k, GPUBackend::CUDA);
 
-    GPU_FOPTICS_CHECK(cudaMalloc(&d_points,   N * nDim * sizeof(float)));
-    GPU_FOPTICS_CHECK(cudaMalloc(&d_knn_idx,  N * k * sizeof(int)));
-    GPU_FOPTICS_CHECK(cudaMalloc(&d_knn_dist, N * k * sizeof(float)));
-
-    GPU_FOPTICS_CHECK(cudaMemcpy(d_points, h_points.data(),
-                                  N * nDim * sizeof(float), cudaMemcpyHostToDevice));
+    d_points.upload(h_points.data(), N * nDim);
 
     // Launch kernel
     int shared_mem = nDim * sizeof(float);
-    gpuFastOPTICSKernel<<<N, BLOCK_SIZE, shared_mem>>>(d_points, d_knn_idx, d_knn_dist, N, nDim, k);
+    gpuFastOPTICSKernel<<<N, BLOCK_SIZE, shared_mem>>>(
+        d_points.data(), d_knn_idx.data(), d_knn_dist.data(), N, nDim, k);
     GPU_FOPTICS_CHECK(cudaGetLastError());
     GPU_FOPTICS_CHECK(cudaDeviceSynchronize());
 
     // Download results
     std::vector<int>   h_knn_idx(N * k);
     std::vector<float> h_knn_dist(N * k);
-    GPU_FOPTICS_CHECK(cudaMemcpy(h_knn_idx.data(),  d_knn_idx,  N * k * sizeof(int),   cudaMemcpyDeviceToHost));
-    GPU_FOPTICS_CHECK(cudaMemcpy(h_knn_dist.data(), d_knn_dist, N * k * sizeof(float), cudaMemcpyDeviceToHost));
+    d_knn_idx.download(h_knn_idx.data(), N * k);
+    d_knn_dist.download(h_knn_dist.data(), N * k);
 
     // Unpack into output vectors
     out_neighbors.resize(N);
@@ -259,11 +256,6 @@ void gpu_foptics_knn(const std::vector<std::pair<chromosome*, std::vector<float>
             }
         }
     }
-
-    // Cleanup
-    GPU_FOPTICS_CHECK(cudaFree(d_points));
-    GPU_FOPTICS_CHECK(cudaFree(d_knn_idx));
-    GPU_FOPTICS_CHECK(cudaFree(d_knn_dist));
 }
 
 #endif // FLEXAIDS_USE_CUDA
