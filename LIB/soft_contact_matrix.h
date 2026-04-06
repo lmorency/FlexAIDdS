@@ -28,6 +28,9 @@
 #include <immintrin.h>
 #elif defined(__AVX2__)
 #include <immintrin.h>
+#elif defined(__SSE4_2__) || defined(__SSE4_1__)
+#include <smmintrin.h>
+#include <nmmintrin.h>
 #endif
 
 #ifdef _OPENMP
@@ -136,13 +139,43 @@ struct alignas(64) SoftContactMatrix {
     }
 #endif
 
-    // Dispatch: AVX-512 → AVX2 → scalar
+#if defined(__SSE4_2__) || defined(__SSE4_1__) || defined(__AVX2__) || defined(__AVX512F__)
+    // Score N contacts with SSE4.2: 4-wide scalar gather + SIMD multiply/accumulate
+    float score_contacts_sse42(const uint8_t* type_a, const uint8_t* type_b,
+                                const float* areas, int n) const noexcept {
+        __m128 acc = _mm_setzero_ps();
+        int k = 0;
+        for (; k + 3 < n; k += 4) {
+            // Manual gather (SSE4.2 lacks vgatherdps)
+            alignas(16) float vals[4];
+            for (int q = 0; q < 4; ++q)
+                vals[q] = data[static_cast<int>(type_a[k + q]) * MATRIX_DIM +
+                               static_cast<int>(type_b[k + q])];
+            __m128 vvals = _mm_load_ps(vals);
+            __m128 area  = _mm_loadu_ps(areas + k);
+            acc = _mm_add_ps(acc, _mm_mul_ps(vvals, area));
+        }
+        // Horizontal sum
+        __m128 hi = _mm_movehl_ps(acc, acc);
+        __m128 sum128 = _mm_add_ps(acc, hi);
+        __m128 shuf = _mm_movehdup_ps(sum128);
+        float sum = _mm_cvtss_f32(_mm_add_ss(sum128, shuf));
+        // Scalar tail
+        for (; k < n; ++k)
+            sum += data[type_a[k] * MATRIX_DIM + type_b[k]] * areas[k];
+        return sum;
+    }
+#endif
+
+    // Dispatch: AVX-512 → AVX2 → SSE4.2 → scalar
     float score_contacts(const uint8_t* type_a, const uint8_t* type_b,
                           const float* areas, int n) const noexcept {
 #ifdef __AVX512F__
         return score_contacts_avx512(type_a, type_b, areas, n);
 #elif defined(__AVX2__)
         return score_contacts_avx2(type_a, type_b, areas, n);
+#elif defined(__SSE4_2__) || defined(__SSE4_1__)
+        return score_contacts_sse42(type_a, type_b, areas, n);
 #else
         float sum = 0.0f;
         for (int k = 0; k < n; ++k)

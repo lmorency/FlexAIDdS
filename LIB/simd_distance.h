@@ -17,13 +17,22 @@
 #  include <immintrin.h>
 #  define FLEXAIDS_HAS_AVX512 1
 #  define FLEXAIDS_HAS_AVX2   1       // AVX-512 implies AVX2
+#  define FLEXAIDS_HAS_SSE42  1       // AVX2 implies SSE4.2
 #elif defined(__AVX2__)
 #  include <immintrin.h>
 #  define FLEXAIDS_HAS_AVX512 0
 #  define FLEXAIDS_HAS_AVX2   1
+#  define FLEXAIDS_HAS_SSE42  1
+#elif defined(__SSE4_2__) || defined(__SSE4_1__)
+#  include <smmintrin.h>               // SSE4.1/4.2 intrinsics
+#  include <nmmintrin.h>
+#  define FLEXAIDS_HAS_AVX512 0
+#  define FLEXAIDS_HAS_AVX2   0
+#  define FLEXAIDS_HAS_SSE42  1
 #else
 #  define FLEXAIDS_HAS_AVX512 0
 #  define FLEXAIDS_HAS_AVX2   0
+#  define FLEXAIDS_HAS_SSE42  0
 #endif
 
 namespace simd {
@@ -475,6 +484,145 @@ inline void boltzmann_batch_8d(const double* FLEXAIDS_RESTRICT energies,
 
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─── SSE4.2 implementations (4-wide float) ─────────────────────────────────
+
+#elif FLEXAIDS_HAS_SSE42
+
+// Horizontal sum of an __m128 register (4 floats → 1 float)
+inline float hsum128_ps(__m128 v) noexcept {
+    __m128 hi = _mm_movehl_ps(v, v);        // [z, w, z, w]
+    __m128 sum = _mm_add_ps(v, hi);         // [x+z, y+w, -, -]
+    __m128 shuf = _mm_movehdup_ps(sum);     // [y+w, y+w, -, -]
+    return _mm_cvtss_f32(_mm_add_ss(sum, shuf));
+}
+
+// Squared distances between one point B and 4 points A (SOA layout).
+//   ax[4], ay[4], az[4] – x/y/z of 4 A atoms
+//   bx, by, bz           – coordinates of atom B
+//   out[4]               – results
+inline void distance2_1x4(const float* FLEXAIDS_RESTRICT ax,
+                           const float* FLEXAIDS_RESTRICT ay,
+                           const float* FLEXAIDS_RESTRICT az,
+                           float bx, float by, float bz,
+                           float* FLEXAIDS_RESTRICT out) noexcept {
+    __m128 vbx = _mm_set1_ps(bx);
+    __m128 vby = _mm_set1_ps(by);
+    __m128 vbz = _mm_set1_ps(bz);
+    __m128 dx  = _mm_sub_ps(_mm_loadu_ps(ax), vbx);
+    __m128 dy  = _mm_sub_ps(_mm_loadu_ps(ay), vby);
+    __m128 dz  = _mm_sub_ps(_mm_loadu_ps(az), vbz);
+    __m128 r2  = _mm_add_ps(_mm_mul_ps(dx, dx),
+                 _mm_add_ps(_mm_mul_ps(dy, dy),
+                            _mm_mul_ps(dz, dz)));
+    _mm_storeu_ps(out, r2);
+}
+
+// 16-wide and 8-wide dispatch through 4-wide + scalar tail
+inline void distance2_1x16(const float* FLEXAIDS_RESTRICT ax,
+                            const float* FLEXAIDS_RESTRICT ay,
+                            const float* FLEXAIDS_RESTRICT az,
+                            float bx, float by, float bz,
+                            float* FLEXAIDS_RESTRICT out) noexcept {
+    distance2_1x4(ax,    ay,    az,    bx, by, bz, out);
+    distance2_1x4(ax+4,  ay+4,  az+4,  bx, by, bz, out+4);
+    distance2_1x4(ax+8,  ay+8,  az+8,  bx, by, bz, out+8);
+    distance2_1x4(ax+12, ay+12, az+12, bx, by, bz, out+12);
+}
+
+inline void distance2_1x8(const float* FLEXAIDS_RESTRICT ax,
+                           const float* FLEXAIDS_RESTRICT ay,
+                           const float* FLEXAIDS_RESTRICT az,
+                           float bx, float by, float bz,
+                           float* FLEXAIDS_RESTRICT out) noexcept {
+    distance2_1x4(ax,   ay,   az,   bx, by, bz, out);
+    distance2_1x4(ax+4, ay+4, az+4, bx, by, bz, out+4);
+}
+
+// Sum of squared distances over N atoms (AOS interleaved xyz), 4-wide.
+inline float sum_sq_distances(const float* FLEXAIDS_RESTRICT a_xyz,
+                               const float* FLEXAIDS_RESTRICT b_xyz,
+                               int N) noexcept {
+    __m128 acc = _mm_setzero_ps();
+    int i = 0;
+    for (; i <= N - 4; i += 4) {
+        for (int c = 0; c < 3; ++c) {
+            float a4[4], b4[4];
+            for (int k = 0; k < 4; ++k) {
+                a4[k] = a_xyz[(i+k)*3 + c];
+                b4[k] = b_xyz[(i+k)*3 + c];
+            }
+            __m128 da = _mm_sub_ps(_mm_loadu_ps(a4), _mm_loadu_ps(b4));
+            acc = _mm_add_ps(acc, _mm_mul_ps(da, da));
+        }
+    }
+    float sum = hsum128_ps(acc);
+    // Scalar tail
+    for (; i < N; ++i)
+        for (int c = 0; c < 3; ++c)
+            sum += sq(a_xyz[i*3+c] - b_xyz[i*3+c]);
+    return sum;
+}
+
+// LJ wall energy for 4 distances (SSE4.2).
+inline void lj_wall_4x(const float* FLEXAIDS_RESTRICT r2,
+                        float inv_rAB12,
+                        float k_wall,
+                        float* FLEXAIDS_RESTRICT Ewall) noexcept {
+    __m128 vr2    = _mm_loadu_ps(r2);
+    __m128 inv_r2 = _mm_rcp_ps(vr2);
+    // Newton-Raphson refinement
+    inv_r2 = _mm_mul_ps(inv_r2,
+              _mm_sub_ps(_mm_set1_ps(2.0f),
+              _mm_mul_ps(vr2, inv_r2)));
+    __m128 inv_r4  = _mm_mul_ps(inv_r2, inv_r2);
+    __m128 inv_r6  = _mm_mul_ps(inv_r4, inv_r2);
+    __m128 inv_r12 = _mm_mul_ps(inv_r6, inv_r6);
+    __m128 e = _mm_mul_ps(_mm_set1_ps(k_wall),
+               _mm_sub_ps(inv_r12, _mm_set1_ps(inv_rAB12)));
+    _mm_storeu_ps(Ewall, e);
+}
+
+// 16-wide and 8-wide LJ wall via 4-wide chunks
+inline void lj_wall_16x(const float* FLEXAIDS_RESTRICT r2,
+                         float inv_rAB12, float k_wall,
+                         float* FLEXAIDS_RESTRICT Ewall) noexcept {
+    lj_wall_4x(r2,    inv_rAB12, k_wall, Ewall);
+    lj_wall_4x(r2+4,  inv_rAB12, k_wall, Ewall+4);
+    lj_wall_4x(r2+8,  inv_rAB12, k_wall, Ewall+8);
+    lj_wall_4x(r2+12, inv_rAB12, k_wall, Ewall+12);
+}
+
+inline void lj_wall_8x(const float* FLEXAIDS_RESTRICT r2,
+                        float inv_rAB12, float k_wall,
+                        float* FLEXAIDS_RESTRICT Ewall) noexcept {
+    lj_wall_4x(r2,   inv_rAB12, k_wall, Ewall);
+    lj_wall_4x(r2+4, inv_rAB12, k_wall, Ewall+4);
+}
+
+// Batched dot products, 4-wide
+inline void dot3_batch(const float* FLEXAIDS_RESTRICT a,
+                       const float* FLEXAIDS_RESTRICT b,
+                       float* FLEXAIDS_RESTRICT out, int N) noexcept {
+    int i = 0;
+    for (; i <= N - 4; i += 4) {
+        __m128 s = _mm_setzero_ps();
+        for (int c = 0; c < 3; ++c) {
+            float a4[4], b4[4];
+            for (int k = 0; k < 4; ++k) {
+                a4[k] = a[(i+k)*3+c];
+                b4[k] = b[(i+k)*3+c];
+            }
+            s = _mm_add_ps(s, _mm_mul_ps(_mm_loadu_ps(a4), _mm_loadu_ps(b4)));
+        }
+        _mm_storeu_ps(out + i, s);
+    }
+    // Scalar tail
+    for (; i < N; ++i)
+        out[i] = a[i*3]*b[i*3] + a[i*3+1]*b[i*3+1] + a[i*3+2]*b[i*3+2];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 #else  // ─── scalar fallback versions ─────────────────────────────────────────
 
 inline void distance2_1x16(const float* ax, const float* ay, const float* az,
@@ -522,7 +670,7 @@ inline void dot3_batch(const float* a, const float* b, float* out, int N) noexce
         out[i] = a[i*3]*b[i*3] + a[i*3+1]*b[i*3+1] + a[i*3+2]*b[i*3+2];
 }
 
-#endif  // FLEXAIDS_HAS_AVX512 / FLEXAIDS_HAS_AVX2
+#endif  // FLEXAIDS_HAS_AVX512 / FLEXAIDS_HAS_AVX2 / FLEXAIDS_HAS_SSE42
 
 // ─── dispatch helper: compile-time dispatch to best available ────────────────
 
