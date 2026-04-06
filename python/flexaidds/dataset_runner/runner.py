@@ -883,7 +883,10 @@ class DatasetRunner:
                         all_poses, requested_metrics
                     )
 
-            dr.check_regressions()
+            if not self.dry_run:
+                dr.check_regressions()
+            else:
+                logger.info("Dry-run mode — skipping regression checks against baselines")
 
         dr.duration_seconds = time.monotonic() - t0
         return dr
