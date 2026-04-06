@@ -160,15 +160,6 @@ if(NOT Eigen3_FOUND)
         "Install: apt install libeigen3-dev / brew install eigen")
 endif()
 
-if(FLEXAIDS_BUILD_CORE)
-    if(NOT Eigen3_FOUND AND NOT EIGEN3_FOUND)
-        message(FATAL_ERROR
-            "Eigen3 headers are required for core executables but were not found. "
-            "Install Eigen3 locally or provide a reachable mirror for FetchContent. "
-            "For benchmark-only builds use -DFLEXAIDS_BUILD_CORE=OFF.")
-    endif()
-endif()
-
 # ─── pybind11 (for Python bindings) ────────────────────────────────────────
 if(BUILD_PYTHON_BINDINGS)
     find_package(pybind11 CONFIG QUIET)
@@ -480,22 +471,12 @@ if(ENABLE_VCFBATCH_BENCHMARK)
 endif()
 
 # ─── FlexAIDdS: ultra-fast docking executable ─────────────────────────────
+# Uses flexaid_core OBJECT library (same sources as FlexAID) with aggressive
+# LTO and native-arch flags for production deployments.
 option(BUILD_FLEXAIDDS_FAST "Build ultra-fast FlexAIDdS docking executable (LTO + native)" ON)
 if(BUILD_FLEXAIDDS_FAST)
-    add_executable(FlexAIDdS "")
-    get_target_property(_flexaid_sources FlexAID SOURCES)
-    target_sources(FlexAIDdS PRIVATE ${_flexaid_sources})
-
-    target_include_directories(FlexAIDdS PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/tENCoM
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ShannonThermoStack
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/LigandRingFlex
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ChiralCenter
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/PTMAttachment
-    )
+    add_executable(FlexAIDdS $<TARGET_OBJECTS:flexaid_core>)
+    target_link_libraries(FlexAIDdS PRIVATE flexaid_core)
 
     if(MSVC)
         target_compile_options(FlexAIDdS PRIVATE /O2 /GL /DNDEBUG /MT)
@@ -510,17 +491,6 @@ if(BUILD_FLEXAIDDS_FAST)
         else()
             target_link_options(FlexAIDdS PRIVATE -flto)
         endif()
-    endif()
-
-    flexaids_configure_simd(FlexAIDdS)
-
-    target_link_libraries(FlexAIDdS PRIVATE Eigen3::Eigen)
-
-
-    target_compile_definitions(FlexAIDdS PRIVATE FLEXAIDS_HAS_EIGEN)
-
-    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
-        target_link_libraries(FlexAIDdS PRIVATE OpenMP::OpenMP_CXX)
     endif()
 
     if(FLEXAIDS_USE_ROCM)
