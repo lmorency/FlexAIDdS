@@ -15,6 +15,12 @@
 //   4. SAS energy contribution computed per ligand atom using the
 //      solvent column (T-1) of the energy matrix.
 //   5. Warp-shuffle + shared-memory reduction → three CF scalars per chromosome.
+//
+// Performance optimisations (vs. baseline):
+//   – CUDA stream for async H↔D transfers (overlap DMA + compute)
+//   – Pinned host memory for gene upload and result readback
+//   – Merged result readback (single DMA for com+wal+sas)
+//   – Multiplication chain replaces powf(r,12) in WAL term
 
 #ifdef FLEXAIDS_USE_CUDA
 
@@ -24,6 +30,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cmath>
+#include <cstring>
 
 // ─── error-checking macro ─────────────────────────────────────────────────────
 #define CUDA_CHECK(call) do {                                             \
@@ -53,9 +60,15 @@ struct CudaEvalCtx {
     float*  d_atom_radius;   // [n_atoms]
     float*  d_emat_sampled;  // [n_types × n_types × N_EMAT_SAMPLES]
     double* d_genes;         // [max_pop × max_genes]
-    double* d_com_out;       // [max_pop]
-    double* d_wal_out;       // [max_pop]
-    double* d_sas_out;       // [max_pop]
+
+    // Merged device output: [com_0..com_N | wal_0..wal_N | sas_0..sas_N]
+    double* d_cf_out;        // [3 × max_pop]
+
+    // Pinned host buffers for async DMA
+    double* h_genes_pinned;  // [max_pop × max_genes]
+    double* h_cf_pinned;     // [3 × max_pop]
+
+    cudaStream_t stream;
 
     int   n_atoms;
     int   n_types;
@@ -159,10 +172,17 @@ __global__ void kernel_eval_cf_full(
         local_com += yval * rel_area;
 
         // WAL: repulsive wall energy when r < perm × (rA+rB).
+        // Uses multiplication chain instead of powf() for ~5× faster r⁻¹².
         const float clash_r = perm * rsum;
         if (r < clash_r) {
-            const float inv_r12  = 1.0f / powf(r,       12.0f);
-            const float inv_cr12 = 1.0f / powf(clash_r, 12.0f);
+            const float r2  = r * r;
+            const float r4  = r2 * r2;
+            const float r6  = r4 * r2;
+            const float inv_r12  = 1.0f / (r6 * r6);
+            const float cr2 = clash_r * clash_r;
+            const float cr4 = cr2 * cr2;
+            const float cr6 = cr4 * cr2;
+            const float inv_cr12 = 1.0f / (cr6 * cr6);
             local_wal += KWALL_F * (inv_r12 - inv_cr12);
         }
     }
@@ -249,15 +269,23 @@ CudaEvalCtx* cuda_eval_init(int   n_atoms,
     const size_t gene_bytes = (size_t)max_pop * max_genes   * sizeof(double);
     const size_t cf_bytes   = (size_t)max_pop               * sizeof(double);
 
+    // Device allocations
     CUDA_CHECK(cudaMalloc(&ctx->d_atom_xyz,     xyz_bytes));
     CUDA_CHECK(cudaMalloc(&ctx->d_atom_type,    type_bytes));
     CUDA_CHECK(cudaMalloc(&ctx->d_atom_radius,  rad_bytes));
     CUDA_CHECK(cudaMalloc(&ctx->d_emat_sampled, em_bytes));
     CUDA_CHECK(cudaMalloc(&ctx->d_genes,        gene_bytes));
-    CUDA_CHECK(cudaMalloc(&ctx->d_com_out,      cf_bytes));
-    CUDA_CHECK(cudaMalloc(&ctx->d_wal_out,      cf_bytes));
-    CUDA_CHECK(cudaMalloc(&ctx->d_sas_out,      cf_bytes));
+    // Merged output: [com | wal | sas] contiguous for single DMA readback
+    CUDA_CHECK(cudaMalloc(&ctx->d_cf_out,       3 * cf_bytes));
 
+    // Pinned host memory for async transfers
+    CUDA_CHECK(cudaMallocHost(&ctx->h_genes_pinned, gene_bytes));
+    CUDA_CHECK(cudaMallocHost(&ctx->h_cf_pinned,    3 * cf_bytes));
+
+    // Create dedicated stream for async operations
+    CUDA_CHECK(cudaStreamCreate(&ctx->stream));
+
+    // Upload constant atom data (blocking — only done once at init)
     CUDA_CHECK(cudaMemcpy(ctx->d_atom_xyz,     h_atom_xyz,     xyz_bytes,  cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(ctx->d_atom_type,    h_atom_type,    type_bytes, cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(ctx->d_atom_radius,  h_atom_radius,  rad_bytes,  cudaMemcpyHostToDevice));
@@ -297,17 +325,25 @@ void cuda_eval_batch(CudaEvalCtx*  ctx,
     const size_t gene_bytes = (size_t)pop_size * n_genes * sizeof(double);
     const size_t cf_bytes   = (size_t)pop_size            * sizeof(double);
 
-    CUDA_CHECK(cudaMemcpy(ctx->d_genes, h_genes, gene_bytes, cudaMemcpyHostToDevice));
+    // Pointers into merged device output buffer
+    double* d_com = ctx->d_cf_out;
+    double* d_wal = ctx->d_cf_out + ctx->max_pop;
+    double* d_sas = ctx->d_cf_out + 2 * ctx->max_pop;
 
-    kernel_eval_cf_full<<<pop_size, BLOCK_SIZE>>>(
+    // Copy genes into pinned buffer, then async upload to device
+    memcpy(ctx->h_genes_pinned, h_genes, gene_bytes);
+    CUDA_CHECK(cudaMemcpyAsync(ctx->d_genes, ctx->h_genes_pinned, gene_bytes,
+                               cudaMemcpyHostToDevice, ctx->stream));
+
+    kernel_eval_cf_full<<<pop_size, BLOCK_SIZE, 0, ctx->stream>>>(
         ctx->d_atom_xyz,
         ctx->d_atom_type,
         ctx->d_atom_radius,
         ctx->d_emat_sampled,
         ctx->d_genes,
-        ctx->d_com_out,
-        ctx->d_wal_out,
-        ctx->d_sas_out,
+        d_com,
+        d_wal,
+        d_sas,
         ctx->n_atoms,
         ctx->n_types,
         n_genes,
@@ -316,11 +352,18 @@ void cuda_eval_batch(CudaEvalCtx*  ctx,
         ctx->perm);
 
     CUDA_CHECK(cudaGetLastError());
-    CUDA_CHECK(cudaDeviceSynchronize());
 
-    CUDA_CHECK(cudaMemcpy(h_com_out, ctx->d_com_out, cf_bytes, cudaMemcpyDeviceToHost));
-    CUDA_CHECK(cudaMemcpy(h_wal_out, ctx->d_wal_out, cf_bytes, cudaMemcpyDeviceToHost));
-    CUDA_CHECK(cudaMemcpy(h_sas_out, ctx->d_sas_out, cf_bytes, cudaMemcpyDeviceToHost));
+    // Single merged readback: [com | wal | sas] → pinned host buffer
+    CUDA_CHECK(cudaMemcpyAsync(ctx->h_cf_pinned, ctx->d_cf_out, 3 * cf_bytes,
+                               cudaMemcpyDeviceToHost, ctx->stream));
+
+    // Wait for all stream operations to complete
+    CUDA_CHECK(cudaStreamSynchronize(ctx->stream));
+
+    // Scatter merged results to caller's output arrays
+    memcpy(h_com_out, ctx->h_cf_pinned,                   cf_bytes);
+    memcpy(h_wal_out, ctx->h_cf_pinned + ctx->max_pop,    cf_bytes);
+    memcpy(h_sas_out, ctx->h_cf_pinned + 2 * ctx->max_pop, cf_bytes);
 }
 
 void cuda_eval_shutdown(CudaEvalCtx* ctx)
@@ -331,9 +374,10 @@ void cuda_eval_shutdown(CudaEvalCtx* ctx)
     cudaFree(ctx->d_atom_radius);
     cudaFree(ctx->d_emat_sampled);
     cudaFree(ctx->d_genes);
-    cudaFree(ctx->d_com_out);
-    cudaFree(ctx->d_wal_out);
-    cudaFree(ctx->d_sas_out);
+    cudaFree(ctx->d_cf_out);
+    cudaFreeHost(ctx->h_genes_pinned);
+    cudaFreeHost(ctx->h_cf_pinned);
+    cudaStreamDestroy(ctx->stream);
     delete ctx;
 }
 

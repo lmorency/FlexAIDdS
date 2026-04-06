@@ -1,5 +1,9 @@
 #include "gaboom.h"
 #include "fileio.h"
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+#include "simd_distance.h"
 
 // Chi(x) function as defined in :
 //   Science 344(6191):1492-1496, 2014, Eq. (1)
@@ -88,7 +92,7 @@ void DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome
 		fprintf(stderr,"ERROR: memory allocation error for RMSD matrix.\n");
 		Terminate(2);
 	}
-	memset(RMSD, 0, sizeChrom);
+	memset(RMSD, 0, sizeChrom * sizeof(float));
 	// (1) Build Chromosome Cartesian Coordinates
 	for(i = 0; i < num_chrom; ++i)
 	{
@@ -97,22 +101,28 @@ void DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome
         else calc_rmsd_chrom(FA,GB,chrom,gene_lim,atoms,residue,cleftgrid,GB->num_genes,i,i+1, pChrom->Coord, Chrom[i+1].Coord, false);
 	}
 
-	// (2) Build RMSD Matrix
-	for(i = 0, Pi = 0.0, iChrom=NULL; i < num_chrom; ++i)
+	// (2) Build RMSD Matrix — OpenMP parallelised over outer loop
+	// CF computation (entropic weighting) is independent per chromosome.
+	// RMSD matrix is upper-triangular; each (i,j) pair writes to a unique index.
+	#ifdef _OPENMP
+	#pragma omp parallel for schedule(dynamic, 8) private(j, k)
+	#endif
+	for(i = 0; i < num_chrom; ++i)
 	{
-		iChrom = &Chrom[i];
+		ClusterChrom* loc_iChrom = &Chrom[i];
 		if(Entropic)
 		{
-			Pi = exp((-1.0) * (1/FA->temperature) * iChrom->Chromosome->app_evalue) / partition_function;
-			iChrom->CF = (double) ( Pi * iChrom->Chromosome->app_evalue) + (FA->temperature * Pi * log(Pi));
+			double loc_Pi = exp((-1.0) * (1/FA->temperature) * loc_iChrom->Chromosome->app_evalue) / partition_function;
+			loc_iChrom->CF = (double) ( loc_Pi * loc_iChrom->Chromosome->app_evalue) + (FA->temperature * loc_Pi * log(loc_Pi));
 		}
-		else iChrom->CF = iChrom->Chromosome->app_evalue;
-		
+		else loc_iChrom->CF = loc_iChrom->Chromosome->app_evalue;
+
 		for(j = i+1; j < num_chrom; ++j)
 		{
-			jChrom = &Chrom[j];
-			for(k = 0, minDist=0.0; k < nAtoms; ++k) minDist += sqrdist(&iChrom->Coord[3*k], &jChrom->Coord[3*k]);
-			RMSD[K(i,j,num_chrom)] = sqrtf(minDist/(float)nAtoms);
+			ClusterChrom* loc_jChrom = &Chrom[j];
+			// SIMD-accelerated squared distance accumulation
+			float d = flexaids::sum_sq_distances_f(loc_iChrom->Coord, loc_jChrom->Coord, nAtoms * 3);
+			RMSD[K(i,j,num_chrom)] = sqrtf(d/(float)nAtoms);
 		}
 	}
     
@@ -121,43 +131,47 @@ void DensityPeak_cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome
 	// DC = FA->cluster_rmsd;
 	printf("DC:%g\n",DC);
 
-	// (3) Build Local Density Matrix
+	// (3) Build Local Density Matrix — OpenMP parallelised
+	// Each chromosome's density is the count of neighbours within DC.
+	// Read-only access to RMSD matrix; each thread writes distinct Chrom[i].Density.
+	#ifdef _OPENMP
+	#pragma omp parallel for schedule(static)
+	#endif
 	for(i = 0; i < num_chrom; ++i)
 	{
-		iChrom = &Chrom[i];
-		for(j = i+1; j < num_chrom; ++j)
+		int local_density = 0;
+		for(j = 0; j < num_chrom; ++j)
 		{
-			jChrom	= &Chrom[j];
-			if(jChrom != iChrom) iChrom->Density += Chi(RMSD[K(i,j,num_chrom)], DC);
-		}
-	}
-
-	// (4) Fill out DP and Distance in Chrom
-	for(i = 0; i < num_chrom; ++i)
-	{
-		iChrom = &Chrom[i];
-		for(j = i+1, minDist=FLT_MAX; j < num_chrom; ++j)
-		{
-			if(j != i)
-			{
-				jChrom = &Chrom[j];
-				if(jChrom->Density > iChrom->Density && RMSD[K(i,j,num_chrom)] < minDist && RMSD[K(i,j,num_chrom)] > 0.0)
-				{
-					minDist = RMSD[K(i,j,num_chrom)];
-					iChrom->DP = jChrom;
-					iChrom->Distance = minDist;
-				}
+			if(j != i) {
+				int idx = (i < j) ? K(i,j,num_chrom) : K(j,i,num_chrom);
+				local_density += Chi(RMSD[idx], DC);
 			}
 		}
-		for(j = num_chrom-1, minDist=FLT_MAX; j > i; --j)
+		Chrom[i].Density = local_density;
+	}
+
+	// (4) Fill out DP and Distance in Chrom — OpenMP parallelised
+	// Each chromosome independently finds its nearest higher-density neighbour.
+	#ifdef _OPENMP
+	#pragma omp parallel for schedule(dynamic)
+	#endif
+	for(i = 0; i < num_chrom; ++i)
+	{
+		ClusterChrom* loc_iChrom = &Chrom[i];
+		float loc_minDist = FLT_MAX;
+		// Search all other chromosomes (full range, not just upper triangle)
+		for(j = 0; j < num_chrom; ++j)
 		{
-            jChrom = &Chrom[j];
-            if(jChrom->Density > iChrom->Density && RMSD[K(i,j,num_chrom)] < minDist && RMSD[K(i,j,num_chrom)] > 0.0)
-            {
-                minDist = RMSD[K(i,j,num_chrom)];
-                iChrom->DP = jChrom;
-                iChrom->Distance = minDist;
-            }
+			if(j == i) continue;
+			ClusterChrom* loc_jChrom = &Chrom[j];
+			int idx = (i < j) ? K(i,j,num_chrom) : K(j,i,num_chrom);
+			float rmsd_val = RMSD[idx];
+			if(loc_jChrom->Density > loc_iChrom->Density && rmsd_val < loc_minDist && rmsd_val > 0.0f)
+			{
+				loc_minDist = rmsd_val;
+				loc_iChrom->DP = loc_jChrom;
+				loc_iChrom->Distance = loc_minDist;
+			}
 		}
 	}
 
