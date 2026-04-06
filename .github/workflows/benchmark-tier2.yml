@@ -128,7 +128,7 @@ jobs:
             libopenmpi-dev openmpi-bin
 
       - name: Download FlexAID binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: flexaid-binary-${{ github.sha }}
           path: build/
@@ -342,7 +342,7 @@ jobs:
           python-version: "3.11"
 
       - name: Download FlexAID binary
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: flexaid-binary-${{ github.sha }}
           path: build/
