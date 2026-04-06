@@ -112,10 +112,12 @@ bool ShannonEnergyMatrix::initialise_from_file(const std::string& path) {
 
 void ShannonEnergyMatrix::initialise_from_data(const float* data, int count) {
     int expected = SHANNON_BINS * SHANNON_BINS;
-    if (count < expected) count = expected;  // clamp
     matrix_.resize(expected);
-    for (int k = 0; k < expected; ++k)
+    int safe_count = std::min(count, expected);
+    for (int k = 0; k < safe_count; ++k)
         matrix_[k] = static_cast<double>(data[k]);
+    for (int k = safe_count; k < expected; ++k)
+        matrix_[k] = 0.0;
     initialised_ = true;
 }
 

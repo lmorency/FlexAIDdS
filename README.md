@@ -17,7 +17,7 @@
 
 </div>
 
-**[Installation](docs/INSTALLATION.md)** · **[User Guide](docs/USERGUIDE.md)** · **[Support Matrix](docs/SUPPORT_MATRIX.md)** · **[Reproducibility](docs/REPRODUCIBILITY.md)** · **[Benchmarks](docs/BENCHMARKS.md)** · **[Changelog](VERSION.md)** · **[Website](https://lmorency.github.io/FlexAIDdS/)**
+**[Installation](docs/INSTALLATION.md)** · **[User Guide](docs/USERGUIDE.md)** · **[Support Matrix](docs/SUPPORT_MATRIX.md)** · **[Reproducibility](docs/REPRODUCIBILITY.md)** · **[Benchmarks](docs/BENCHMARKS.md)** · **[Changelog](VERSION.md)** · **[Website](https://lmorency.github.io/FlexAIDdS/)** · **[Documentation Hub](#documentation)**
 
 ---
 
@@ -96,6 +96,25 @@ results = fd.dock(
 for mode in results.rank_by_free_energy():
     print(f"Mode: dG={mode.free_energy:.2f} kcal/mol")
 ```
+
+---
+
+## What's New in v2.0
+
+Released 2026-04-04 — complete rewrite of the FlexAID engine.
+
+- **Entropy-driven scoring** — full canonical ensemble thermodynamics via Shannon information theory (ΔG, ΔH, -TΔS, Cv)
+- **Multi-format input with SMILES** — dock directly from SMILES strings with automatic 3D coordinate generation; pure C++20 parser, no RDKit/Boost
+- **tENCoM vibrational entropy** — torsional elastic network contact model for backbone vibrational entropy differentials
+- **Unified hardware dispatch** — automatic runtime backend: CUDA > Metal > AVX-512 > AVX2 > OpenMP > scalar
+- **Full ligand flexibility by default** — ring conformer sampling, sugar pucker, R/S chiral center discrimination
+- **Python package & PyMOL plugin** — `flexaidds` with docking API, result I/O, CLI inspector, and interactive visualization
+- **GIST desolvation & H-bond scoring** — grid-based water thermodynamics and angular-dependent hydrogen bond potential
+- **GA diversity monitoring** — Shannon entropy collapse detection with adaptive catastrophic mutation
+- **MPI distributed docking** — grid domain decomposition across compute nodes
+- **ML rescoring bridge** — Voronoi graph + Shannon profile feature extraction for hybrid physics/ML scoring
+
+See the full changelog in [VERSION.md](VERSION.md).
 
 ---
 
@@ -204,6 +223,11 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
 
 # Apple Silicon with Metal GPU
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DFLEXAIDS_USE_METAL=ON
+```
+
+```bash
+# Distributed validation (parallel C++ tests + MPI benchmark smoke run)
+MPI_PROCS=4 CTEST_JOBS=8 ./scripts/run_distributed_validation.sh
 ```
 
 ### CMake Options
@@ -431,16 +455,50 @@ FlexAIDdS/
 
 ## Documentation
 
+Browse the full documentation at **[lmorency.github.io/FlexAIDdS](https://lmorency.github.io/FlexAIDdS/)**.
+
+### Core Guides
+
 | Document | Description |
 |:---------|:------------|
-| [VERSION.md](VERSION.md) | Version history and changelog |
 | [Installation Guide](docs/INSTALLATION.md) | Prerequisites, build instructions, platform-specific notes |
 | [User Guide](docs/USERGUIDE.md) | Full parameter reference, Python API, PyMOL plugin |
-| [Support Matrix](docs/SUPPORT_MATRIX.md) | Supported platforms and backends |
-| [Reproducibility](docs/REPRODUCIBILITY.md) | Benchmark claim policy |
-| [Benchmarks](docs/BENCHMARKS.md) | Accuracy and performance benchmarks |
-| [Implementation Roadmap](docs/IMPLEMENTATION_ROADMAP.md) | Development phases and status |
+| [Support Matrix](docs/SUPPORT_MATRIX.md) | Supported platforms, compilers, GPU backends, CI coverage |
+| [Benchmarks](docs/BENCHMARKS.md) | ITC-187, CASF-2016, LIT-PCBA, cross-docking validation |
+| [Reproducibility](docs/REPRODUCIBILITY.md) | Benchmark claim policy, dataset provenance |
+| [VERSION.md](VERSION.md) | Version history and changelog |
 | [Contributing](CONTRIBUTING.md) | Development setup, license policy, PR guidelines |
+
+### Technical Deep Dives
+
+| Document | Description |
+|:---------|:------------|
+| [Scoring Functions](docs/docs/scoring/overview.md) | Multi-component scoring: Voronoi CF, H-bond, GIST, electrostatics |
+| [H-Bond Potential](docs/docs/scoring/hbond.md) | Angular-dependent Gaussian hydrogen bond scoring |
+| [GIST Desolvation](docs/docs/scoring/gist.md) | Grid Inhomogeneous Solvation Theory integration |
+| [Genetic Algorithm](docs/docs/ga/overview.md) | Fitness models (SMFREE, PSHARE, LINEAR), key parameters |
+| [GA Diversity](docs/docs/ga/diversity.md) | Entropy collapse detection and adaptive mutation |
+| [GA Optimizer](docs/docs/ga/optimize.md) | Automated hyperparameter tuning with GAOptimizer |
+| [Python API](docs/docs/api/python.md) | StatMechEngine, ENCoMEngine, dock(), load_results() |
+| [ML Rescoring](docs/docs/ml-rescore.md) | Feature extraction bridge for hybrid physics/ML scoring |
+| [Configuration](docs/docs/configuration.md) | JSON config reference for scoring, GA, and distributed settings |
+
+### Benchmark Suites
+
+| Document | Description |
+|:---------|:------------|
+| [CASF-2016](docs/docs/benchmarks/casf2016.md) | Scoring and docking power on 285 diverse complexes |
+| [LIT-PCBA](docs/docs/benchmarks/litpcba.md) | Unbiased virtual screening across 15 PubChem targets |
+| [Cross-Docking](docs/docs/benchmarks/crossdock.md) | Non-native receptor docking validation |
+
+### Internal
+
+| Document | Description |
+|:---------|:------------|
+| [Implementation Roadmap](docs/IMPLEMENTATION_ROADMAP.md) | Development phases and status |
+| [Validated Capabilities](docs/VALIDATED_CAPABILITIES.md) | Core 1.0 supported features |
+| [Experimental Capabilities](docs/EXPERIMENTAL_CAPABILITIES.md) | Experimental / non-1.0 features |
+| [Known Limitations](docs/KNOWN_LIMITATIONS.md) | Current limitations and caveats |
 
 ---
 

@@ -1,0 +1,508 @@
+# RE-DOCK Worker Deployments
+# 8 replicas with geometric temperature ladder: 298.0 → 600.0 K
+# Cold replicas (low T) get more CPU/memory for thorough sampling.
+# Hot replicas (high T) need less — they explore more freely.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redock-worker-0
+  namespace: flexaids-redock
+  labels: &labels-0
+    app: redock-worker
+    replica-index: "0"
+    temperature-tier: cold
+spec:
+  replicas: 1
+  selector:
+    matchLabels: *labels-0
+  template:
+    metadata:
+      labels: *labels-0
+    spec:
+      containers:
+        - name: worker
+          image: ghcr.io/nrglab/flexaids-worker:latest
+          env:
+            - name: REPLICA_INDEX
+              value: "0"
+            - name: REPLICA_TEMPERATURE
+              value: "298.0"
+          envFrom:
+            - configMapRef:
+                name: redock-config
+          ports:
+            - containerPort: 8000
+              name: http
+          resources:
+            requests:
+              cpu: "4"
+              memory: 8Gi
+            limits:
+              cpu: "8"
+              memory: 16Gi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: checkpoints
+              mountPath: /checkpoints
+          readinessProbe:
+            httpGet:
+              path: /api/status
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          livenessProbe:
+            httpGet:
+              path: /api/status
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 60
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: redock-data
+        - name: checkpoints
+          persistentVolumeClaim:
+            claimName: redock-checkpoints
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redock-worker-1
+  namespace: flexaids-redock
+  labels: &labels-1
+    app: redock-worker
+    replica-index: "1"
+    temperature-tier: cold
+spec:
+  replicas: 1
+  selector:
+    matchLabels: *labels-1
+  template:
+    metadata:
+      labels: *labels-1
+    spec:
+      containers:
+        - name: worker
+          image: ghcr.io/nrglab/flexaids-worker:latest
+          env:
+            - name: REPLICA_INDEX
+              value: "1"
+            - name: REPLICA_TEMPERATURE
+              value: "329.3"
+          envFrom:
+            - configMapRef:
+                name: redock-config
+          ports:
+            - containerPort: 8000
+              name: http
+          resources:
+            requests:
+              cpu: "4"
+              memory: 8Gi
+            limits:
+              cpu: "8"
+              memory: 16Gi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: checkpoints
+              mountPath: /checkpoints
+          readinessProbe:
+            httpGet:
+              path: /api/status
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          livenessProbe:
+            httpGet:
+              path: /api/status
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 60
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: redock-data
+        - name: checkpoints
+          persistentVolumeClaim:
+            claimName: redock-checkpoints
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redock-worker-2
+  namespace: flexaids-redock
+  labels: &labels-2
+    app: redock-worker
+    replica-index: "2"
+    temperature-tier: warm
+spec:
+  replicas: 1
+  selector:
+    matchLabels: *labels-2
+  template:
+    metadata:
+      labels: *labels-2
+    spec:
+      containers:
+        - name: worker
+          image: ghcr.io/nrglab/flexaids-worker:latest
+          env:
+            - name: REPLICA_INDEX
+              value: "2"
+            - name: REPLICA_TEMPERATURE
+              value: "363.8"
+          envFrom:
+            - configMapRef:
+                name: redock-config
+          ports:
+            - containerPort: 8000
+              name: http
+          resources:
+            requests:
+              cpu: "2"
+              memory: 4Gi
+            limits:
+              cpu: "4"
+              memory: 8Gi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: checkpoints
+              mountPath: /checkpoints
+          readinessProbe:
+            httpGet:
+              path: /api/status
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          livenessProbe:
+            httpGet:
+              path: /api/status
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 60
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: redock-data
+        - name: checkpoints
+          persistentVolumeClaim:
+            claimName: redock-checkpoints
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redock-worker-3
+  namespace: flexaids-redock
+  labels: &labels-3
+    app: redock-worker
+    replica-index: "3"
+    temperature-tier: warm
+spec:
+  replicas: 1
+  selector:
+    matchLabels: *labels-3
+  template:
+    metadata:
+      labels: *labels-3
+    spec:
+      containers:
+        - name: worker
+          image: ghcr.io/nrglab/flexaids-worker:latest
+          env:
+            - name: REPLICA_INDEX
+              value: "3"
+            - name: REPLICA_TEMPERATURE
+              value: "401.9"
+          envFrom:
+            - configMapRef:
+                name: redock-config
+          ports:
+            - containerPort: 8000
+              name: http
+          resources:
+            requests:
+              cpu: "2"
+              memory: 4Gi
+            limits:
+              cpu: "4"
+              memory: 8Gi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: checkpoints
+              mountPath: /checkpoints
+          readinessProbe:
+            httpGet:
+              path: /api/status
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          livenessProbe:
+            httpGet:
+              path: /api/status
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 60
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: redock-data
+        - name: checkpoints
+          persistentVolumeClaim:
+            claimName: redock-checkpoints
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redock-worker-4
+  namespace: flexaids-redock
+  labels: &labels-4
+    app: redock-worker
+    replica-index: "4"
+    temperature-tier: warm
+spec:
+  replicas: 1
+  selector:
+    matchLabels: *labels-4
+  template:
+    metadata:
+      labels: *labels-4
+    spec:
+      containers:
+        - name: worker
+          image: ghcr.io/nrglab/flexaids-worker:latest
+          env:
+            - name: REPLICA_INDEX
+              value: "4"
+            - name: REPLICA_TEMPERATURE
+              value: "444.0"
+          envFrom:
+            - configMapRef:
+                name: redock-config
+          ports:
+            - containerPort: 8000
+              name: http
+          resources:
+            requests:
+              cpu: "2"
+              memory: 4Gi
+            limits:
+              cpu: "4"
+              memory: 8Gi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: checkpoints
+              mountPath: /checkpoints
+          readinessProbe:
+            httpGet:
+              path: /api/status
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          livenessProbe:
+            httpGet:
+              path: /api/status
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 60
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: redock-data
+        - name: checkpoints
+          persistentVolumeClaim:
+            claimName: redock-checkpoints
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redock-worker-5
+  namespace: flexaids-redock
+  labels: &labels-5
+    app: redock-worker
+    replica-index: "5"
+    temperature-tier: hot
+spec:
+  replicas: 1
+  selector:
+    matchLabels: *labels-5
+  template:
+    metadata:
+      labels: *labels-5
+    spec:
+      containers:
+        - name: worker
+          image: ghcr.io/nrglab/flexaids-worker:latest
+          env:
+            - name: REPLICA_INDEX
+              value: "5"
+            - name: REPLICA_TEMPERATURE
+              value: "490.6"
+          envFrom:
+            - configMapRef:
+                name: redock-config
+          ports:
+            - containerPort: 8000
+              name: http
+          resources:
+            requests:
+              cpu: "1"
+              memory: 2Gi
+            limits:
+              cpu: "2"
+              memory: 4Gi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: checkpoints
+              mountPath: /checkpoints
+          readinessProbe:
+            httpGet:
+              path: /api/status
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          livenessProbe:
+            httpGet:
+              path: /api/status
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 60
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: redock-data
+        - name: checkpoints
+          persistentVolumeClaim:
+            claimName: redock-checkpoints
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redock-worker-6
+  namespace: flexaids-redock
+  labels: &labels-6
+    app: redock-worker
+    replica-index: "6"
+    temperature-tier: hot
+spec:
+  replicas: 1
+  selector:
+    matchLabels: *labels-6
+  template:
+    metadata:
+      labels: *labels-6
+    spec:
+      containers:
+        - name: worker
+          image: ghcr.io/nrglab/flexaids-worker:latest
+          env:
+            - name: REPLICA_INDEX
+              value: "6"
+            - name: REPLICA_TEMPERATURE
+              value: "542.0"
+          envFrom:
+            - configMapRef:
+                name: redock-config
+          ports:
+            - containerPort: 8000
+              name: http
+          resources:
+            requests:
+              cpu: "1"
+              memory: 2Gi
+            limits:
+              cpu: "2"
+              memory: 4Gi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: checkpoints
+              mountPath: /checkpoints
+          readinessProbe:
+            httpGet:
+              path: /api/status
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          livenessProbe:
+            httpGet:
+              path: /api/status
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 60
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: redock-data
+        - name: checkpoints
+          persistentVolumeClaim:
+            claimName: redock-checkpoints
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redock-worker-7
+  namespace: flexaids-redock
+  labels: &labels-7
+    app: redock-worker
+    replica-index: "7"
+    temperature-tier: hot
+spec:
+  replicas: 1
+  selector:
+    matchLabels: *labels-7
+  template:
+    metadata:
+      labels: *labels-7
+    spec:
+      containers:
+        - name: worker
+          image: ghcr.io/nrglab/flexaids-worker:latest
+          env:
+            - name: REPLICA_INDEX
+              value: "7"
+            - name: REPLICA_TEMPERATURE
+              value: "600.0"
+          envFrom:
+            - configMapRef:
+                name: redock-config
+          ports:
+            - containerPort: 8000
+              name: http
+          resources:
+            requests:
+              cpu: "1"
+              memory: 2Gi
+            limits:
+              cpu: "2"
+              memory: 4Gi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: checkpoints
+              mountPath: /checkpoints
+          readinessProbe:
+            httpGet:
+              path: /api/status
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          livenessProbe:
+            httpGet:
+              path: /api/status
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 60
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: redock-data
+        - name: checkpoints
+          persistentVolumeClaim:
+            claimName: redock-checkpoints

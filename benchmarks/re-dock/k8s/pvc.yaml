@@ -1,0 +1,33 @@
+# Persistent Volume Claims for RE-DOCK
+---
+# Main data volume: docking results, poses, analysis outputs
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redock-data
+  namespace: flexaids-redock
+  labels:
+    app: redock
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: standard
+---
+# Checkpoint volume: campaign state, exchange logs
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redock-checkpoints
+  namespace: flexaids-redock
+  labels:
+    app: redock
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: standard

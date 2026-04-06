@@ -31,6 +31,7 @@ endif()
 
 # ─── options ────────────────────────────────────────────────────────────────
 option(FLEXAIDS_USE_CUDA    "Enable CUDA GPU evaluation"          OFF)
+option(FLEXAIDS_USE_ROCM    "Enable ROCm/HIP GPU evaluation"      OFF)
 option(FLEXAIDS_USE_METAL   "Enable Metal GPU acceleration"       OFF)
 option(FLEXAIDS_USE_AVX2    "Enable AVX2 SIMD acceleration"       ON)
 option(FLEXAIDS_USE_AVX512  "Enable AVX-512 SIMD acceleration"    OFF)
@@ -186,6 +187,28 @@ endif()
 if(FLEXAIDS_USE_CUDA)
     enable_language(CUDA)
     find_package(CUDAToolkit REQUIRED)
+endif()
+
+# ─── ROCm / HIP (optional) ───────────────────────────────────────────────
+if(FLEXAIDS_USE_ROCM)
+    if(CMAKE_VERSION VERSION_LESS "3.21")
+        message(FATAL_ERROR "ROCm/HIP support requires CMake >= 3.21")
+    endif()
+
+    if(NOT DEFINED ENV{ROCM_PATH})
+        set(_rocm_hints /opt/rocm /usr/local/rocm)
+    else()
+        set(_rocm_hints $ENV{ROCM_PATH})
+    endif()
+    list(APPEND CMAKE_PREFIX_PATH ${_rocm_hints})
+
+    enable_language(HIP)
+    find_package(hip REQUIRED
+        HINTS ${_rocm_hints}
+        PATH_SUFFIXES lib/cmake/hip hip/lib/cmake/hip)
+
+    set(FLEXAIDS_HIP_ARCHITECTURES "gfx908;gfx90a;gfx942"
+        CACHE STRING "Semicolon-separated AMD GPU architectures for HIP")
 endif()
 
 # ─── Metal (optional, macOS only) ────────────────────────────────────────
@@ -414,6 +437,16 @@ LIB/tENCoM/tencm_cuda.cu                  # TENCoM contact discovery + Hessian a
     message(STATUS "CUDA enabled — CF batch + Shannon histogram + TENCoM Hessian kernels")
 endif()
 
+if(FLEXAIDS_USE_ROCM)
+    target_sources(FlexAID PRIVATE LIB/hip_eval.hip)
+    set_source_files_properties(LIB/hip_eval.hip PROPERTIES LANGUAGE HIP)
+    set_property(TARGET FlexAID PROPERTY HIP_ARCHITECTURES ${FLEXAIDS_HIP_ARCHITECTURES})
+    target_compile_definitions(FlexAID PRIVATE FLEXAIDS_USE_ROCM)
+    target_include_directories(FlexAID PRIVATE ${hip_INCLUDE_DIRS})
+    target_link_libraries(FlexAID PRIVATE hip::host hip::device)
+    message(STATUS "ROCm/HIP enabled — CF batch + runtime detection")
+endif()
+
 # ─── Metal sources ──────────────────────────────────────────────────────
 if(FLEXAIDS_USE_METAL)
     target_sources(FlexAID PRIVATE LIB/metal_eval.mm)
@@ -619,6 +652,11 @@ if(ENABLE_TENCOM_TOOL)
         target_link_libraries(tENCoM PRIVATE Eigen3::Eigen)
         target_compile_definitions(tENCoM PRIVATE FLEXAIDS_HAS_EIGEN)
     endif()
+    if(FLEXAIDS_USE_ROCM)
+        target_compile_definitions(tENCoM PRIVATE FLEXAIDS_USE_ROCM)
+        target_include_directories(tENCoM PRIVATE ${hip_INCLUDE_DIRS})
+        target_link_libraries(tENCoM PRIVATE hip::host)
+    endif()
     # CUDA GPU acceleration for large proteins (N > 256 residues)
     if(FLEXAIDS_USE_CUDA)
         target_sources(tENCoM PRIVATE LIB/tENCoM/tencm_cuda.cu)
@@ -706,6 +744,13 @@ if(BUILD_FLEXAIDDS_FAST)
 
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(FlexAIDdS PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+
+    if(FLEXAIDS_USE_ROCM)
+        target_compile_definitions(FlexAIDdS PRIVATE FLEXAIDS_USE_ROCM)
+        target_include_directories(FlexAIDdS PRIVATE ${hip_INCLUDE_DIRS})
+        target_link_libraries(FlexAIDdS PRIVATE hip::host hip::device)
+        set_property(TARGET FlexAIDdS PROPERTY HIP_ARCHITECTURES ${FLEXAIDS_HIP_ARCHITECTURES})
     endif()
 
     message(STATUS "FlexAIDdS fast executable enabled")
@@ -931,6 +976,11 @@ if(BUILD_TESTING)
     endif()
     if(FLEXAIDS_USE_METAL)
         target_compile_definitions(test_hardware_detect_dispatch PRIVATE FLEXAIDS_USE_METAL)
+    endif()
+    if(FLEXAIDS_USE_ROCM)
+        target_compile_definitions(test_hardware_detect_dispatch PRIVATE FLEXAIDS_USE_ROCM)
+        target_include_directories(test_hardware_detect_dispatch PRIVATE ${hip_INCLUDE_DIRS})
+        target_link_libraries(test_hardware_detect_dispatch PRIVATE hip::host)
     endif()
     flexaids_configure_msvc_test(test_hardware_detect_dispatch)
     add_test(NAME HardwareDetectDispatchTests COMMAND test_hardware_detect_dispatch)

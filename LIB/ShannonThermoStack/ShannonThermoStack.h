@@ -22,7 +22,7 @@ inline constexpr int   SHANNON_BINS      = 256;    // mega-cluster discretisatio
 inline constexpr double kB_kcal          = 0.001987206; // kcal mol⁻¹ K⁻¹
 inline constexpr double TEMPERATURE_K    = 298.15;
 inline constexpr int   DEFAULT_HIST_BINS = 20;
-inline constexpr int   GPU_DISPATCH_THRESHOLD = 100000; // only use GPU for N > 100K
+inline constexpr int   GPU_DISPATCH_THRESHOLD = 500000; // only use GPU for N > 500K
 
 // ─── result struct ───────────────────────────────────────────────────────────
 struct FullThermoResult {
