@@ -105,7 +105,7 @@ add_library(flexaid_core OBJECT
     ParallelCampaign.cpp
     # ── Hardware acceleration modules ──
     hardware_detect.cpp
-    hardware_dispatch.cpp
+    UnifiedHardwareDispatch.cpp
     ShannonThermoStack/ShannonThermoStack.cpp
     LigandRingFlex/RingConformerLibrary.cpp
     LigandRingFlex/SugarPucker.cpp
@@ -125,8 +125,8 @@ add_library(flexaid_core OBJECT
     PTMAttachment/PTMAttachment.cpp
     # ── JSON config parser ──
     config_parser.cpp
-    # ── Unified runtime hardware dispatch ──
-    HardwareDispatch.cpp
+    # ── Unified runtime hardware dispatch (merged from HardwareDispatch + hardware_dispatch) ──
+    # Note: UnifiedHardwareDispatch.cpp listed above replaces both old dispatchers
     # ── Parallel grid-decomposed docking ──
     GridDecomposer.cpp
     SharedPosePool.cpp
