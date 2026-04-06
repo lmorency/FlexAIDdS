@@ -309,7 +309,14 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
                         
 			if (VC->ca_rec[currindex].dist < clash_distance){
 				
-				double Ewall = KWALL*(pow(VC->ca_rec[currindex].dist,-12.0)-pow(permea*rAB,-12.0));
+				// Fast multiplication chain for r⁻¹² (replaces slow pow() calls)
+			double d  = VC->ca_rec[currindex].dist;
+			double d2 = d * d; double d4 = d2 * d2; double d6 = d4 * d2;
+			double inv_d12 = 1.0 / (d6 * d6);
+			double cr = permea * rAB;
+			double cr2 = cr * cr; double cr4 = cr2 * cr2; double cr6 = cr4 * cr2;
+			double inv_cr12 = 1.0 / (cr6 * cr6);
+			double Ewall = KWALL * (inv_d12 - inv_cr12);
 				
 				cfs->wal += Ewall;
 
