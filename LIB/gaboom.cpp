@@ -660,7 +660,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 
 		// ── Phase 3: TorsionalENM vibrational entropy ────────────────
 		tencm::TorsionalENM tencm_model;
-		if (FA->is_protein && FA->res_cnt > 6) {
+		if (FA->is_protein && FA->res_cnt > GA_TENCM_MIN_RESIDUES) {
 			tencm_model.build(atoms, residue, FA->res_cnt);
 			if (tencm_model.is_built()) {
 				// Store mode count on FA for BindingMode vibrational correction
@@ -1055,10 +1055,10 @@ int filter_deelig(FA_Global* FA, GB_Global* GB, chromosome* chrom, gene* genes, 
 
 	if(FA->deelig_flex && FA->nflexbonds){
 
-		int j,deelig_list[100];
+		int j,deelig_list[GA_MAX_DEELIG_DIHEDRALS];
 
 		for(j=1; j<=FA->resligand->fdih; j++)
-			deelig_list[j] = -1000;
+			deelig_list[j] = GA_DEELIG_SENTINEL;
 
 		for(j=0; j<GB->num_genes; j++)
 			if(FA->map_par[j].typ == 2 && FA->map_par[j].bnd != -1)
@@ -1093,7 +1093,7 @@ int filter_deelig(FA_Global* FA, GB_Global* GB, chromosome* chrom, gene* genes, 
 							   FA->map_par_flexbond_first_index+FA->nflexbonds);
 
 				for(j=1; j<=FA->resligand->fdih; j++)
-					deelig_list[j] = -1000;
+					deelig_list[j] = GA_DEELIG_SENTINEL;
 
 				for(j=0; j<GB->num_genes; j++)
 					if(FA->map_par[j].typ == 2 && FA->map_par[j].bnd != -1)
@@ -1137,7 +1137,7 @@ int deelig_search(struct deelig_node_struct* root_node, int* deelig_list, int fd
 	for(int i=1; i<=fdih; i++){
 		//printf("[%d]: searching %d\n", i, deelig_list[i]);
 		if((it=node->childs.find(deelig_list[i])) != node->childs.end() ||
-		   (deelig_list[i] != -1000 && (it=node->childs.find(-1000)) != node->childs.end())){
+		   (deelig_list[i] != GA_DEELIG_SENTINEL && (it=node->childs.find(GA_DEELIG_SENTINEL)) != node->childs.end())){
 			//printf("found %d\n", it->first);
 			node = it->second;
 		}else{
@@ -1217,13 +1217,13 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 				if (em->energy_values != NULL) {
 					// Sample the density-of-contact curve at area = 0.5
 					// This gives the representative interaction strength
-					flat_matrix[t1 * QCM_DIM + t2] = static_cast<float>(get_yval(em, 0.5));
+					flat_matrix[t1 * QCM_DIM + t2] = static_cast<float>(get_yval(em, GA_TQCM_SAMPLE_AREA));
 				}
 			}
 		}
 
 		delete s_tqcm;
-		s_tqcm = new turboquant::QuantizedContactMatrix(/*bit_width=*/2);
+		s_tqcm = new turboquant::QuantizedContactMatrix(/*bit_width=*/GA_TQCM_BIT_WIDTH);
 		s_tqcm->build(flat_matrix.data());
 		s_tqcm_ntypes = nt;
 
@@ -1240,7 +1240,7 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 		// Validate: spot-check a few type pairs against exact values
 		if (nt >= 2) {
 			double max_err = 0.0;
-			int n_checks = std::min(nt * nt, 1000);
+			int n_checks = std::min(nt * nt, GA_TQCM_MAX_SPOT_CHECKS);
 			for (int c = 0; c < n_checks; ++c) {
 				int ti = c / nt, tj = c % nt;
 				float exact_val = flat_matrix[ti * QCM_DIM + tj];
@@ -1305,7 +1305,7 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 				chrom[c].cf.gist   = 0.0;
 				chrom[c].cf.hbond  = 0.0;
 				chrom[c].cf.totsas = 0.0;
-				chrom[c].cf.rclash = (h_wal[c] > 1e4) ? 1 : 0;
+				chrom[c].cf.rclash = (h_wal[c] > GA_WALL_CLASH_THRESHOLD) ? 1 : 0;
 				chrom[c].evalue     = get_cf_evalue(&chrom[c].cf);
 				chrom[c].app_evalue = get_apparent_cf_evalue(&chrom[c].cf);
 				ccbm_inject_strain(FA, chrom[c], gene_lim);  // CCBM strain
@@ -1515,7 +1515,7 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 		std::vector<std::vector<int>>        tl_seed(n_thr,
 		    std::vector<int>(3 * natmr));
 		std::vector<std::vector<contactlist>> tl_contlist(n_thr,
-		    std::vector<contactlist>(10000));
+		    std::vector<contactlist>(GA_CONTLIST_SIZE));
 		std::vector<std::vector<ptindex>>    tl_ptorder(n_thr,
 		    std::vector<ptindex>(MAX_PT));
 		std::vector<std::vector<vertex>>     tl_centerpt(n_thr,
@@ -2049,7 +2049,7 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 		std::vector<std::vector<ca_struct>>  p_carec(n_thr,
 		    std::vector<ca_struct>(VC->ca_recsize));
 		std::vector<std::vector<int>>        p_seed(n_thr, std::vector<int>(3 * natmr));
-		std::vector<std::vector<contactlist>> p_contlist(n_thr, std::vector<contactlist>(10000));
+		std::vector<std::vector<contactlist>> p_contlist(n_thr, std::vector<contactlist>(GA_CONTLIST_SIZE));
 		std::vector<std::vector<ptindex>>    p_ptorder(n_thr, std::vector<ptindex>(MAX_PT));
 		std::vector<std::vector<vertex>>     p_centerpt(n_thr, std::vector<vertex>(MAX_PT));
 		std::vector<std::vector<vertex>>     p_poly(n_thr, std::vector<vertex>(MAX_POLY));
@@ -2188,7 +2188,7 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 int cmp_chrom2rotlist(psFlexDEE_Node psFlexDEE_INI_Node, const chromosome* chrom, const genlim* gene_lim,
                       int gene_offset, int num_genes, int tot, int num_nodes){
 
-	int   par[100];
+	int   par[GA_MAX_FLEXDEE_PARAMS];
 	//int* genes = NULL;
 	sFlexDEE_Node sFlexDEENode;
 
