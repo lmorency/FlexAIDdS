@@ -1,5 +1,9 @@
 # CLAUDE.md — FlexAIDdS Development Guide
 
+## Standing Directives
+
+- **Always optimize for performance** across all technology stacks: C++20, CUDA, ROCm/HIP, Metal, AVX2/AVX-512, OpenMP, and Eigen. When touching any code in these domains, proactively apply: multiplication chains over `pow()`/`powf()`, SIMD intrinsics over scalar loops, async GPU transfers (streams + pinned memory) over blocking copies, OpenMP parallelization of O(N²)+ loops, cache-friendly data layouts, and `constexpr`/compile-time evaluation where possible. Fix correctness bugs (e.g., `memset` size, operator precedence) encountered along the way.
+
 ## Project Overview
 
 FlexAIDdS (FlexAID with ΔS Entropy) is an entropy-driven molecular docking engine combining genetic algorithms with statistical mechanics thermodynamics. It targets real-world psychopharmacology and drug discovery applications.
