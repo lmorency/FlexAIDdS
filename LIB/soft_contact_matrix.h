@@ -28,6 +28,8 @@
 #include <immintrin.h>
 #elif defined(__AVX2__)
 #include <immintrin.h>
+#elif defined(__SSE4_2__)
+#include <nmmintrin.h>
 #endif
 
 #ifdef _OPENMP
@@ -136,13 +138,47 @@ struct alignas(64) SoftContactMatrix {
     }
 #endif
 
-    // Dispatch: AVX-512 → AVX2 → scalar
+#ifdef __SSE4_2__
+    // Score N contacts with SSE4.2: 4-wide manual gather (no vgatherdps).
+    // SSE lacks gather, so we load each matrix element individually and
+    // pack into a __m128 for the FMA-equivalent multiply-add.
+    float score_contacts_sse42(const uint8_t* type_a, const uint8_t* type_b,
+                                const float* areas, int n) const noexcept {
+        __m128 acc = _mm_setzero_ps();
+        int k = 0;
+        for (; k + 3 < n; k += 4) {
+            // Manual 4-wide gather: load 4 matrix values individually
+            alignas(16) float vals[4];
+            vals[0] = data[static_cast<int>(type_a[k])     * MATRIX_DIM + type_b[k]];
+            vals[1] = data[static_cast<int>(type_a[k + 1]) * MATRIX_DIM + type_b[k + 1]];
+            vals[2] = data[static_cast<int>(type_a[k + 2]) * MATRIX_DIM + type_b[k + 2]];
+            vals[3] = data[static_cast<int>(type_a[k + 3]) * MATRIX_DIM + type_b[k + 3]];
+            __m128 v    = _mm_load_ps(vals);
+            __m128 area = _mm_loadu_ps(areas + k);
+            // acc += v * area  (no FMA on SSE4.2, use mul + add)
+            acc = _mm_add_ps(acc, _mm_mul_ps(v, area));
+        }
+        // Horizontal sum
+        __m128 hi = _mm_movehl_ps(acc, acc);
+        __m128 s  = _mm_add_ps(acc, hi);
+        __m128 s2 = _mm_movehdup_ps(s);
+        float sum = _mm_cvtss_f32(_mm_add_ss(s, s2));
+        // Scalar tail
+        for (; k < n; ++k)
+            sum += data[type_a[k] * MATRIX_DIM + type_b[k]] * areas[k];
+        return sum;
+    }
+#endif
+
+    // Dispatch: AVX-512 → AVX2 → SSE4.2 → scalar
     float score_contacts(const uint8_t* type_a, const uint8_t* type_b,
                           const float* areas, int n) const noexcept {
 #ifdef __AVX512F__
         return score_contacts_avx512(type_a, type_b, areas, n);
 #elif defined(__AVX2__)
         return score_contacts_avx2(type_a, type_b, areas, n);
+#elif defined(__SSE4_2__)
+        return score_contacts_sse42(type_a, type_b, areas, n);
 #else
         float sum = 0.0f;
         for (int k = 0; k < n; ++k)
