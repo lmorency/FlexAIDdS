@@ -8,19 +8,36 @@
 #ifdef FLEXAIDS_USE_CUDA
 
 #include "tencm_cuda.cuh"
+#include "flexaid_exception.h"
 #include <cuda_runtime.h>
 #include <cstdio>
 #include <cmath>
+#include <mutex>
+#include <string>
+
+// ─── error-checking macro ─────────────────────────────────────────────────────
+#define TENCM_CUDA_CHECK(call) do {                                           \
+    cudaError_t _e = (call);                                                  \
+    if (_e != cudaSuccess) {                                                  \
+        throw FlexAIDException(std::string("tencm CUDA error at ") +         \
+            __FILE__ + ":" + std::to_string(__LINE__) + "  " +               \
+            cudaGetErrorString(_e));                                          \
+    }                                                                         \
+} while (0)
 
 namespace tencm { namespace cuda {
 
-// ─── Device state ───────────────────────────────────────────────────────────
+// ─── Device state (mutex-protected for thread safety) ───────────────────────
 
-static bool       s_initialised = false;
-static bool       s_available   = false;
-static cudaStream_t s_stream    = nullptr;
+static std::mutex s_mtx;
+static bool         s_initialised = false;
+static bool         s_available   = false;
+static cudaStream_t s_stream      = nullptr;
+static int          s_device_id   = -1;
 
-bool init() {
+bool init(int device_id) {
+    std::lock_guard<std::mutex> lock(s_mtx);
+
     if (s_initialised) return s_available;
     s_initialised = true;
 
@@ -30,23 +47,37 @@ bool init() {
         return false;
     }
 
+    // Validate and select device
+    if (device_id < 0 || device_id >= device_count)
+        device_id = 0;
+
     cudaDeviceProp prop{};
-    cudaGetDeviceProperties(&prop, 0);
+    if (cudaGetDeviceProperties(&prop, device_id) != cudaSuccess) {
+        s_available = false;
+        return false;
+    }
     if (prop.major < 3) {
         s_available = false;
         return false;
     }
 
-    cudaSetDevice(0);
-    cudaStreamCreate(&s_stream);
+    TENCM_CUDA_CHECK(cudaSetDevice(device_id));
+    TENCM_CUDA_CHECK(cudaStreamCreate(&s_stream));
+    s_device_id = device_id;
     s_available = true;
     return true;
 }
 
 void shutdown() {
-    if (s_stream) { cudaStreamDestroy(s_stream); s_stream = nullptr; }
+    std::lock_guard<std::mutex> lock(s_mtx);
+    if (s_stream) {
+        cudaStreamSynchronize(s_stream);
+        cudaStreamDestroy(s_stream);
+        s_stream = nullptr;
+    }
     s_initialised = false;
     s_available = false;
+    s_device_id = -1;
 }
 
 bool is_available() { return s_available; }
@@ -138,47 +169,56 @@ int build_contacts_gpu(const float* ca_xyz, int N,
 
     int max_contacts = static_cast<int>(total_pairs);  // worst case
 
-    // Device allocations
-    float* d_ca;
-    int*   d_contacts_ij;
-    float* d_contacts_k;
-    float* d_contacts_r0;
-    int*   d_count;
+    // Device allocations (RAII via try/catch to guarantee cleanup)
+    float* d_ca            = nullptr;
+    int*   d_contacts_ij   = nullptr;
+    float* d_contacts_k    = nullptr;
+    float* d_contacts_r0   = nullptr;
+    int*   d_count         = nullptr;
 
-    cudaMalloc(&d_ca, N * 3 * sizeof(float));
-    cudaMalloc(&d_contacts_ij, max_contacts * 2 * sizeof(int));
-    cudaMalloc(&d_contacts_k, max_contacts * sizeof(float));
-    cudaMalloc(&d_contacts_r0, max_contacts * sizeof(float));
-    cudaMalloc(&d_count, sizeof(int));
+    auto cleanup = [&]() {
+        if (d_ca)          cudaFree(d_ca);
+        if (d_contacts_ij) cudaFree(d_contacts_ij);
+        if (d_contacts_k)  cudaFree(d_contacts_k);
+        if (d_contacts_r0) cudaFree(d_contacts_r0);
+        if (d_count)       cudaFree(d_count);
+    };
 
-    cudaMemcpyAsync(d_ca, ca_xyz, N*3*sizeof(float), cudaMemcpyHostToDevice, s_stream);
-    cudaMemsetAsync(d_count, 0, sizeof(int), s_stream);
+    try {
+        TENCM_CUDA_CHECK(cudaMalloc(&d_ca, N * 3 * sizeof(float)));
+        TENCM_CUDA_CHECK(cudaMalloc(&d_contacts_ij, max_contacts * 2 * sizeof(int)));
+        TENCM_CUDA_CHECK(cudaMalloc(&d_contacts_k, max_contacts * sizeof(float)));
+        TENCM_CUDA_CHECK(cudaMalloc(&d_contacts_r0, max_contacts * sizeof(float)));
+        TENCM_CUDA_CHECK(cudaMalloc(&d_count, sizeof(int)));
 
-    int block_size = 256;
-    int grid_size = (static_cast<int>(total_pairs) + block_size - 1) / block_size;
+        TENCM_CUDA_CHECK(cudaMemcpyAsync(d_ca, ca_xyz, N*3*sizeof(float), cudaMemcpyHostToDevice, s_stream));
+        TENCM_CUDA_CHECK(cudaMemsetAsync(d_count, 0, sizeof(int), s_stream));
 
-    contact_discovery_kernel<<<grid_size, block_size, 0, s_stream>>>(
-        d_ca, N, cutoff*cutoff, cutoff, k0,
-        d_contacts_ij, d_contacts_k, d_contacts_r0,
-        d_count, max_contacts);
+        int block_size = 256;
+        int grid_size = (static_cast<int>(total_pairs) + block_size - 1) / block_size;
 
-    int h_count = 0;
-    cudaMemcpyAsync(&h_count, d_count, sizeof(int), cudaMemcpyDeviceToHost, s_stream);
-    cudaStreamSynchronize(s_stream);
+        contact_discovery_kernel<<<grid_size, block_size, 0, s_stream>>>(
+            d_ca, N, cutoff*cutoff, cutoff, k0,
+            d_contacts_ij, d_contacts_k, d_contacts_r0,
+            d_count, max_contacts);
+        TENCM_CUDA_CHECK(cudaGetLastError());
 
-    if (h_count > 0 && h_count <= max_contacts) {
-        cudaMemcpy(contacts_ij_out, d_contacts_ij, h_count*2*sizeof(int), cudaMemcpyDeviceToHost);
-        cudaMemcpy(contacts_k_out, d_contacts_k, h_count*sizeof(float), cudaMemcpyDeviceToHost);
-        cudaMemcpy(contacts_r0_out, d_contacts_r0, h_count*sizeof(float), cudaMemcpyDeviceToHost);
+        int h_count = 0;
+        TENCM_CUDA_CHECK(cudaMemcpyAsync(&h_count, d_count, sizeof(int), cudaMemcpyDeviceToHost, s_stream));
+        TENCM_CUDA_CHECK(cudaStreamSynchronize(s_stream));
+
+        if (h_count > 0 && h_count <= max_contacts) {
+            TENCM_CUDA_CHECK(cudaMemcpy(contacts_ij_out, d_contacts_ij, h_count*2*sizeof(int), cudaMemcpyDeviceToHost));
+            TENCM_CUDA_CHECK(cudaMemcpy(contacts_k_out, d_contacts_k, h_count*sizeof(float), cudaMemcpyDeviceToHost));
+            TENCM_CUDA_CHECK(cudaMemcpy(contacts_r0_out, d_contacts_r0, h_count*sizeof(float), cudaMemcpyDeviceToHost));
+        }
+
+        cleanup();
+        return h_count;
+    } catch (...) {
+        cleanup();
+        throw;
     }
-
-    cudaFree(d_ca);
-    cudaFree(d_contacts_ij);
-    cudaFree(d_contacts_k);
-    cudaFree(d_contacts_r0);
-    cudaFree(d_count);
-
-    return h_count;
 }
 
 // ─── Hessian assembly kernel ────────────────────────────────────────────────
@@ -240,49 +280,60 @@ void assemble_hessian_gpu(const float* ca_xyz, int N,
         float ax = ca_xyz[(k+1)*3+0] - ca_xyz[k*3+0];
         float ay = ca_xyz[(k+1)*3+1] - ca_xyz[k*3+1];
         float az = ca_xyz[(k+1)*3+2] - ca_xyz[k*3+2];
-        float inv = 1.0f / sqrtf(ax*ax + ay*ay + az*az);
+        float len2 = ax*ax + ay*ay + az*az;
+        float inv = (len2 > 1e-12f) ? (1.0f / sqrtf(len2)) : 0.0f;
         bond_axis[k*3+0] = ax*inv; bond_axis[k*3+1] = ay*inv; bond_axis[k*3+2] = az*inv;
         bond_pivot[k*3+0] = 0.5f*(ca_xyz[k*3+0] + ca_xyz[(k+1)*3+0]);
         bond_pivot[k*3+1] = 0.5f*(ca_xyz[k*3+1] + ca_xyz[(k+1)*3+1]);
         bond_pivot[k*3+2] = 0.5f*(ca_xyz[k*3+2] + ca_xyz[(k+1)*3+2]);
     }
 
-    // Device allocations
-    float*  d_ca;
-    float*  d_axis;
-    float*  d_pivot;
-    int*    d_contacts_ij;
-    float*  d_contacts_k;
-    double* d_H;
+    // Device allocations (RAII via try/catch to guarantee cleanup)
+    float*  d_ca           = nullptr;
+    float*  d_axis         = nullptr;
+    float*  d_pivot        = nullptr;
+    int*    d_contacts_ij  = nullptr;
+    float*  d_contacts_k   = nullptr;
+    double* d_H            = nullptr;
 
-    cudaMalloc(&d_ca, N*3*sizeof(float));
-    cudaMalloc(&d_axis, M*3*sizeof(float));
-    cudaMalloc(&d_pivot, M*3*sizeof(float));
-    cudaMalloc(&d_contacts_ij, C*2*sizeof(int));
-    cudaMalloc(&d_contacts_k, C*sizeof(float));
-    cudaMalloc(&d_H, M*M*sizeof(double));
+    auto cleanup = [&]() {
+        if (d_ca)          cudaFree(d_ca);
+        if (d_axis)        cudaFree(d_axis);
+        if (d_pivot)       cudaFree(d_pivot);
+        if (d_contacts_ij) cudaFree(d_contacts_ij);
+        if (d_contacts_k)  cudaFree(d_contacts_k);
+        if (d_H)           cudaFree(d_H);
+    };
 
-    cudaMemsetAsync(d_H, 0, M*M*sizeof(double), s_stream);
-    cudaMemcpyAsync(d_ca, ca_xyz, N*3*sizeof(float), cudaMemcpyHostToDevice, s_stream);
-    cudaMemcpyAsync(d_axis, bond_axis.data(), M*3*sizeof(float), cudaMemcpyHostToDevice, s_stream);
-    cudaMemcpyAsync(d_pivot, bond_pivot.data(), M*3*sizeof(float), cudaMemcpyHostToDevice, s_stream);
-    cudaMemcpyAsync(d_contacts_ij, contacts_ij, C*2*sizeof(int), cudaMemcpyHostToDevice, s_stream);
-    cudaMemcpyAsync(d_contacts_k, contacts_k, C*sizeof(float), cudaMemcpyHostToDevice, s_stream);
+    try {
+        TENCM_CUDA_CHECK(cudaMalloc(&d_ca, N*3*sizeof(float)));
+        TENCM_CUDA_CHECK(cudaMalloc(&d_axis, M*3*sizeof(float)));
+        TENCM_CUDA_CHECK(cudaMalloc(&d_pivot, M*3*sizeof(float)));
+        TENCM_CUDA_CHECK(cudaMalloc(&d_contacts_ij, C*2*sizeof(int)));
+        TENCM_CUDA_CHECK(cudaMalloc(&d_contacts_k, C*sizeof(float)));
+        TENCM_CUDA_CHECK(cudaMalloc(&d_H, M*M*sizeof(double)));
 
-    // Launch: one block per contact, 256 threads per block
-    int block_size = 256;
-    hessian_assembly_kernel<<<C, block_size, 0, s_stream>>>(
-        d_ca, N, d_axis, d_pivot, d_contacts_ij, d_contacts_k, M, d_H);
+        TENCM_CUDA_CHECK(cudaMemsetAsync(d_H, 0, M*M*sizeof(double), s_stream));
+        TENCM_CUDA_CHECK(cudaMemcpyAsync(d_ca, ca_xyz, N*3*sizeof(float), cudaMemcpyHostToDevice, s_stream));
+        TENCM_CUDA_CHECK(cudaMemcpyAsync(d_axis, bond_axis.data(), M*3*sizeof(float), cudaMemcpyHostToDevice, s_stream));
+        TENCM_CUDA_CHECK(cudaMemcpyAsync(d_pivot, bond_pivot.data(), M*3*sizeof(float), cudaMemcpyHostToDevice, s_stream));
+        TENCM_CUDA_CHECK(cudaMemcpyAsync(d_contacts_ij, contacts_ij, C*2*sizeof(int), cudaMemcpyHostToDevice, s_stream));
+        TENCM_CUDA_CHECK(cudaMemcpyAsync(d_contacts_k, contacts_k, C*sizeof(float), cudaMemcpyHostToDevice, s_stream));
 
-    cudaMemcpyAsync(H_out, d_H, M*M*sizeof(double), cudaMemcpyDeviceToHost, s_stream);
-    cudaStreamSynchronize(s_stream);
+        // Launch: one block per contact, 256 threads per block
+        int block_size = 256;
+        hessian_assembly_kernel<<<C, block_size, 0, s_stream>>>(
+            d_ca, N, d_axis, d_pivot, d_contacts_ij, d_contacts_k, M, d_H);
+        TENCM_CUDA_CHECK(cudaGetLastError());
 
-    cudaFree(d_ca);
-    cudaFree(d_axis);
-    cudaFree(d_pivot);
-    cudaFree(d_contacts_ij);
-    cudaFree(d_contacts_k);
-    cudaFree(d_H);
+        TENCM_CUDA_CHECK(cudaMemcpyAsync(H_out, d_H, M*M*sizeof(double), cudaMemcpyDeviceToHost, s_stream));
+        TENCM_CUDA_CHECK(cudaStreamSynchronize(s_stream));
+
+        cleanup();
+    } catch (...) {
+        cleanup();
+        throw;
+    }
 }
 
 }}  // namespace tencm::cuda

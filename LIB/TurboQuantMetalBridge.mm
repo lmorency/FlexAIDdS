@@ -142,6 +142,12 @@ bool turboquant_metal_batch_quantize(
 
     // One threadgroup per vector, d threads per threadgroup
     NSUInteger tpg = static_cast<NSUInteger>(d);
+    NSUInteger maxTpg = st.quantize_pso.maxTotalThreadsPerThreadgroup;
+    if (tpg > maxTpg) {
+        fprintf(stderr, "[TurboQuant] d=%d exceeds maxTotalThreadsPerThreadgroup=%lu, clamping\n",
+                d, (unsigned long)maxTpg);
+        tpg = maxTpg;
+    }
     MTLSize threadgroupSize = MTLSizeMake(tpg, 1, 1);
     MTLSize gridSize        = MTLSizeMake(static_cast<NSUInteger>(N), 1, 1);
 
@@ -149,6 +155,12 @@ bool turboquant_metal_batch_quantize(
     [enc endEncoding];
     [cmd commit];
     [cmd waitUntilCompleted];
+
+    if (cmd.status == MTLCommandBufferStatusError) {
+        fprintf(stderr, "[TurboQuant] Metal command buffer error: %s\n",
+                cmd.error ? [[cmd.error localizedDescription] UTF8String] : "unknown");
+        return false;
+    }
 
     // ── Read back results ───────────────────────────────────────────────
     std::memcpy(out_indices, buf_idx.contents, idx_bytes);
@@ -217,6 +229,12 @@ bool turboquant_metal_batch_dequantize(
     [enc setBuffer:buf_params offset:0 atIndex:4];
 
     NSUInteger tpg = static_cast<NSUInteger>(d);
+    NSUInteger maxTpg = st.dequant_pso.maxTotalThreadsPerThreadgroup;
+    if (tpg > maxTpg) {
+        fprintf(stderr, "[TurboQuant] dequant d=%d exceeds maxTotalThreadsPerThreadgroup=%lu, clamping\n",
+                d, (unsigned long)maxTpg);
+        tpg = maxTpg;
+    }
     MTLSize threadgroupSize = MTLSizeMake(tpg, 1, 1);
     MTLSize gridSize        = MTLSizeMake(static_cast<NSUInteger>(N), 1, 1);
 
@@ -224,6 +242,12 @@ bool turboquant_metal_batch_dequantize(
     [enc endEncoding];
     [cmd commit];
     [cmd waitUntilCompleted];
+
+    if (cmd.status == MTLCommandBufferStatusError) {
+        fprintf(stderr, "[TurboQuant] dequant Metal command buffer error: %s\n",
+                cmd.error ? [[cmd.error localizedDescription] UTF8String] : "unknown");
+        return false;
+    }
 
     std::memcpy(out_data, buf_out.contents, out_bytes);
 

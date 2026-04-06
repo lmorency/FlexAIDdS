@@ -286,14 +286,14 @@ void cuda_eval_batch(CudaEvalCtx*  ctx,
         }
     }
 
-    // Validate against allocated buffer sizes.
+    // Validate against allocated buffer sizes — throw on overflow.
     if (pop_size > ctx->max_pop) {
-        fprintf(stderr, "cuda_eval: pop_size %d exceeds max_pop %d\n", pop_size, ctx->max_pop);
-        return;
+        throw FlexAIDException("cuda_eval: pop_size " + std::to_string(pop_size) +
+            " exceeds max_pop " + std::to_string(ctx->max_pop));
     }
     if (n_genes > ctx->max_genes) {
-        fprintf(stderr, "cuda_eval: n_genes %d exceeds max_genes %d\n", n_genes, ctx->max_genes);
-        return;
+        throw FlexAIDException("cuda_eval: n_genes " + std::to_string(n_genes) +
+            " exceeds max_genes " + std::to_string(ctx->max_genes));
     }
 
     const size_t gene_bytes = (size_t)pop_size * n_genes * sizeof(double);
@@ -328,14 +328,14 @@ void cuda_eval_batch(CudaEvalCtx*  ctx,
 void cuda_eval_shutdown(CudaEvalCtx* ctx)
 {
     if (!ctx) return;
-    cudaFree(ctx->d_atom_xyz);
-    cudaFree(ctx->d_atom_type);
-    cudaFree(ctx->d_atom_radius);
-    cudaFree(ctx->d_emat_sampled);
-    cudaFree(ctx->d_genes);
-    cudaFree(ctx->d_com_out);
-    cudaFree(ctx->d_wal_out);
-    cudaFree(ctx->d_sas_out);
+    if (ctx->d_atom_xyz)     { cudaFree(ctx->d_atom_xyz);     ctx->d_atom_xyz     = nullptr; }
+    if (ctx->d_atom_type)    { cudaFree(ctx->d_atom_type);    ctx->d_atom_type    = nullptr; }
+    if (ctx->d_atom_radius)  { cudaFree(ctx->d_atom_radius);  ctx->d_atom_radius  = nullptr; }
+    if (ctx->d_emat_sampled) { cudaFree(ctx->d_emat_sampled); ctx->d_emat_sampled = nullptr; }
+    if (ctx->d_genes)        { cudaFree(ctx->d_genes);        ctx->d_genes        = nullptr; }
+    if (ctx->d_com_out)      { cudaFree(ctx->d_com_out);      ctx->d_com_out      = nullptr; }
+    if (ctx->d_wal_out)      { cudaFree(ctx->d_wal_out);      ctx->d_wal_out      = nullptr; }
+    if (ctx->d_sas_out)      { cudaFree(ctx->d_sas_out);      ctx->d_sas_out      = nullptr; }
     delete ctx;
 }
 

@@ -128,9 +128,20 @@ bool cavity_detect_metal_dispatch(
     [cmd commit];
     [cmd waitUntilCompleted];
 
+    if (cmd.status == MTLCommandBufferStatusError) {
+        NSString* desc = cmd.error ? cmd.error.localizedDescription : @"unknown";
+        fprintf(stderr, "[CavityDetect] Metal command buffer error: %s\n",
+                [desc UTF8String]);
+        return false;
+    }
+
     // ── Read back results ────────────────────────────────────────────────────
     int n_out = *static_cast<int*>(countBuf.contents);
-    if (n_out > kMaxSpheres) n_out = kMaxSpheres;
+    if (n_out > kMaxSpheres) {
+        fprintf(stderr, "[CavityDetect] WARNING: sphere count %d clamped to kMaxSpheres=%d "
+                "(some cavity data lost)\n", n_out, kMaxSpheres);
+        n_out = kMaxSpheres;
+    }
 
     const GPUSphere* raw = static_cast<const GPUSphere*>(sphereBuf.contents);
     out_spheres.reserve(static_cast<std::size_t>(n_out));
