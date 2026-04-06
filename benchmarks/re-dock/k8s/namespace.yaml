@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: flexaids-redock
+  labels:
+    app.kubernetes.io/name: flexaids-redock
+    app.kubernetes.io/part-of: flexaids
+    app.kubernetes.io/component: benchmarking

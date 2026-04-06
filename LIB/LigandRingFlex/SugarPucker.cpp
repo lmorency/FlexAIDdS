@@ -128,7 +128,7 @@ void apply_sugar_puckers(
 
 // ─── mutate_phase ────────────────────────────────────────────────────────────
 float mutate_phase(float current_phase_deg, float sigma_deg) {
-    static std::mt19937 rng(std::random_device{}());
+    thread_local std::mt19937 rng(std::random_device{}());
     std::normal_distribution<float> dist(0.0f, sigma_deg);
     float new_phase = current_phase_deg + dist(rng);
     // Wrap to [0, 360)

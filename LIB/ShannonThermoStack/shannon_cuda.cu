@@ -88,6 +88,7 @@ void shannon_cuda_histogram(ShannonCudaCtx& ctx,
     if (n <= 0 || !ctx.d_energies || !ctx.d_bins) return;
     if (n > ctx.capacity) {
         fprintf(stderr, "[shannon_cuda] n=%d exceeds capacity=%d\n", n, ctx.capacity);
+        memset(bins_out, 0, ctx.num_bins * sizeof(int));
         return;
     }
 

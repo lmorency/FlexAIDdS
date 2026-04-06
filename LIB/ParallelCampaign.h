@@ -31,6 +31,7 @@
 #include <functional>
 #include <atomic>
 #include <chrono>
+#include <array>
 
 namespace campaign {
 
@@ -94,6 +95,12 @@ struct LigandResult {
     double dock_time_sec;
     bool   success;
     std::string error;
+
+    // Optional ligand pose coordinates for top-hit export.
+    // These are the coordinates available from preprocessing for now and
+    // allow writing coordinate-bearing PDB files.
+    std::vector<std::array<float, 3>> pose_xyz;
+    std::vector<int> pose_atomic_numbers;
 };
 
 // ─── Campaign summary ───────────────────────────────────────────────────────

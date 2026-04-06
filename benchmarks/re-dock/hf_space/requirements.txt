@@ -1,0 +1,7 @@
+gradio>=4.0
+fastapi
+uvicorn
+numpy
+scipy
+httpx
+pydantic
