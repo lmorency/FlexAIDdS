@@ -72,12 +72,10 @@ TEST(HardwareDetect, DetectsOpenMP) {
 }
 #endif
 
-#ifdef FLEXAIDS_HAS_EIGEN
 TEST(HardwareDetect, DetectsEigen) {
     const auto& hw = detect_hardware();
     EXPECT_TRUE(hw.has_eigen);
 }
-#endif
 
 // ===========================================================================
 // BACKEND SELECTION

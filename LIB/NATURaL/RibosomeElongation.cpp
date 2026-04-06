@@ -12,9 +12,7 @@
 
 #include "RibosomeElongation.h"
 
-#ifdef FLEXAIDS_HAS_EIGEN
-#  include <Eigen/Dense>
-#endif
+#include <Eigen/Dense>
 
 #include <algorithm>
 #include <cassert>
@@ -438,7 +436,6 @@ MasterEqState RibosomeElongation::integrate(double t_max, double dt, bool adapti
     double t = 0.0;
     std::vector<double> dP(N + 1, 0.0);
 
-#ifdef FLEXAIDS_HAS_EIGEN
     // Use Eigen for the tridiagonal ODE vector update
     Eigen::VectorXd P_vec(N + 1), dP_vec(N + 1);
     for (int i = 0; i <= N; ++i) P_vec(i) = P_init[i];
@@ -471,30 +468,6 @@ MasterEqState RibosomeElongation::integrate(double t_max, double dt, bool adapti
             state.t_median_terminal = t;
     }
     for (int i = 0; i <= N; ++i) state.P[i] = P_vec(i);
-
-#else
-    // Scalar Euler integration
-    std::vector<double> P = P_init;
-    std::vector<double> P_new(N + 1);
-
-    while (t < t_max) {
-        P_new[0] = P[0] * (1.0 - dt * k_ini_);
-        for (int n = 1; n < N; ++n)
-            P_new[n] = P[n] + dt * (k_el_[n-1] * P[n-1] - k_el_[n] * P[n]);
-        P_new[N] = P[N] + dt * (k_el_[N-1] * P[N-1] - k_ter_ * P[N]);
-
-        for (int n = 0; n <= N; ++n)
-            P[n] = std::max(0.0, P_new[n]);
-        t += dt;
-
-        for (int n = 0; n < N; ++n)
-            if (state.t_arrival[n] < 0 && P[n] > 1e-3)
-                state.t_arrival[n] = t;
-        if (state.t_median_terminal < 0 && P[N] >= 0.5)
-            state.t_median_terminal = t;
-    }
-    state.P = P;
-#endif
 
     state.t_current = t;
 

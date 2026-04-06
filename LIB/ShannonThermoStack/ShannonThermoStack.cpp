@@ -28,9 +28,7 @@ static bool           s_cuda_ready = false;
 #  include <omp.h>
 #endif
 
-#ifdef FLEXAIDS_HAS_EIGEN
-#  include <Eigen/Dense>
-#endif
+#include <Eigen/Dense>
 
 #include <algorithm>
 #include <cmath>
@@ -126,7 +124,6 @@ void ShannonEnergyMatrix::initialise_from_data(const float* data, int count) {
 static double entropy_from_counts(const int* counts, int num_bins, int total) {
     if (total == 0) return 0.0;
 
-#ifdef FLEXAIDS_HAS_EIGEN
     Eigen::ArrayXd prob(num_bins);
     for (int b = 0; b < num_bins; ++b)
         prob(b) = static_cast<double>(counts[b]);
@@ -135,16 +132,6 @@ static double entropy_from_counts(const int* counts, int num_bins, int total) {
     Eigen::ArrayXd safe_p = (prob > 1e-15).select(prob, Eigen::ArrayXd::Constant(num_bins, 1.0));
     Eigen::ArrayXd lp     = (prob > 1e-15).select(safe_p.log(), Eigen::ArrayXd::Zero(num_bins));
     return -(prob * lp).sum();
-#else
-    double H = 0.0;
-    for (int b = 0; b < num_bins; ++b) {
-        if (counts[b] > 0) {
-            double p = static_cast<double>(counts[b]) / total;
-            H -= p * std::log(p);
-        }
-    }
-    return H;
-#endif
 }
 
 // ─── AVX-512 private histogram ────────────────────────────────────────────────
@@ -224,7 +211,6 @@ if (n > GPU_DISPATCH_THRESHOLD) {
     {
 #  ifdef _OPENMP
         int n_threads = omp_get_max_threads();
-#    ifdef FLEXAIDS_HAS_EIGEN
         // Flat Eigen matrix for cache-friendly thread-local histograms
         Eigen::MatrixXi t_bins = Eigen::MatrixXi::Zero(n_threads, num_bins);
         #pragma omp parallel
@@ -244,21 +230,6 @@ if (n > GPU_DISPATCH_THRESHOLD) {
         }
         Eigen::VectorXi col_sums = t_bins.colwise().sum();
         for (int b = 0; b < num_bins; ++b) bins[b] = col_sums(b);
-#    else
-        std::vector<std::vector<int>> t_bins(n_threads, std::vector<int>(num_bins, 0));
-        #pragma omp parallel
-        {
-            int tid    = omp_get_thread_num();
-            int chunk  = (n + n_threads - 1) / n_threads;
-            int start  = tid * chunk;
-            int end_i  = std::min(start + chunk, n);
-            if (start < end_i)
-                histogram_avx512(values.data() + start, end_i - start,
-                                 min_v, inv_bw, num_bins, t_bins[tid]);
-        }
-        for (auto& tb : t_bins)
-            for (int b = 0; b < num_bins; ++b) bins[b] += tb[b];
-#    endif
 #  else
         histogram_avx512(values.data(), n, min_v, inv_bw, num_bins, bins);
 #  endif
@@ -268,7 +239,6 @@ if (n > GPU_DISPATCH_THRESHOLD) {
 #elif defined(_OPENMP)
     {
         int n_threads = omp_get_max_threads();
-#  ifdef FLEXAIDS_HAS_EIGEN
         Eigen::MatrixXi t_bins = Eigen::MatrixXi::Zero(n_threads, num_bins);
         #pragma omp parallel for schedule(static)
         for (int i = 0; i < n; ++i) {
@@ -278,17 +248,6 @@ if (n > GPU_DISPATCH_THRESHOLD) {
         }
         Eigen::VectorXi col_sums = t_bins.colwise().sum();
         for (int b = 0; b < num_bins; ++b) bins[b] = col_sums(b);
-#  else
-        std::vector<std::vector<int>> t_bins(n_threads, std::vector<int>(num_bins, 0));
-        #pragma omp parallel for schedule(static)
-        for (int i = 0; i < n; ++i) {
-            int tid = omp_get_thread_num();
-            int b   = static_cast<int>((values[i] - min_v) * inv_bw);
-            t_bins[tid][std::min(std::max(b, 0), num_bins - 1)]++;
-        }
-        for (auto& tb : t_bins)
-            for (int b = 0; b < num_bins; ++b) bins[b] += tb[b];
-#  endif
     }
 
 // ── 5. Scalar ─────────────────────────────────────────────────────────────────
@@ -316,7 +275,6 @@ double compute_torsional_vibrational_entropy(
     if (modes.empty()) return 0.0;
     const double kT = kB_kcal * temperature_K;
 
-#ifdef FLEXAIDS_HAS_EIGEN
     // Collect valid eigenvalues into Eigen array, then vectorise
     std::vector<double> ev_buf;
     ev_buf.reserve(modes.size());
@@ -329,15 +287,6 @@ double compute_torsional_vibrational_entropy(
     // S_mode = kB*(1 + ln(kBT/ω)) for modes where ln_arg > 1e-6
     Eigen::ArrayXd mask = (ln_arg > 1e-6).cast<double>();
     return kB_kcal * (mask * (1.0 + ln_arg.log())).sum();
-#else
-    double S = 0.0;
-    for (size_t m = 6; m < modes.size(); ++m) {
-        if (modes[m].eigenvalue < 1e-6) continue;
-        double la = kT / modes[m].eigenvalue;
-        if (la > 1e-6) S += kB_kcal * (1.0 + std::log(la));
-    }
-    return S;
-#endif
 }
 
 // ─── run_shannon_thermo_stack ────────────────────────────────────────────────
@@ -384,9 +333,7 @@ FullThermoResult run_shannon_thermo_stack(
 
     std::string report =
         std::string("ShannonThermoStack[") + hw +
-#ifdef FLEXAIDS_HAS_EIGEN
         "+Eigen"
-#endif
         "]: S_conf=" + std::to_string(S_conf_nats) +
         " nats, S_vib=" + std::to_string(S_vib) +
         " kcal/mol/K, ΔG=" + std::to_string(final_dG) + " kcal/mol";

@@ -14,9 +14,7 @@
 #include <cstring>
 #include <stdexcept>
 
-#ifdef FLEXAIDS_HAS_EIGEN
-#  include <Eigen/Dense>
-#endif
+#include <Eigen/Dense>
 
 #if defined(_OPENMP)
 #  include <omp.h>
@@ -49,7 +47,6 @@ double TransloconInsertion::score_window_scalar(const char* seq, int len) const 
 
 // ─── score_window_eigen ───────────────────────────────────────────────────────
 double TransloconInsertion::score_window_eigen(const char* seq, int len) const noexcept {
-#ifdef FLEXAIDS_HAS_EIGEN
     Eigen::ArrayXd hessa(len), weights(len);
     for (int i = 0; i < len; ++i) {
         int c = static_cast<unsigned char>(seq[i]);
@@ -59,9 +56,6 @@ double TransloconInsertion::score_window_eigen(const char* seq, int len) const n
     double dG = (hessa * weights).sum();
     dG += HELIX_DIPOLE_CORR * static_cast<double>(len);
     return dG;
-#else
-    return score_window_scalar(seq, len);
-#endif
 }
 
 // ─── score_window_avx2 ────────────────────────────────────────────────────────
@@ -160,10 +154,8 @@ double TransloconInsertion::score_window(const std::string& sequence,
     return score_window_avx512(ptr, actual_len);
 #elif defined(__AVX2__)
     return score_window_avx2(ptr, actual_len);
-#elif defined(FLEXAIDS_HAS_EIGEN)
-    return score_window_eigen(ptr, actual_len);
 #else
-    return score_window_scalar(ptr, actual_len);
+    return score_window_eigen(ptr, actual_len);
 #endif
 }
 

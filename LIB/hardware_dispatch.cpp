@@ -21,9 +21,7 @@
 #  include <omp.h>
 #endif
 
-#ifdef FLEXAIDS_HAS_EIGEN
-#  include <Eigen/Dense>
-#endif
+#include <Eigen/Dense>
 
 #if defined(__AVX512F__) && defined(__AVX512DQ__)
 #  include <immintrin.h>
@@ -250,7 +248,6 @@ static BoltzmannBatchResult boltzmann_avx512(
 
 // ─── Boltzmann batch: Eigen path ─────────────────────────────────────────────
 
-#ifdef FLEXAIDS_HAS_EIGEN
 static BoltzmannBatchResult boltzmann_eigen(
     std::span<const double> energies, double beta)
 {
@@ -269,7 +266,6 @@ static BoltzmannBatchResult boltzmann_eigen(
     auto telemetry = make_telemetry(select_cpu_backend(), start, n);
     return { std::move(weights), log_Z, E_min, telemetry };
 }
-#endif
 
 // ─── Boltzmann batch: Metal GPU path ─────────────────────────────────────────
 
@@ -319,10 +315,8 @@ BoltzmannBatchResult compute_boltzmann_batch(
         return boltzmann_avx512(energies, beta);
 #endif
 
-#ifdef FLEXAIDS_HAS_EIGEN
     // Eigen vectorisation for AVX2/OpenMP paths (auto-vectorised)
     return boltzmann_eigen(energies, beta);
-#endif
 
 #ifdef _OPENMP
     if (cpu == HardwareBackend::OPENMP || cpu == HardwareBackend::AVX2)
@@ -372,12 +366,10 @@ double log_sum_exp_dispatch(std::span<const double> values) {
     }
 #endif
 
-#ifdef FLEXAIDS_HAS_EIGEN
     {
         Eigen::Map<const Eigen::ArrayXd> x(values.data(), n);
         return x_max + std::log((x - x_max).exp().sum());
     }
-#endif
 
 #ifdef _OPENMP
     {

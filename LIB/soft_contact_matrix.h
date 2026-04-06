@@ -34,9 +34,7 @@
 #include <omp.h>
 #endif
 
-#ifdef FLEXAIDS_HAS_EIGEN
 #include <Eigen/Dense>
-#endif
 
 namespace scm {
 
@@ -274,36 +272,9 @@ inline float row_distance(const SoftContactMatrix& mat, int a, int b) {
     const float* ra = mat.row(a);
     const float* rb = mat.row(b);
 
-#ifdef FLEXAIDS_HAS_EIGEN
     Eigen::Map<const Eigen::Array<float, MATRIX_DIM, 1>> va(ra);
     Eigen::Map<const Eigen::Array<float, MATRIX_DIM, 1>> vb(rb);
     return (va - vb).matrix().norm();
-#else
-    float sum = 0.0f;
-#ifdef __AVX2__
-    __m256 acc = _mm256_setzero_ps();
-    int k = 0;
-    for (; k + 7 < MATRIX_DIM; k += 8) {
-        __m256 va = _mm256_loadu_ps(ra + k);
-        __m256 vb = _mm256_loadu_ps(rb + k);
-        __m256 d  = _mm256_sub_ps(va, vb);
-        acc = _mm256_fmadd_ps(d, d, acc);
-    }
-    alignas(32) float tmp[8];
-    _mm256_store_ps(tmp, acc);
-    sum = tmp[0]+tmp[1]+tmp[2]+tmp[3]+tmp[4]+tmp[5]+tmp[6]+tmp[7];
-    for (; k < MATRIX_DIM; ++k) {
-        float d = ra[k] - rb[k];
-        sum += d * d;
-    }
-#else
-    for (int k = 0; k < MATRIX_DIM; ++k) {
-        float d = ra[k] - rb[k];
-        sum += d * d;
-    }
-#endif
-    return std::sqrt(sum);
-#endif  // FLEXAIDS_HAS_EIGEN
 }
 
 // Random projection: project each row onto a random unit vector

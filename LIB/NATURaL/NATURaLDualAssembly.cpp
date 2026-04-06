@@ -38,9 +38,7 @@
 #include <sstream>
 #include <vector>
 
-#ifdef FLEXAIDS_HAS_EIGEN
-#  include <Eigen/Dense>
-#endif
+#include <Eigen/Dense>
 
 namespace natural {
 
@@ -679,7 +677,7 @@ double DualAssemblyEngine::compute_growth_entropy(
             counts[std::clamp(b, 0, BINS - 1)]++;
         }
     }
-#elif defined(FLEXAIDS_HAS_EIGEN)
+#else
     // Eigen: vectorised offset and scale; scalar bin accumulation
     {
         Eigen::Map<const Eigen::ArrayXd> vals(cf_trajectory.data(), total);
@@ -687,31 +685,17 @@ double DualAssemblyEngine::compute_growth_entropy(
         for (int i = 0; i < total; ++i)
             counts[static_cast<int>(bins(i))]++;
     }
-#else
-    for (int i = 0; i < total; ++i) {
-        int b = static_cast<int>((cf_trajectory[i] - min_cf) * inv_bw);
-        counts[std::clamp(b, 0, BINS - 1)]++;
-    }
 #endif
 
     // Shannon entropy: H = -Σ p_i log2(p_i)
     double H = 0.0;
     const double log2_inv = 1.0 / std::log(2.0);
 
-#ifdef FLEXAIDS_HAS_EIGEN
     Eigen::ArrayXd prob(BINS);
     for (int i = 0; i < BINS; ++i) prob(i) = (double)counts[i] / total;
     Eigen::ArrayXd safe_p   = (prob > 1e-15).select(prob, Eigen::ArrayXd::Ones(BINS));
     Eigen::ArrayXd log_p    = (prob > 1e-15).select(safe_p.log(), Eigen::ArrayXd::Zero(BINS));
     H = -(prob * log_p).sum() * log2_inv;
-#else
-    for (int c : counts) {
-        if (c > 0) {
-            double p = (double)c / total;
-            H -= p * std::log(p) * log2_inv;
-        }
-    }
-#endif
 
     return H;
 }

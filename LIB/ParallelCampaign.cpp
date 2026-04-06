@@ -42,9 +42,7 @@
 #include <thread>
 #include <vector>
 
-#ifdef FLEXAIDS_HAS_EIGEN
 #include <Eigen/Dense>
-#endif
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -65,7 +63,6 @@ static double boltzmann_consensus_eigen(std::span<const double> dG_values,
 
     const double beta = 1.0 / (reference_entropy::kB_kcal * temperature_K);
 
-#ifdef FLEXAIDS_HAS_EIGEN
     // Eigen vectorized path: exp, log, sum all auto-vectorize to AVX/SSE
     Eigen::Map<const Eigen::ArrayXd> dG(dG_values.data(), N);
     Eigen::ArrayXd exponents = -beta * dG;
@@ -74,20 +71,6 @@ static double boltzmann_consensus_eigen(std::span<const double> dG_values,
     const double max_exp = exponents.maxCoeff();
     const double lse = max_exp + std::log((exponents - max_exp).exp().sum() / N);
     return -lse / beta;
-#else
-    // Scalar fallback with manual log-sum-exp
-    double max_e = -beta * dG_values[0];
-    for (double g : dG_values) {
-        double e = -beta * g;
-        if (e > max_e) max_e = e;
-    }
-
-    double sum = 0.0;
-    for (double g : dG_values)
-        sum += std::exp(-beta * g - max_e);
-
-    return -(max_e + std::log(sum / N)) / beta;
-#endif
 }
 
 static double surrogate_model_dock_score(const LigandResult& lr,

@@ -32,9 +32,7 @@
 #  include <omp.h>
 #endif
 
-#ifdef FLEXAIDS_HAS_EIGEN
-#  include <Eigen/Dense>
-#endif
+#include <Eigen/Dense>
 
 namespace hw {
 
@@ -131,11 +129,7 @@ void HardwareDispatcher::detect_gpu() {
 }
 
 void HardwareDispatcher::detect_libraries() {
-#ifdef FLEXAIDS_HAS_EIGEN
     info_.has_eigen = true;
-#else
-    info_.has_eigen = false;
-#endif
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -264,7 +258,6 @@ static double entropy_from_hist(const int* counts, int num_bins, int total) {
     if (total == 0) return 0.0;
     const double l2inv = 1.0 / std::log(2.0);
 
-#ifdef FLEXAIDS_HAS_EIGEN
     Eigen::ArrayXd prob(num_bins);
     for (int b = 0; b < num_bins; ++b)
         prob(b) = static_cast<double>(counts[b]);
@@ -272,16 +265,6 @@ static double entropy_from_hist(const int* counts, int num_bins, int total) {
     Eigen::ArrayXd safe_p = (prob > 1e-15).select(prob, Eigen::ArrayXd::Constant(num_bins, 1.0));
     Eigen::ArrayXd lp     = (prob > 1e-15).select(safe_p.log(), Eigen::ArrayXd::Zero(num_bins));
     return -(prob * lp).sum() * l2inv;
-#else
-    double H = 0.0;
-    for (int b = 0; b < num_bins; ++b) {
-        if (counts[b] > 0) {
-            double p = static_cast<double>(counts[b]) / total;
-            H -= p * std::log(p) * l2inv;
-        }
-    }
-    return H;
-#endif
 }
 
 double HardwareDispatcher::shannon_scalar(const std::vector<double>& values, int num_bins) {
@@ -495,16 +478,12 @@ double HardwareDispatcher::lse_avx512(const std::vector<double>& values) {
 }
 
 double HardwareDispatcher::lse_eigen(const std::vector<double>& values) {
-#ifdef FLEXAIDS_HAS_EIGEN
     Eigen::Map<const Eigen::ArrayXd> arr(values.data(),
                                           static_cast<Eigen::Index>(values.size()));
     double x_max = arr.maxCoeff();
     if (x_max <= -1e308) return x_max;
     double sum = (arr - x_max).exp().sum();
     return x_max + std::log(sum);
-#else
-    return lse_scalar(values);
-#endif
 }
 
 double HardwareDispatcher::log_sum_exp(const std::vector<double>& values, Backend backend) {
@@ -542,14 +521,12 @@ std::vector<double> HardwareDispatcher::compute_boltzmann_weights(
 
     std::vector<double> w(N);
 
-#ifdef FLEXAIDS_HAS_EIGEN
     if (N >= 16) {
         Eigen::Map<const Eigen::ArrayXd> lw(log_w.data(), static_cast<Eigen::Index>(N));
         Eigen::Map<Eigen::ArrayXd> out(w.data(), static_cast<Eigen::Index>(N));
         out = (lw - lnZ).exp();
         return w;
     }
-#endif
 
 #ifdef _OPENMP
     if (is_available(Backend::OPENMP) && N >= 4096) {

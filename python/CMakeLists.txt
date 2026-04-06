@@ -40,7 +40,6 @@ endif()
 
 # Link Eigen3 (required)
 target_link_libraries(_core PRIVATE Eigen3::Eigen)
-target_compile_definitions(_core PRIVATE FLEXAIDS_HAS_EIGEN)
 
 # OpenMP
 if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)

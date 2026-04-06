@@ -375,7 +375,6 @@ if(ENABLE_TENCOM_BENCHMARK)
     endif()
     target_link_libraries(benchmark_tencom PRIVATE Eigen3::Eigen)
 
-    target_compile_definitions(benchmark_tencom PRIVATE FLEXAIDS_HAS_EIGEN)
     if(MSVC)
         target_compile_definitions(benchmark_tencom PRIVATE
             _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES NOMINMAX)
@@ -422,7 +421,6 @@ if(ENABLE_TENCOM_TOOL)
     endif()
     target_link_libraries(tENCoM PRIVATE Eigen3::Eigen)
 
-    target_compile_definitions(tENCoM PRIVATE FLEXAIDS_HAS_EIGEN)
     if(FLEXAIDS_USE_ROCM)
         target_compile_definitions(tENCoM PRIVATE FLEXAIDS_USE_ROCM)
         target_include_directories(tENCoM PRIVATE ${hip_INCLUDE_DIRS})
@@ -532,7 +530,6 @@ if(ENABLE_NATURAL_HAMMERHEAD)
     endif()
     target_link_libraries(natural_hammerhead PRIVATE Eigen3::Eigen)
 
-    target_compile_definitions(natural_hammerhead PRIVATE FLEXAIDS_HAS_EIGEN)
     message(STATUS "NATURaL HHRz simulation enabled — build target: natural_hammerhead")
 endif()
 
@@ -555,7 +552,6 @@ if(ENABLE_DISPATCH_BENCHMARK)
     endif()
     target_link_libraries(benchmark_dispatch PRIVATE Eigen3::Eigen)
 
-    target_compile_definitions(benchmark_dispatch PRIVATE FLEXAIDS_HAS_EIGEN)
     message(STATUS "Dispatch benchmark enabled — build target: benchmark_dispatch")
 endif()
 
@@ -631,7 +627,6 @@ if(BUILD_TESTING)
     endif()
     target_link_libraries(test_statmech PRIVATE Eigen3::Eigen)
 
-    target_compile_definitions(test_statmech PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_statmech)
     add_test(NAME StatMechTests COMMAND test_statmech)
 
@@ -671,7 +666,6 @@ if(BUILD_TESTING)
     endif()
     target_link_libraries(test_hardware_dispatch PRIVATE Eigen3::Eigen)
 
-    target_compile_definitions(test_hardware_dispatch PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_hardware_dispatch)
     add_test(NAME HardwareDispatchTests COMMAND test_hardware_dispatch)
 
@@ -696,7 +690,6 @@ if(BUILD_TESTING)
     endif()
     target_link_libraries(test_hardware_detect_dispatch PRIVATE Eigen3::Eigen)
 
-    target_compile_definitions(test_hardware_detect_dispatch PRIVATE FLEXAIDS_HAS_EIGEN)
     if(FLEXAIDS_USE_CUDA)
         target_compile_definitions(test_hardware_detect_dispatch PRIVATE FLEXAIDS_USE_CUDA)
         target_link_libraries(test_hardware_detect_dispatch PRIVATE CUDA::cudart)
@@ -739,7 +732,6 @@ if(BUILD_TESTING)
     endif()
     target_link_libraries(test_tencom_diff PRIVATE Eigen3::Eigen)
 
-    target_compile_definitions(test_tencom_diff PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_tencom_diff)
     add_test(NAME TENCoMDiffTests COMMAND test_tencom_diff)
 
@@ -802,7 +794,6 @@ if(BUILD_TESTING)
     endif()
     target_link_libraries(test_gaboom PRIVATE Eigen3::Eigen)
 
-    target_compile_definitions(test_gaboom PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_gaboom)
     add_test(NAME GABoomTests COMMAND test_gaboom)
 
@@ -899,7 +890,6 @@ if(BUILD_TESTING)
     endif()
     target_link_libraries(test_sugar_pucker PRIVATE Eigen3::Eigen)
 
-    target_compile_definitions(test_sugar_pucker PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_sugar_pucker)
     add_test(NAME SugarPuckerTests COMMAND test_sugar_pucker)
 
@@ -920,7 +910,6 @@ if(BUILD_TESTING)
     endif()
     target_link_libraries(test_chiral_center PRIVATE Eigen3::Eigen)
 
-    target_compile_definitions(test_chiral_center PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_chiral_center)
     add_test(NAME ChiralCenterTests COMMAND test_chiral_center)
 
@@ -1047,7 +1036,6 @@ flexaids_configure_simd(test_cavity_detect)
     endif()
     target_link_libraries(test_binding_mode_statmech PRIVATE Eigen3::Eigen)
 
-    target_compile_definitions(test_binding_mode_statmech PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_binding_mode_statmech)
     add_test(NAME BindingModeStatMechTests COMMAND test_binding_mode_statmech)
 
@@ -1092,7 +1080,6 @@ flexaids_configure_simd(test_cavity_detect)
     endif()
     target_link_libraries(test_ccbm PRIVATE Eigen3::Eigen)
 
-    target_compile_definitions(test_ccbm PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_ccbm)
     add_test(NAME CCBMTests COMMAND test_ccbm)
 
@@ -1137,7 +1124,6 @@ flexaids_configure_simd(test_cavity_detect)
     endif()
     target_link_libraries(test_binding_mode_advanced PRIVATE Eigen3::Eigen)
 
-    target_compile_definitions(test_binding_mode_advanced PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_binding_mode_advanced)
     add_test(NAME BindingModeAdvancedTests COMMAND test_binding_mode_advanced)
 
@@ -1182,7 +1168,6 @@ flexaids_configure_simd(test_cavity_detect)
     endif()
     target_link_libraries(test_ga_core PRIVATE Eigen3::Eigen)
 
-    target_compile_definitions(test_ga_core PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_ga_core)
     add_test(NAME GACoreTests COMMAND test_ga_core)
 
@@ -1227,7 +1212,6 @@ flexaids_configure_simd(test_cavity_detect)
     endif()
     target_link_libraries(test_ga_validation PRIVATE Eigen3::Eigen)
 
-    target_compile_definitions(test_ga_validation PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_ga_validation)
     add_test(NAME GAValidationTests COMMAND test_ga_validation)
 
@@ -1259,7 +1243,6 @@ flexaids_configure_simd(test_cavity_detect)
         endif()
         target_link_libraries(test_soft_contact_matrix PRIVATE Eigen3::Eigen)
 
-        target_compile_definitions(test_soft_contact_matrix PRIVATE FLEXAIDS_HAS_EIGEN)
         add_test(NAME SoftContactMatrixTests COMMAND test_soft_contact_matrix)
     endif()
 
@@ -1284,7 +1267,6 @@ flexaids_configure_simd(test_cavity_detect)
         endif()
         target_link_libraries(test_compare_energy_matrices PRIVATE Eigen3::Eigen)
 
-        target_compile_definitions(test_compare_energy_matrices PRIVATE FLEXAIDS_HAS_EIGEN)
         add_test(NAME CompareEnergyMatricesTests COMMAND test_compare_energy_matrices)
     endif()
 
@@ -1345,7 +1327,6 @@ flexaids_configure_simd(test_cavity_detect)
     endif()
     target_link_libraries(test_entropy_ga PRIVATE Eigen3::Eigen)
 
-    target_compile_definitions(test_entropy_ga PRIVATE FLEXAIDS_HAS_EIGEN)
     add_test(NAME EntropyGATests COMMAND test_entropy_ga)
 
     # test_cube_grid — GridKey reproducibility, diagonal formula, neighbor probing
@@ -1384,7 +1365,6 @@ flexaids_configure_simd(test_cavity_detect)
     endif()
     target_link_libraries(test_parallel_dock PRIVATE Eigen3::Eigen)
 
-    target_compile_definitions(test_parallel_dock PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_parallel_dock)
     add_test(NAME ParallelDockTests COMMAND test_parallel_dock)
 
@@ -1433,7 +1413,6 @@ flexaids_configure_simd(test_cavity_detect)
     endif()
     target_link_libraries(test_turboquant PRIVATE Eigen3::Eigen)
 
-    target_compile_definitions(test_turboquant PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_turboquant)
     add_test(NAME TurboQuantTests COMMAND test_turboquant)
 
@@ -1499,7 +1478,6 @@ flexaids_configure_simd(test_cavity_detect)
     endif()
     target_link_libraries(test_binding_mode_vibrational PRIVATE Eigen3::Eigen)
 
-    target_compile_definitions(test_binding_mode_vibrational PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_binding_mode_vibrational)
     add_test(NAME BindingModeVibrationalTests COMMAND test_binding_mode_vibrational)
 
@@ -1542,7 +1520,6 @@ flexaids_configure_simd(test_cavity_detect)
     flexaids_configure_simd(test_tencom_entropy_diff)
     target_link_libraries(test_tencom_entropy_diff PRIVATE Eigen3::Eigen)
 
-    target_compile_definitions(test_tencom_entropy_diff PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_tencom_entropy_diff)
     add_test(NAME TencomEntropyDiffTests COMMAND test_tencom_entropy_diff)
 
@@ -1584,7 +1561,6 @@ flexaids_configure_simd(test_cavity_detect)
     endif()
     target_link_libraries(test_grand_partition PRIVATE Eigen3::Eigen)
 
-    target_compile_definitions(test_grand_partition PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_grand_partition)
     add_test(NAME GrandPartitionTests COMMAND test_grand_partition)
 
@@ -1613,7 +1589,6 @@ flexaids_configure_simd(test_cavity_detect)
     endif()
     target_link_libraries(test_target_server PRIVATE Eigen3::Eigen)
 
-    target_compile_definitions(test_target_server PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_target_server)
     add_test(NAME TargetServerTests COMMAND test_target_server)
 
@@ -1723,7 +1698,6 @@ flexaids_configure_simd(test_cavity_detect)
     endif()
     target_link_libraries(test_ga_context PRIVATE Eigen3::Eigen)
 
-    target_compile_definitions(test_ga_context PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_ga_context)
     add_test(NAME GAContextTests COMMAND test_ga_context)
 
@@ -1790,7 +1764,6 @@ if(BUILD_SWIFT_BRIDGE)
     endif()
     target_link_libraries(test_unified_dispatch PRIVATE Eigen3::Eigen)
 
-    target_compile_definitions(test_unified_dispatch PRIVATE FLEXAIDS_HAS_EIGEN)
     add_test(NAME UnifiedDispatchTests COMMAND test_unified_dispatch)
 
     # test_coarse_screen — NRGRank CoarseScreen + TwoStageScreen unit tests

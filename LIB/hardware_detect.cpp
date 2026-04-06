@@ -87,11 +87,7 @@ static void detect_openmp(HardwareCapabilities& hw) {
 }
 
 static void detect_eigen(HardwareCapabilities& hw) {
-#ifdef FLEXAIDS_HAS_EIGEN
     hw.has_eigen = true;
-#else
-    hw.has_eigen = false;
-#endif
 }
 
 static void detect_cuda(HardwareCapabilities& hw) {

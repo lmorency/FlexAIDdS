@@ -174,7 +174,6 @@ endif()
 
 # ─── Required dependencies ───────────────────────────────────────────────
 target_link_libraries(flexaid_core PUBLIC Eigen3::Eigen)
-target_compile_definitions(flexaid_core PUBLIC FLEXAIDS_HAS_EIGEN)
 
 # ─── OpenMP (optional) ──────────────────────────────────────────────────
 if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)

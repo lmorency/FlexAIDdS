@@ -547,7 +547,6 @@ TEST(BackendDetection, ActiveBackendReported) {
 #endif
 }
 
-#ifdef FLEXAIDS_HAS_EIGEN
 TEST(BackendDetection, EigenTagInReport) {
     statmech::StatMechEngine eng(298.15);
     eng.add_sample(-10.0);
@@ -557,7 +556,6 @@ TEST(BackendDetection, EigenTagInReport) {
     EXPECT_NE(result.report.find("Eigen"), std::string::npos)
         << "Expected +Eigen in report: " << result.report;
 }
-#endif
 
 // ===========================================================================
 // DISPATCH EDGE CASES — UNIFIED DISPATCH LAYER COVERAGE

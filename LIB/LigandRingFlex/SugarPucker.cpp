@@ -6,9 +6,7 @@
 
 #include "SugarPucker.h"
 
-#ifdef FLEXAIDS_HAS_EIGEN
-#  include <Eigen/Dense>
-#endif
+#include <Eigen/Dense>
 #ifdef __AVX512F__
 #  include <immintrin.h>
 #endif
@@ -93,7 +91,6 @@ void apply_sugar_puckers(
     // Falls through to Eigen-optimized or scalar path below.
 #endif
 
-#ifdef FLEXAIDS_HAS_EIGEN
     // Use Eigen for batched cosine evaluation across all rings
     for (size_t i = 0; i < n; ++i) {
         const auto& ring = ring_indices[i];
@@ -112,18 +109,6 @@ void apply_sugar_puckers(
         for (int k = 0; k < 5; ++k)
             atoms[ring[k]].dih = torsions(k);
     }
-
-#else
-    for (size_t i = 0; i < n; ++i) {
-        const auto& ring = ring_indices[i];
-        if (ring.size() != 5) continue;
-        PuckerParams pp{ phases_deg[i], 38.0f };
-        float torsions[5];
-        compute_ring_torsions(pp, torsions);
-        for (int k = 0; k < 5; ++k)
-            atoms[ring[k]].dih = torsions[k];
-    }
-#endif
 }
 
 // ─── mutate_phase ────────────────────────────────────────────────────────────
