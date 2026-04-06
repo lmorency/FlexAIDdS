@@ -125,7 +125,7 @@ PYBIND11_MODULE(_core, m) {
         .def_static("attempt_swap", 
             [](Replica& a, Replica& b) {
                 // Python RNG not compatible with std::mt19937, use C++ RNG
-                static std::mt19937 rng{std::random_device{}()};
+                thread_local std::mt19937 rng{std::random_device{}()};
                 return StatMechEngine::attempt_swap(a, b, rng);
             },
             py::arg("replica_a"), py::arg("replica_b"),

@@ -152,4 +152,3 @@ def evaluate_target(
         "AUROC": auroc(scores, labels),
         "BEDROC_20": bedroc(scores, labels, 20.0),
     }
-"""

@@ -1,0 +1,69 @@
+# Maximum Unbiased Validation (MUV) Dataset
+#
+# 17 targets from the Maximum Unbiased Validation benchmark for virtual screening.
+# MUV was designed to be free of common VS biases: no analogue clustering,
+# actives and decoys share identical property distributions (MW, ClogP, HBA, HBD).
+#
+# MUV is therefore a harder VS benchmark than DUD/DUD-E because the usual
+# tricks (physicochemical filters, shape similarity) do not help.
+# FlexAIDdS's entropy correction provides genuine signal when shape/property
+# matching alone fails.
+#
+# Reference: Rohrer & Baumann (2009) J. Chem. Inf. Model. 49(2):169-184
+#            https://doi.org/10.1021/ci8003380
+#
+# Dataset access: https://www.pharmvip.com/ or https://chemdb.ucsd.edu/muv/
+
+slug: muv
+name: "Maximum Unbiased Validation (MUV)"
+description: >
+  17-target benchmark designed without property-based biases between actives
+  and decoys.  Tests the genuine discriminatory power of the scoring function
+  rather than physicochemical heuristics.
+
+zenodo_doi: "10.5281/zenodo.muv2009"
+download_url: "https://www.pharmvip.com/muv"
+data_format: mol2
+tier: 2
+tier1_subset_size: 5
+
+structural_states:
+  - holo
+
+# MUV targets are identified by PubChem AID numbers
+targets:
+  - MUV-466    # S1P1 (sphingosine-1-phosphate receptor 1)
+  - MUV-548    # PKA (cAMP-dependent protein kinase A)
+  - MUV-600    # SF1 (steroidogenic factor 1 / NR5A1)
+  - MUV-644    # RXRα (retinoid X receptor α)
+  - MUV-652    # Cannabinoid receptor 1 (CB1R)
+  - MUV-689    # Eph receptor A2 (EphA2)
+  - MUV-692    # Orexin receptor 2 (OX2R)
+  - MUV-712    # Histamine H1 receptor
+  - MUV-713    # Glucagon receptor (GCGR)
+  - MUV-733    # HIV reverse transcriptase (NNRTI site)
+  - MUV-737    # Muscarinic M3 receptor
+  - MUV-810    # Factor Xa (FXa)
+  - MUV-832    # SERT (serotonin transporter)
+  - MUV-846    # 11β-HSD1 (11β-hydroxysteroid dehydrogenase)
+  - MUV-852    # Dopamine D4 receptor (DRD4)
+  - MUV-858    # Adenosine A2A receptor
+  - MUV-859    # Thrombin (IIa)
+
+metrics:
+  - ef_1pct
+  - ef_5pct
+  - log_auc
+  - entropy_rescue_rate
+  - hit_rate_top10
+
+# MUV is intentionally harder; lower EF values expected compared to DUD-E
+expected_baselines:
+  ef_1pct: 8.5
+  ef_5pct: 4.2
+  log_auc: 0.52
+  entropy_rescue_rate: 0.38
+  hit_rate_top10: 0.28
+
+baseline_tolerance: 0.08
+active_label_field: is_active

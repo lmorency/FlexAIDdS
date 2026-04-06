@@ -74,8 +74,11 @@ setup(
     version=_version,
     description="Python bindings for the FlexAID∆S thermodynamic core",
     author="Louis-Philippe Morency",
-    packages=["flexaidds"],
+    packages=["flexaidds", "flexaidds.dataset_runner"],
     package_dir={"": "."},
-    package_data={"flexaidds": ["py.typed"]},
+    package_data={
+        "flexaidds": ["py.typed"],
+        "flexaidds.dataset_runner": ["datasets/*.yaml"],
+    },
     ext_modules=ext_modules,
 )

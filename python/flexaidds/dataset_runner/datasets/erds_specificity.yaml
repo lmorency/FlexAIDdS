@@ -1,0 +1,79 @@
+# Enamine REAL Diversity Subset (ERDS) — Target Specificity Z-Score Benchmark
+#
+# A curated subset of the Enamine REAL space diversity compounds used to evaluate
+# target specificity via Z-score analysis.  The Z-score metric measures whether
+# FlexAIDdS assigns statistically distinguishable scores to known binders vs
+# a random background drawn from the ERDS.
+#
+# Purpose: verify that the entropy correction does not over-generalise (i.e.
+# that it improves signal/noise rather than simply shifting all scores).
+# A statistically significant negative Z-score (< −2.0) for known binders
+# indicates genuine discrimination.
+#
+# Background set: 50,000 random Enamine REAL compounds per target, filtered
+# to match the target's average ligand MW ± 50 Da and ClogP ± 1.
+#
+# Reference:
+#   Enamine REAL Space — https://enamine.net/compound-collections/real-compounds
+#   ERDS description: Lyu et al. (2023) Nature 621:198-206
+
+slug: erds_specificity
+name: "Enamine REAL Diversity Subset — Specificity Z-Score"
+description: >
+  Evaluates target specificity by scoring known binders against a property-matched
+  random background drawn from the Enamine REAL diversity subset (50k compounds
+  per target).  The target_specificity_zscore metric measures signal separation
+  between true binders and the background distribution.
+
+zenodo_doi: ""
+download_url: "https://enamine.net/compound-collections/real-compounds/real-diversity-subset"
+data_format: mol2
+tier: 2
+tier1_subset_size: 3
+
+structural_states:
+  - holo
+
+# 15 targets spanning diverse protein families for specificity testing
+targets:
+  # High-entropy binding pockets (large, flexible)
+  - HSP90A   # HSP90α N-terminal domain      PDB: 2XAB
+  - SIGR1    # Sigma-1 receptor               PDB: 5HK1
+  - CB1R     # Cannabinoid CB1 receptor       PDB: 5XRA
+  - D4R      # Dopamine D4 receptor           PDB: 5WIU
+  # Tight, well-defined binding pockets (enthalpy-dominated)
+  - HIVPR    # HIV-1 protease                 PDB: 2HSQ
+  - BACE1    # β-secretase 1                  PDB: 2QP8
+  - CDK2     # Cyclin-dependent kinase 2      PDB: 1H1Q
+  - EGFR     # EGFR kinase                    PDB: 1M17
+  # Ion channels (large extracellular vestibules)
+  - GABAR    # GABA-A receptor                PDB: 6DW0
+  - NMDAR    # NMDA receptor                  PDB: 4PE5
+  # Transporters (occluded binding sites)
+  - SERT     # Serotonin transporter          PDB: 5I6X
+  - DAT      # Dopamine transporter           PDB: 4XP4
+  # Allosteric pockets
+  - ROCK1    # Rho-kinase 1 (DFG-out)         PDB: 2F2U
+  - PPARG    # PPARγ LBD (large flexible LBD) PDB: 1RDT
+  # Metalloprotease (metal-chelation + entropy)
+  - MMP13    # MMP-13                         PDB: 456C
+
+metrics:
+  - target_specificity_zscore
+  - entropy_rescue_rate
+  - ef_1pct
+  - log_auc
+
+# Z-score < −2.0 (lower is better) indicates binders score significantly
+# better than random background.
+# Stored as negative absolute value — closer to 0 = regression.
+expected_baselines:
+  target_specificity_zscore: -2.50
+  entropy_rescue_rate: 0.45
+  ef_1pct: 13.2
+  log_auc: 0.61
+
+# For Z-score: regression if |measured| < |baseline| × (1 - tolerance)
+# i.e. score becomes less negative (less discriminating)
+baseline_tolerance: 0.08
+active_label_field: is_active

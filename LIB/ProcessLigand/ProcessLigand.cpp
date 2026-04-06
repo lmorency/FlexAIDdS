@@ -73,8 +73,10 @@ void ProcessLigand::log(const std::string& msg) const {
 
 BonMol ProcessLigand::load_sdf(const std::string& filepath) {
 #ifdef HAVE_FLEXAID_SDF
-    // TODO: bridge existing SdfReader → BonMol translation
-    // For now fall through to built-in parser
+    // FlexAID SdfReader currently targets atom/resid buffers used by the
+    // docking engine, while ProcessLigand owns a BonMol graph container.
+    // Until a shared translation utility is exposed in LIB/, this parser is
+    // the canonical SDF->BonMol path.
 #endif
 
     std::ifstream f(filepath);
@@ -153,7 +155,10 @@ BonMol ProcessLigand::load_sdf(const std::string& filepath) {
 
 BonMol ProcessLigand::load_mol2(const std::string& filepath) {
 #ifdef HAVE_FLEXAID_MOL2
-    // TODO: bridge existing Mol2Reader → BonMol translation
+    // FlexAID Mol2Reader currently targets atom/resid buffers used by the
+    // docking engine, while ProcessLigand owns a BonMol graph container.
+    // Until a shared translation utility is exposed in LIB/, this parser is
+    // the canonical MOL2->BonMol path.
 #endif
 
     std::ifstream f(filepath);
