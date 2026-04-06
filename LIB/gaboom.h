@@ -11,6 +11,7 @@
 #include <functional>
 #include <cstdint>
 #include <cmath>
+#include <unordered_map>
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -204,7 +205,6 @@ int   	remove_dups(chromosome* list, int num_chrom, int num_genes);
 
 FILE* get_update_file_ptr(FA_Global* FA);
 void 	close_update_file_ptr(FA_Global* FA, FILE* outfile_ptr);
-std::string generate_sig(gene genes[], int num_genes);
 
 void  	generate_random_individual(FA_Global* FA, GB_Global* GB, atom* atoms, gene* genes, const genlim* gene_lim,
 				 std::function<int32_t()> &, int from_gene, int to_gene);
@@ -214,14 +214,14 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
                         cfstr (*target)(FA_Global*,VC_Global*,atom*,resid*,gridpoint*,int,double*),
                         char file[], long int at, int offset, int print,
                         std::function<int32_t()> &,
-                        std::map<std::string, int> &);
+                        std::unordered_map<size_t, int> &);
 cfstr 	eval_chromosome(FA_Global* FA,GB_Global* GB,VC_Global* VC,const genlim* gene_lim,atom* atoms,resid* residue,gridpoint* cleftgrid,gene* john, cfstr (*function)(FA_Global*,VC_Global*,atom*,resid*,gridpoint*,int,double*));
 void  	calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chrom, const genlim* gene_lim,atom* atoms,resid* residue,gridpoint* cleftgrid,char method[],int pop_size, int print, cfstr (*target)(FA_Global*,VC_Global*,atom*,resid*,gridpoint*,int, double*));
 int reproduce(FA_Global* FA,GB_Global* GB,VC_Global* VC, chromosome* chrom,
              const genlim* gene_lim,atom* atoms,resid* residue,gridpoint* cleftgrid,
              char rmodel[], double mutprob, double crossprob, int print,
              std::function<int32_t()> &,
-             std::map<std::string, int> &,
+             std::unordered_map<size_t, int> &,
              cfstr (*target)(FA_Global*,VC_Global*,atom*,resid*,gridpoint*,int,double*));
 void  	print_pop(const chromosome* chrom,const genlim* gene_lim,int numc, int numg);
 void  	print_chrom(const chromosome* chrom, int num_genes, int real_flag);
