@@ -1658,7 +1658,7 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 		   and is parallelised with OpenMP.
 		*/
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) default(none) \
+#pragma omp parallel for schedule(dynamic) default(none) \
 	shared(chrom, GB, FA, cleftgrid)
 #endif
 		for(int pi=0; pi<GB->num_chrom; pi++){
@@ -1716,7 +1716,7 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 			const double w = GB->entropy_weight;
 
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) default(none) \
+#pragma omp parallel for schedule(dynamic) default(none) \
 	shared(chrom, GB, FA, cleftgrid, max_bw, w)
 #endif
 			for (int pi = 0; pi < GB->num_chrom; pi++) {
