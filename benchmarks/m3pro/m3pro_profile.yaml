@@ -1,0 +1,95 @@
+# m3pro_profile.yaml — Hardware profile for MacBook Pro 14" M3 Pro 18GB
+#
+# Declares hardware specs, build configuration, benchmark parameters,
+# storage paths, and memory budget for the M3 Pro benchmark environment.
+#
+# This file is informational and consumed by run_benchmarks.sh for
+# documentation purposes. It can also be loaded by Python tooling:
+#   import yaml; profile = yaml.safe_load(open("m3pro_profile.yaml"))
+
+profile: m3pro-18gb
+
+hardware:
+  model: "MacBook Pro 14-inch (2023/2024)"
+  cpu: "Apple M3 Pro"
+  architecture: arm64
+  cores_performance: 6
+  cores_efficiency: 6
+  cores_total: 12
+  ram_gb: 18
+  ram_type: "LPDDR5 unified"
+  gpu: "Apple M3 Pro GPU (11 or 14-core, detect at runtime)"
+  gpu_api: Metal
+  metal_family: apple9    # Metal GPU Family Apple 9
+  storage: "cloud-only (iCloud 2TB primary, Google Drive 5TB mirror)"
+
+build:
+  parallel_jobs: 6          # P-cores only; E-cores reserved for macOS + cloud sync
+  cmake_build_type: Release
+  generator: default        # Ninja preferred if available, else Unix Makefiles
+  metal: true
+  openmp: true
+  eigen: true
+  avx2: false               # not available on ARM64
+  avx512: false             # not available on ARM64
+  cuda: false               # no NVIDIA GPU
+  metal_profiling: true
+  testing: true
+  python_bindings: true
+
+benchmarks:
+  kernel:
+    dispatch_size: 100000
+    dispatch_reps: 100
+    vcfbatch_pop: 200
+    vcfbatch_genes: 20
+    # Expected backends on M3 Pro: scalar, OpenMP, Metal
+    expected_backends:
+      - scalar
+      - OpenMP
+      - Metal
+
+  tier1:
+    workers: 4              # ~2.5 GB per worker + 4 GB Metal + 3 GB OS = ~17 GB
+    datasets:
+      - casf2016
+    timeout_minutes: 10
+
+  tier2:
+    workers: 2              # ~4.5 GB per worker + 4 GB Metal + 3 GB OS = ~16 GB
+    sequential_datasets: true  # one dataset at a time to stay within 18 GB
+    bootstrap: true
+    n_bootstrap: 5000
+    datasets:
+      - casf2016            # 285 complexes, scoring + docking + screening
+      - itc187              # 187 complexes, thermodynamic decomposition
+      - dude37              # 37 targets × 3 states, cross-docking VS
+      - muv                 # 17 targets, unbiased virtual screening
+      - lsd_docking         # 11 ultra-large library campaigns
+      - erds_specificity    # 15 targets, Z-score target specificity
+      - psychopharm23       # 23 CNS drug targets (NRGlab internal)
+
+storage:
+  mode: "async-mirror"
+  primary: icloud
+  mirror: gdrive
+  icloud_base: "~/Library/Mobile Documents/com~apple~CloudDocs/FlexAIDdS"
+  gdrive_base: "~/Library/CloudStorage/GoogleDrive-*/My Drive/FlexAIDdS"
+  sync_build: false         # build dir too volatile; rebuild cheaper than sync
+  sync_after_phase: true    # rsync to GDrive after each benchmark phase
+  sync_method: "rsync -avz --delete"
+  directories_synced:
+    - benchmark_data
+    - results
+    - logs
+  directories_excluded:
+    - build
+
+memory_budget:
+  total_gb: 18
+  os_reserved_gb: 3         # macOS + Spotlight + cloud sync daemons
+  metal_gpu_gb: 4           # GPU buffer allocation from unified memory
+  available_gb: 11          # remaining for benchmark workloads
+  max_workers_tier1: 4      # 11 GB / 4 = ~2.75 GB per worker
+  max_workers_tier2: 2      # 11 GB / 2 = ~5.5 GB per worker (large complexes)
+  per_worker_limit_gb: 4.5  # conservative upper bound

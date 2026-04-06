@@ -228,8 +228,184 @@ add_subdirectory(LIB)
 
 # ─── executable ─────────────────────────────────────────────────────────
 if(FLEXAIDS_BUILD_CORE)
-add_executable(FlexAID $<TARGET_OBJECTS:flexaid_core>)
-target_link_libraries(FlexAID PRIVATE flexaid_core)
+add_executable(FlexAID "")
+target_sources(FlexAID PRIVATE
+        LIB/top.cpp
+        LIB/fileio.cpp
+        LIB/assign_shift.cpp
+        LIB/buildic.cpp
+        LIB/Vcontacts.cpp
+        LIB/ic2cf.cpp
+        LIB/vcfunction.cpp
+        LIB/create_rebuild_list.cpp
+        LIB/read_coor.cpp
+        LIB/read_constraints.cpp
+        LIB/assign_constraint.cpp
+        LIB/modify_pdb.cpp
+        LIB/update_constraint.cpp
+        LIB/update_optres.cpp
+        LIB/update_bonded.cpp
+        LIB/read_grid.cpp
+        LIB/read_input.cpp
+        LIB/read_lig.cpp
+        LIB/read_pdb.cpp
+        LIB/add2_optimiz_vec.cpp
+        LIB/assign_radius.cpp
+        LIB/assign_radii.cpp
+        LIB/assign_radii_types.cpp
+        LIB/assign_types.cpp
+        LIB/bondedlist.cpp
+        LIB/buildcc.cpp
+        LIB/buildlist.cpp
+        LIB/geometry.cpp
+        LIB/read_conect.cpp
+        LIB/residue_conect.cpp
+        LIB/wif083.cpp
+        LIB/calc_cleftic.cpp
+        LIB/write_pdb.cpp
+        LIB/gaboom.cpp
+        LIB/GAContext.cpp
+        LIB/calc_center.cpp
+        LIB/ic_bounds.cpp
+        LIB/buildic_point.cpp
+        LIB/buildcc_point.cpp
+        LIB/read_rmsdst.cpp
+        LIB/calc_rmsd_chrom.cpp
+        LIB/calc_rmsd.cpp
+        LIB/write_rrd.cpp
+        LIB/write_sphere.cpp
+        LIB/write_grid.cpp
+        LIB/write_rrg.cpp
+        LIB/read_rotlib.cpp
+        LIB/number_of_dihedrals.cpp
+        LIB/read_flexscfile.cpp
+        LIB/read_rotobs.cpp
+        LIB/set_intprob.cpp
+        LIB/build_rotamers.cpp
+        LIB/check_clash.cpp
+        LIB/read_normalgrid.cpp
+        LIB/read_eigen.cpp
+        LIB/assign_eigen.cpp
+        LIB/print_surfmat.cpp
+        LIB/alter_mode.cpp
+        LIB/dee_pivot.cpp
+        LIB/read_emat.cpp
+        LIB/read_spheres.cpp
+        LIB/cluster.cpp
+        LIB/DensityPeak_Cluster.cpp
+        LIB/FastOPTICS_cluster.cpp
+        LIB/FOPTICS.cpp
+        LIB/fast_optics.cpp
+        LIB/BindingMode.cpp
+        LIB/rna_structure.cpp
+        LIB/shortest_path.cpp
+        LIB/assign_shortflex.cpp
+        LIB/slice_grid.cpp
+        LIB/partition_grid.cpp
+        LIB/generate_grid.cpp
+        LIB/maps.cpp
+        # ── new C++20 modules ──
+        LIB/tENCoM/tencm.cpp
+        LIB/statmech.cpp
+        LIB/encom.cpp             # ← NEW: ENCoM vibrational entropy
+        # ── GIST water displacement + directional H-bond scoring ──
+        LIB/GISTEvaluator.cpp
+        LIB/HBondEvaluator.cpp
+        # ── TurboQuant vector quantization (Zandieh et al. 2025) ──
+        LIB/TurboQuant.cpp
+        # ── ProcessLigand (Phase 3: standalone ligand preprocessing) ──
+        LIB/ProcessLigand/ProcessLigand.cpp
+        LIB/ProcessLigand/SmilesParser.cpp
+        LIB/ProcessLigand/RingPerception.cpp
+        LIB/ProcessLigand/Aromaticity.cpp
+        LIB/ProcessLigand/RotatableBonds.cpp
+        LIB/ProcessLigand/ValenceChecker.cpp
+        LIB/ProcessLigand/SybylTyper.cpp
+        LIB/ProcessLigand/FlexAIDWriter.cpp
+        LIB/ProcessLigand/ROCmDispatch.cpp
+        LIB/ProcessLigand/CoordBuilder.cpp
+        LIB/CifReader.cpp
+        LIB/MultiModelDock.cpp
+        LIB/LibrarySplitter.cpp
+        LIB/ReferenceEntropy.cpp
+        LIB/ParallelCampaign.cpp
+        # ── v1.5 thermodynamic + hardware acceleration modules ──
+        LIB/hardware_detect.cpp
+        LIB/hardware_dispatch.cpp
+        LIB/ShannonThermoStack/ShannonThermoStack.cpp
+        # ── Shannon Thermodynamic GA (entropy-collapse driver) ──
+        LIB/shannon_ga.cpp
+        LIB/LigandRingFlex/RingConformerLibrary.cpp
+        LIB/LigandRingFlex/SugarPucker.cpp
+        LIB/LigandRingFlex/LigandRingFlex.cpp
+        LIB/NATURaL/NATURaLDualAssembly.cpp
+        LIB/NATURaL/RibosomeElongation.cpp
+        LIB/NATURaL/TransloconInsertion.cpp
+        LIB/NATURaL/NucleationDetector.cpp
+        LIB/ChiralCenter/ChiralCenterGene.cpp
+        # ── CleftDetector + Mol2Reader + SdfReader ──
+        LIB/CleftDetector.cpp
+        LIB/Mol2Reader.cpp
+        LIB/SdfReader.cpp
+        # ── CavityDetect: native SURFNET cavity detection ──
+        LIB/CavityDetect/CavityDetect.cpp
+        # ── PTMAttachment: PTM/glycan modification on target chain ──
+        LIB/PTMAttachment/PTMAttachment.cpp
+        # ── JSON config parser (zero external dependencies) ──
+        LIB/config_parser.cpp
+        # ── Unified runtime hardware dispatch ──
+        LIB/HardwareDispatch.cpp
+        # ── Parallel grid-decomposed docking ──
+        LIB/GridDecomposer.cpp
+        LIB/SharedPosePool.cpp
+        LIB/ParallelDock.cpp
+        # ── CoarseScreen: NRGRank coarse-grained screening ──
+        LIB/CoarseScreen.cpp
+        LIB/TwoStageScreen.cpp
+        # ── TargetServer: target-centric docking architecture ──
+        LIB/TargetValidation.cpp
+        LIB/GrandPartitionFunction.cpp
+        LIB/TargetKnowledgeBase.cpp
+        LIB/TargetServer.cpp
+)
+
+target_include_directories(FlexAID PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+    ${CMAKE_CURRENT_SOURCE_DIR}/LIB/tENCoM
+    ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ShannonThermoStack
+    ${CMAKE_CURRENT_SOURCE_DIR}/LIB/LigandRingFlex
+    ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
+    ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ChiralCenter
+    ${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect
+    ${CMAKE_CURRENT_SOURCE_DIR}/LIB/PTMAttachment
+)
+
+# ─── compiler flags ────────────────────────────────────────────────────
+if(MSVC)
+    target_compile_options(FlexAID PRIVATE /W4 /O2 /MT)
+    target_compile_definitions(FlexAID PRIVATE
+        _CRT_SECURE_NO_WARNINGS      # suppress MSVC sprintf/strcpy deprecation
+        _USE_MATH_DEFINES             # expose M_PI in <cmath>
+        NOMINMAX                      # prevent windows.h min/max macros
+    )
+else()
+    target_compile_options(FlexAID PRIVATE -Wall -O3 -ffast-math)
+endif()
+flexaids_configure_simd(FlexAID)
+
+# ─── Eigen3 link + definition ─────────────────────────────────────────────
+if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
+    target_link_libraries(FlexAID PRIVATE Eigen3::Eigen)
+    target_compile_definitions(FlexAID PRIVATE FLEXAIDS_HAS_EIGEN)
+elseif(FLEXAIDS_USE_EIGEN AND EIGEN3_FOUND)
+    target_include_directories(FlexAID PRIVATE ${EIGEN3_INCLUDE_DIRS})
+    target_compile_definitions(FlexAID PRIVATE FLEXAIDS_HAS_EIGEN)
+endif()
+
+# ─── OpenMP link ────────────────────────────────────────────────────────
+if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+    target_link_libraries(FlexAID PRIVATE OpenMP::OpenMP_CXX)
+endif()
 
 # ─── MPI (optional, for distributed parallel docking) ──────────────────
 if(FLEXAIDS_USE_MPI)
@@ -806,6 +982,7 @@ if(BUILD_TESTING)
         LIB/BindingMode.cpp
         LIB/fast_optics.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
+        LIB/shannon_ga.cpp
         LIB/CleftDetector.cpp
         LIB/NATURaL/NATURaLDualAssembly.cpp
         LIB/NATURaL/RibosomeElongation.cpp
@@ -835,6 +1012,53 @@ if(BUILD_TESTING)
     target_compile_definitions(test_gaboom PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_gaboom)
     add_test(NAME GABoomTests COMMAND test_gaboom)
+
+    # test_shannon_ga — Shannon Thermodynamic GA entropy-collapse tests
+    add_executable(test_shannon_ga
+        tests/test_shannon_ga.cpp
+        tests/stubs.cpp
+        LIB/shannon_ga.cpp
+        LIB/gaboom.cpp
+        LIB/GAContext.cpp
+        LIB/Vcontacts.cpp
+        LIB/statmech.cpp
+        LIB/TurboQuant.cpp
+        LIB/geometry.cpp
+        LIB/tENCoM/tencm.cpp
+        LIB/encom.cpp
+        LIB/BindingMode.cpp
+        LIB/fast_optics.cpp
+        LIB/ShannonThermoStack/ShannonThermoStack.cpp
+        LIB/CleftDetector.cpp
+        LIB/NATURaL/NATURaLDualAssembly.cpp
+        LIB/NATURaL/RibosomeElongation.cpp
+        LIB/NATURaL/TransloconInsertion.cpp
+        LIB/NATURaL/NucleationDetector.cpp
+        LIB/hardware_dispatch.cpp
+        LIB/hardware_detect.cpp
+    )
+    target_include_directories(test_shannon_ga PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/tENCoM
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ShannonThermoStack
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect
+    )
+    target_link_libraries(test_shannon_ga PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_shannon_ga PRIVATE /O2)
+    else()
+        target_compile_options(test_shannon_ga PRIVATE -O2)
+    endif()
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(test_shannon_ga PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
+        target_link_libraries(test_shannon_ga PRIVATE Eigen3::Eigen)
+        target_compile_definitions(test_shannon_ga PRIVATE FLEXAIDS_HAS_EIGEN)
+    endif()
+    flexaids_configure_msvc_test(test_shannon_ga)
+    add_test(NAME ShannonGATests COMMAND test_shannon_ga)
 
     # test_vcontacts — Voronoi contact scoring math unit tests
     add_executable(test_vcontacts
