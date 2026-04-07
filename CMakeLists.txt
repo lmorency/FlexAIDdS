@@ -214,6 +214,14 @@ else()
     endif()
 endif()
 
+# ─── MPI (optional, for distributed parallel docking) ──────────────────
+# Must be found before add_subdirectory(LIB) so MPI::MPI_CXX is available
+# when flexaid_core links it.
+if(FLEXAIDS_USE_MPI)
+    find_package(MPI REQUIRED)
+    message(STATUS "MPI enabled — distributed parallel docking active")
+endif()
+
 # ─── Core library (LIB/) ────────────────────────────────────────────────
 add_subdirectory(LIB)
 
@@ -221,12 +229,6 @@ add_subdirectory(LIB)
 if(FLEXAIDS_BUILD_CORE)
 add_executable(FlexAID $<TARGET_OBJECTS:flexaid_core>)
 target_link_libraries(FlexAID PRIVATE flexaid_core)
-
-# ─── MPI (optional, for distributed parallel docking) ──────────────────
-if(FLEXAIDS_USE_MPI)
-    find_package(MPI REQUIRED)
-    message(STATUS "MPI enabled — distributed parallel docking active")
-endif()
 
 # ─── CUDA sources ───────────────────────────────────────────────────────
 if(FLEXAIDS_USE_CUDA)
@@ -846,7 +848,7 @@ if(BUILD_TESTING)
         LIB/encom.cpp
     )
     target_include_directories(test_encom PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
-    target_link_libraries(test_encom PRIVATE GTest::gtest GTest::gtest_main)
+    target_link_libraries(test_encom PRIVATE GTest::gtest GTest::gtest_main Eigen3::Eigen)
     if(MSVC)
         target_compile_options(test_encom PRIVATE /O2)
     else()
