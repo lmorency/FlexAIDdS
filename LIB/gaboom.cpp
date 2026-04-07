@@ -1936,7 +1936,7 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 		//printf("num_chrom=%d num_genes=%d\n",GB->num_chrom,GB->num_genes);
 
 		int gener=0;
-		std::string sig;
+		size_t sig = 0;
 
 		i=popoffset;
 		while(i<GB->num_chrom){
