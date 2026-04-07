@@ -214,6 +214,12 @@ else()
     endif()
 endif()
 
+# ─── MPI (optional — must be found before add_subdirectory(LIB)) ──────
+if(FLEXAIDS_USE_MPI)
+    find_package(MPI REQUIRED)
+    message(STATUS "MPI enabled — distributed parallel docking active")
+endif()
+
 # ─── Core library (LIB/) ────────────────────────────────────────────────
 add_subdirectory(LIB)
 
@@ -221,12 +227,6 @@ add_subdirectory(LIB)
 if(FLEXAIDS_BUILD_CORE)
 add_executable(FlexAID $<TARGET_OBJECTS:flexaid_core>)
 target_link_libraries(FlexAID PRIVATE flexaid_core)
-
-# ─── MPI (optional, for distributed parallel docking) ──────────────────
-if(FLEXAIDS_USE_MPI)
-    find_package(MPI REQUIRED)
-    message(STATUS "MPI enabled — distributed parallel docking active")
-endif()
 
 # ─── CUDA sources ───────────────────────────────────────────────────────
 if(FLEXAIDS_USE_CUDA)

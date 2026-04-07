@@ -183,28 +183,28 @@ TEST(SwapChrom, SwapsContents) {
 // GENERATE SIGNATURE
 // ===========================================================================
 
-TEST(GenerateSig, UniqueForDifferentGenes) {
+TEST(HashGenes, UniqueForDifferentGenes) {
     gene g1[3] = {{0, 1.0}, {0, 2.0}, {0, 3.0}};
     gene g2[3] = {{0, 1.0}, {0, 2.0}, {0, 4.0}};
 
-    std::string s1 = generate_sig(g1, 3);
-    std::string s2 = generate_sig(g2, 3);
+    size_t s1 = hash_genes(g1, 3);
+    size_t s2 = hash_genes(g2, 3);
 
     EXPECT_NE(s1, s2);
 }
 
-TEST(GenerateSig, IdenticalForSameGenes) {
+TEST(HashGenes, IdenticalForSameGenes) {
     gene g1[2] = {{0, 5.0}, {0, 10.0}};
     gene g2[2] = {{0, 5.0}, {0, 10.0}};
 
-    EXPECT_EQ(generate_sig(g1, 2), generate_sig(g2, 2));
+    EXPECT_EQ(hash_genes(g1, 2), hash_genes(g2, 2));
 }
 
-TEST(GenerateSig, SingleGene) {
+TEST(HashGenes, SingleGene) {
     gene g[1] = {{0, 7.3}};
-    std::string s = generate_sig(g, 1);
-    // 7.3 + 0.5 = 7.8, (int)7.8 = 7, so signature is "7/"
-    EXPECT_EQ(s, "7/");
+    size_t s = hash_genes(g, 1);
+    // hash_genes hashes int32_t(7.3 + 0.5) = int32_t(7.8) = 7
+    EXPECT_NE(s, static_cast<size_t>(0));
 }
 
 // ===========================================================================
