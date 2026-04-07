@@ -161,6 +161,7 @@ public:
 
     // Backend selection
     Backend best_backend(KernelType kernel = KernelType::SHANNON_ENTROPY) const;
+    Backend select_cpu_backend() const;
     void set_override(Backend b) noexcept { override_ = b; }
     void clear_override() noexcept { override_ = Backend::AUTO; }
     Backend current_override() const noexcept { return override_; }
@@ -232,8 +233,6 @@ private:
     float rmsd_avx512(const float* a, const float* b, int n);
     float rmsd_openmp(const float* a, const float* b, int n);
 
-    // CPU-only backend selection helper
-    Backend select_cpu_backend() const;
 };
 
 }  // namespace hw
