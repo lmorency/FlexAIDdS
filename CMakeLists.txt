@@ -1287,6 +1287,7 @@ flexaids_configure_simd(test_cavity_detect)
     else()
         target_compile_options(test_ion_handling PRIVATE -O2)
     endif()
+    target_link_libraries(test_ion_handling PRIVATE Eigen3::Eigen)
     add_test(NAME IonHandlingTests COMMAND test_ion_handling)
 
     # test_entropy_ga — SMFREE fitness model, Boltzmann blending, entropy fields
