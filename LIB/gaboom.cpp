@@ -85,6 +85,15 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
                        cfstr (*target)(FA_Global*,VC_Global*,atom*,resid*,gridpoint*,int,double*),
                        GAContext& ctx);
 
+size_t hash_genes(const gene* g, int n);
+
+void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chrom, const genlim* gene_lim,
+                          atom* atoms,resid* residue,gridpoint* cleftgrid,char method[],
+                          cfstr (*target)(FA_Global*,VC_Global*,atom*,resid*,gridpoint*,int,double*),
+                          char file[], long int at, int popoffset, int print,
+                          std::function<int32_t()> & dice,
+                          std::unordered_map<size_t, int> & duplicates);
+
 /***********************************************************************/
 /* 1         2         3         4         5         6          */
 /*234567890123456789012345678901234567890123456789012345678901234567890*/
@@ -1935,7 +1944,7 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 		//printf("num_chrom=%d num_genes=%d\n",GB->num_chrom,GB->num_genes);
 
 		int gener=0;
-		std::string sig;
+		size_t sig = 0;
 
 		i=popoffset;
 		while(i<GB->num_chrom){
