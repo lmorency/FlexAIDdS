@@ -878,6 +878,9 @@ void adapt_prob(GB_Global* GB,double fit1, double fit2, double* mutp, double* cr
 
 	return;
 }
+
+static size_t hash_genes(const gene* g, int n);
+
 /***********************************************************************/
 /* 1         2         3         4         5         6          */
 /*234567890123456789012345678901234567890123456789012345678901234567890*/
@@ -1037,19 +1040,10 @@ int reproduce(FA_Global* FA,GB_Global* GB,VC_Global* VC, chromosome* chrom, cons
 	return nrejected;
 }
 
-<<<<<<< HEAD
-static size_t hash_genes(const gene genes[], int num_genes){
-	size_t h = 0;
-	for(int i = 0; i < num_genes; ++i){
-		auto v = static_cast<int32_t>(genes[i].to_ic + 0.5);
-		h ^= std::hash<int32_t>{}(v) + 0x9e3779b9 + (h << 6) + (h >> 2);
-	}
-=======
-size_t hash_genes(const gene* g, int n){
+static size_t hash_genes(const gene* g, int n){
 	size_t h = 0;
 	for(int i = 0; i < n; ++i)
 		h ^= std::hash<int32_t>{}(static_cast<int32_t>(g[i].to_ic + 0.5)) + 0x9e3779b9 + (h << 6) + (h >> 2);
->>>>>>> ce3b671 (perf: replace string chromosome signatures with integer hashing)
 	return h;
 }
 
