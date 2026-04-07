@@ -61,7 +61,7 @@ enum class KernelType : uint8_t {
 // ─── Error handling ─────────────────────────────────────────────────────────
 
 enum class DispatchError : uint8_t {
-    OK = 0,
+    SUCCESS = 0,
     NO_BACKEND,
     ALLOC_FAILED,
     LAUNCH_FAILED,
@@ -72,12 +72,12 @@ enum class DispatchError : uint8_t {
 };
 
 struct DispatchResult {
-    DispatchError error        = DispatchError::OK;
+    DispatchError error        = DispatchError::SUCCESS;
     Backend       used_backend = Backend::AUTO;
     double        elapsed_ms   = 0.0;
     std::string   detail;
 
-    explicit operator bool() const { return error == DispatchError::OK; }
+    explicit operator bool() const { return error == DispatchError::SUCCESS; }
 };
 
 // ─── Hardware capabilities ──────────────────────────────────────────────────
@@ -192,6 +192,9 @@ public:
     float rmsd(const float* a_xyz, const float* b_xyz, int n_atoms,
                Backend backend = Backend::AUTO);
 
+    // CPU-only backend selection helper (public for flexaids:: compat layer)
+    Backend select_cpu_backend() const;
+
     // ─── Dispatched compute with DispatchResult (from former hardware_dispatch.h) ─
 
     BoltzmannBatchResult compute_boltzmann_batch(
@@ -231,9 +234,6 @@ private:
     float rmsd_avx2(const float* a, const float* b, int n);
     float rmsd_avx512(const float* a, const float* b, int n);
     float rmsd_openmp(const float* a, const float* b, int n);
-
-    // CPU-only backend selection helper
-    Backend select_cpu_backend() const;
 };
 
 }  // namespace hw
