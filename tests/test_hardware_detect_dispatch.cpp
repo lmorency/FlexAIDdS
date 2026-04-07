@@ -269,7 +269,7 @@ TEST(LogSumExp, LargeArray) {
 TEST(DispatchReport, HasValidBackend) {
     auto report = get_dispatch_report();
     EXPECT_GE(static_cast<int>(report.selected), 0);
-    EXPECT_LE(static_cast<int>(report.selected), 5);
+    EXPECT_LE(static_cast<int>(report.selected), 6);  // SCALAR=6 is valid
 }
 
 TEST(DispatchReport, ReasonIsNonEmpty) {

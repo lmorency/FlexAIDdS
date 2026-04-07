@@ -1043,6 +1043,13 @@ size_t hash_genes(const gene* g, int n){
 	return h;
 }
 
+std::string generate_sig(gene genes[], int num_genes){
+	std::string sig;
+	for(int i = 0; i < num_genes; ++i)
+		sig += std::to_string(static_cast<int>(genes[i].to_ic + 0.5)) + "/";
+	return sig;
+}
+
 /***********************************************************************/
 /* 1         2         3         4         5         6          */
 /*234567890123456789012345678901234567890123456789012345678901234567890*/
@@ -1935,7 +1942,7 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 		//printf("num_chrom=%d num_genes=%d\n",GB->num_chrom,GB->num_genes);
 
 		int gener=0;
-		std::string sig;
+		size_t sig = 0;
 
 		i=popoffset;
 		while(i<GB->num_chrom){
