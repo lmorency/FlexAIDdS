@@ -670,3 +670,49 @@ inline float rmsd(const float* a, const float* b, int N) noexcept {
 }
 
 }  // namespace simd
+
+// ─── flat namespace wrappers for use from C-style code ──────────────────────
+namespace flexaids {
+
+// Sum of squared element-wise differences over n_floats contiguous floats.
+// Dispatches to AVX-512 / AVX2 / scalar automatically.
+// Use this for RMSD on interleaved xyz where you pass nAtoms*3 as n_floats.
+inline float sum_sq_distances_f(const float* a, const float* b, int n_floats) noexcept {
+#if FLEXAIDS_HAS_AVX512
+    __m512 acc = _mm512_setzero_ps();
+    int i = 0;
+    for (; i + 15 < n_floats; i += 16) {
+        __m512 va = _mm512_loadu_ps(a + i);
+        __m512 vb = _mm512_loadu_ps(b + i);
+        __m512 d  = _mm512_sub_ps(va, vb);
+        acc = _mm512_fmadd_ps(d, d, acc);
+    }
+    float sum = _mm512_reduce_add_ps(acc);
+    for (; i < n_floats; ++i) { float d = a[i] - b[i]; sum += d * d; }
+    return sum;
+#elif FLEXAIDS_HAS_AVX2
+    __m256 acc = _mm256_setzero_ps();
+    int i = 0;
+    for (; i + 7 < n_floats; i += 8) {
+        __m256 va = _mm256_loadu_ps(a + i);
+        __m256 vb = _mm256_loadu_ps(b + i);
+        __m256 d  = _mm256_sub_ps(va, vb);
+        acc = _mm256_fmadd_ps(d, d, acc);
+    }
+    // Horizontal sum of 8 floats
+    __m128 hi  = _mm256_extractf128_ps(acc, 1);
+    __m128 lo  = _mm256_castps256_ps128(acc);
+    __m128 s4  = _mm_add_ps(lo, hi);
+    __m128 s2  = _mm_add_ps(s4, _mm_movehl_ps(s4, s4));
+    __m128 s1  = _mm_add_ss(s2, _mm_shuffle_ps(s2, s2, 1));
+    float sum  = _mm_cvtss_f32(s1);
+    for (; i < n_floats; ++i) { float d = a[i] - b[i]; sum += d * d; }
+    return sum;
+#else
+    float sum = 0.0f;
+    for (int i = 0; i < n_floats; ++i) { float d = a[i] - b[i]; sum += d * d; }
+    return sum;
+#endif
+}
+
+}  // namespace flexaids

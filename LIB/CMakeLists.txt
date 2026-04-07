@@ -105,7 +105,7 @@ add_library(flexaid_core OBJECT
     ParallelCampaign.cpp
     # ── Hardware acceleration modules ──
     hardware_detect.cpp
-    UnifiedHardwareDispatch.cpp
+    hardware_dispatch.cpp
     ShannonThermoStack/ShannonThermoStack.cpp
     LigandRingFlex/RingConformerLibrary.cpp
     LigandRingFlex/SugarPucker.cpp
@@ -121,16 +121,12 @@ add_library(flexaid_core OBJECT
     SdfReader.cpp
     # ── CavityDetect ──
     CavityDetect/CavityDetect.cpp
-    # ── CPU fallbacks for GPU evaluations ──
-    cpu_eval.cpp
-    cpu_fast_optics.cpp
-    tENCoM/tencm_cpu_fallback.cpp
     # ── PTMAttachment ──
     PTMAttachment/PTMAttachment.cpp
     # ── JSON config parser ──
     config_parser.cpp
-    # ── Unified runtime hardware dispatch (merged from HardwareDispatch + hardware_dispatch) ──
-    # Note: UnifiedHardwareDispatch.cpp listed above replaces both old dispatchers
+    # ── Unified runtime hardware dispatch ──
+    HardwareDispatch.cpp
     # ── Parallel grid-decomposed docking ──
     GridDecomposer.cpp
     SharedPosePool.cpp
@@ -178,6 +174,7 @@ endif()
 
 # ─── Required dependencies ───────────────────────────────────────────────
 target_link_libraries(flexaid_core PUBLIC Eigen3::Eigen)
+target_compile_definitions(flexaid_core PUBLIC FLEXAIDS_HAS_EIGEN)
 
 # ─── OpenMP (optional) ──────────────────────────────────────────────────
 if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)

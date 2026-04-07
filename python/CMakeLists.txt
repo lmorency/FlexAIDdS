@@ -11,7 +11,7 @@ pybind11_add_module(_core
     bindings/core_bindings.cpp
     ${CMAKE_SOURCE_DIR}/LIB/statmech.cpp
     ${CMAKE_SOURCE_DIR}/LIB/TurboQuant.cpp
-    ${CMAKE_SOURCE_DIR}/LIB/UnifiedHardwareDispatch.cpp
+    ${CMAKE_SOURCE_DIR}/LIB/hardware_dispatch.cpp
     ${CMAKE_SOURCE_DIR}/LIB/hardware_detect.cpp
     ${CMAKE_SOURCE_DIR}/LIB/encom.cpp
     ${CMAKE_SOURCE_DIR}/LIB/ShannonThermoStack/ShannonThermoStack.cpp
@@ -40,6 +40,7 @@ endif()
 
 # Link Eigen3 (required)
 target_link_libraries(_core PRIVATE Eigen3::Eigen)
+target_compile_definitions(_core PRIVATE FLEXAIDS_HAS_EIGEN)
 
 # OpenMP
 if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)

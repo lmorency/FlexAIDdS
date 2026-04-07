@@ -61,6 +61,7 @@ python/**/*.egg-info
 python/**/*.egg-info/**
 python/**/*.so
 python/data/training_runs
+data/training_runs
 # dependencies files
 !*.def
 !*.dat

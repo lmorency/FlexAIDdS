@@ -46,25 +46,4 @@ constexpr double GA_GENE_MATCH_TOLERANCE = 0.1; // genes within this delta are c
 // ── NATURaL co-translational defaults ───────────────────────────────
 constexpr double GA_NATURAL_DEFAULT_TEMP = 310.0; // default NATURaL temperature (body temp, K)
 
-// ── Dead-end elimination (DEE) ─────────────────────────────────────
-constexpr int GA_DEELIG_SENTINEL = -1000;     // "no dihedral assigned" sentinel in deelig_list[]
-constexpr int GA_MAX_DEELIG_DIHEDRALS = 100;  // max flexible dihedrals for DEE conformer lists
-
-// ── Voronoi contact list ───────────────────────────────────────────
-constexpr int GA_CONTLIST_SIZE = 10000;        // per-thread Vcontacts contact list workspace size
-
-// ── Wall energy clash detection ────────────────────────────────────
-constexpr double GA_WALL_CLASH_THRESHOLD = 1e4; // wall energy above this marks a clash
-
-// ── TurboQuant contact matrix (TQCM) ──────────────────────────────
-constexpr double GA_TQCM_SAMPLE_AREA = 0.5;   // energy matrix spline sample point
-constexpr int GA_TQCM_BIT_WIDTH = 2;          // bits/entry for QuantizedContactMatrix (16x compression)
-constexpr int GA_TQCM_MAX_SPOT_CHECKS = 1000; // max type-pair validations after TQCM build
-
-// ── Torsional ENM ──────────────────────────────────────────────────
-constexpr int GA_TENCM_MIN_RESIDUES = 6;       // min residues for torsional ENM analysis
-
-// ── FlexDEE rotamer comparison ─────────────────────────────────────
-constexpr int GA_MAX_FLEXDEE_PARAMS = 100;     // max rotamer parameters in cmp_chrom2rotlist
-
 #endif // GA_CONSTANTS_H
