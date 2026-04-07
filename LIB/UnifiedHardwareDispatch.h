@@ -67,7 +67,7 @@ enum class DispatchError : uint8_t {
     LAUNCH_FAILED,
     SYNC_FAILED,
     INVALID_ARGS,
-    OVERFLOW,
+    BUFFER_OVERFLOW,   // renamed from OVERFLOW — Windows <math.h> defines OVERFLOW as macro
     DEVICE_LOST,
 };
 
