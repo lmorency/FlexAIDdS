@@ -67,7 +67,7 @@ enum class DispatchError : uint8_t {
     LAUNCH_FAILED,
     SYNC_FAILED,
     INVALID_ARGS,
-    OVERFLOW,
+    SIZE_OVERFLOW,
     DEVICE_LOST,
 };
 
@@ -256,6 +256,10 @@ enum class HardwareBackend : uint8_t {
 };
 
 const char* backend_name(HardwareBackend b) noexcept;
+// Overload for hw::Backend (DispatchReport.selected is hw::Backend)
+inline const char* backend_name(hw::Backend b) noexcept {
+    return hw::UnifiedHardwareDispatch::backend_name(b);
+}
 HardwareBackend select_backend();
 HardwareBackend select_cpu_backend();
 
