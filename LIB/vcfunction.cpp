@@ -2,6 +2,7 @@
 #include "GISTEvaluator.h"
 #include "HBondEvaluator.h"
 #include "hbond_potential.h"
+#include "metal_coordination.h"
 #include "GISTGrid.h"
 #include <cmath>
 
@@ -29,6 +30,7 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 		FA->optres[j].cf.gist=0.0;
 		FA->optres[j].cf.hbond=0.0;
 		FA->optres[j].cf.gist_desolv=0.0;
+		FA->optres[j].cf.metal_coord=0.0;
 		FA->optres[j].cf.sas=0.0;
 		FA->optres[j].cf.totsas=0.0;
 	}
@@ -401,6 +403,15 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 							FA->hbond_sigma_dist, FA->hbond_sigma_angle,
 							FA->hbond_weight, FA->hbond_salt_bridge_weight);
 						cfs->hbond += E_hb;
+					}
+
+					// Metal ion coordination potential (Morse)
+					if (FA->use_metal_coord) {
+						double dist = VC->ca_rec[currindex].dist;
+						double E_mc = metal_coord::compute_metal_coord_energy(
+							atoms, atomzero, atomcont, dist,
+							FA->metal_coord_weight, FA->metal_coord_morse_a);
+						cfs->metal_coord += E_mc;
 					}
 
 #if DEBUG_LEVEL > 0

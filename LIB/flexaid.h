@@ -128,6 +128,7 @@ struct cf_str{  // Complementarity Function value structure
 	double gist;   // GIST water displacement score
 	double hbond;  // angular-dependent hydrogen bond energy
 	double gist_desolv; // GIST grid-based desolvation energy
+	double metal_coord; // metal ion coordination energy (Morse potential)
 	double totsas; // overall sas of molecule
 	int   rclash; // flag that shows whether the residue is making steric clashes
 };
@@ -392,6 +393,10 @@ struct FA_Global_struct{
 	double hbond_sigma_dist;             // Gaussian width distance (Å), default 0.4
 	double hbond_sigma_angle;            // Gaussian width angle (°), default 30
 	double hbond_salt_bridge_weight;     // salt bridge weight (kcal/mol), default -5.0
+
+	int    use_metal_coord;              // enable metal ion coordination scoring
+	double metal_coord_weight;           // global weight multiplier (default 1.0)
+	double metal_coord_morse_a;          // Morse steepness parameter (default 2.0 A^-1)
 
 	constraint* constraints;             // list of constraints
 	int num_constraints;                 // constraints counter

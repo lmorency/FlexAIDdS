@@ -68,6 +68,11 @@ void apply_config(const json::Value& config, FA_Global* FA, GB_Global* GB) {
         FA->hbond_weight           = jdbl(config, "scoring", "hbond_weight", -2.5);
         FA->hbond_salt_bridge_weight = jdbl(config, "scoring", "hbond_salt_bridge_weight", -5.0);
 
+        // Metal ion coordination potential
+        FA->use_metal_coord    = jbool(config, "scoring", "metal_coord_enabled", false) ? 1 : 0;
+        FA->metal_coord_weight = jdbl(config, "scoring", "metal_coord_weight", 1.0);
+        FA->metal_coord_morse_a = jdbl(config, "scoring", "metal_coord_morse_alpha", 2.0);
+
         // GIST desolvation grid
         FA->use_gist    = jbool(config, "scoring", "gist_enabled", false) ? 1 : 0;
         FA->gist_weight = jdbl(config, "scoring", "gist_weight", 1.0);

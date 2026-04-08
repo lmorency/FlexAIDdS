@@ -839,6 +839,18 @@ if(BUILD_TESTING)
     flexaids_configure_msvc_test(test_json_config)
     add_test(NAME JsonConfigTests COMMAND test_json_config)
 
+    # test_metal_coordination — Metal ion coordination potential tests (header-only)
+    add_executable(test_metal_coordination tests/test_metal_coordination.cpp)
+    target_include_directories(test_metal_coordination PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_metal_coordination PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_metal_coordination PRIVATE /O2)
+    else()
+        target_compile_options(test_metal_coordination PRIVATE -O2)
+    endif()
+    flexaids_configure_msvc_test(test_metal_coordination)
+    add_test(NAME MetalCoordinationTests COMMAND test_metal_coordination)
+
     # test_hardware_dispatch — ShannonThermoStack dispatch layer tests
     add_executable(test_hardware_dispatch
         tests/test_hardware_dispatch.cpp
