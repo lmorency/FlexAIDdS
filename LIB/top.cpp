@@ -322,6 +322,10 @@ int main(int argc, char **argv){
 	FA->hbond_sigma_angle=30.0;
 	FA->hbond_salt_bridge_weight=-5.0;
 
+	FA->use_metal_coord=0;
+	FA->metal_coord_weight=1.0;
+	FA->metal_coord_morse_a=2.0;
+
 	FA->useflexdee=0;
 	FA->num_constraints=0;
 
