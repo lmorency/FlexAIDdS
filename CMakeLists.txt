@@ -421,6 +421,15 @@ LIB/tENCoM/tencm_cuda.cu                  # TENCoM contact discovery + Hessian a
     target_compile_definitions(FlexAID PRIVATE FLEXAIDS_USE_CUDA)
     if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
         set(CMAKE_CUDA_ARCHITECTURES "70;75;80;86;89;90")
+        if(CMAKE_CUDA_COMPILER_VERSION VERSION_GREATER_EQUAL "12.8")
+            list(APPEND CMAKE_CUDA_ARCHITECTURES 100 120)
+            message(STATUS "CUDA >= 12.8 — Blackwell sm_100 + sm_120 targets enabled")
+        elseif(CMAKE_CUDA_COMPILER_VERSION VERSION_GREATER_EQUAL "12.6")
+            list(APPEND CMAKE_CUDA_ARCHITECTURES 100)
+            message(STATUS "CUDA >= 12.6 — Blackwell sm_100 target enabled (sm_120 requires CUDA >= 12.8)")
+        else()
+            message(WARNING "CUDA < 12.6 — Blackwell targets (sm_100, sm_120) disabled")
+        endif()
     endif()
     set_target_properties(FlexAID PROPERTIES
         CUDA_SEPARABLE_COMPILATION ON

@@ -172,7 +172,7 @@ Hardware: CUDA > Metal > AVX-512 > AVX2 > OpenMP > scalar
 
 #### Hardware Acceleration
 - **Unified hardware dispatch** -- automatic backend selection at runtime
-- **CUDA** -- batch CF evaluation and Shannon entropy histograms (Volta through Hopper, sm_70-sm_90)
+- **CUDA** -- batch CF evaluation and Shannon entropy histograms (Volta through Blackwell, sm_70–sm_120; Blackwell requires CUDA ≥ 12.6)
 - **Metal** -- Apple Silicon GPU for Shannon entropy, cavity detection, and evaluation
 - **SIMD** -- AVX-512 and AVX2 vectorised geometric primitives
 - **OpenMP + Eigen3** -- thread parallelism and vectorised linear algebra
