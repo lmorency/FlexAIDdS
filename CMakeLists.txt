@@ -327,7 +327,7 @@ target_sources(FlexAID PRIVATE
         LIB/ParallelCampaign.cpp
         # ── v1.5 thermodynamic + hardware acceleration modules ──
         LIB/hardware_detect.cpp
-        LIB/hardware_dispatch.cpp
+        LIB/UnifiedHardwareDispatch.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         # ── Shannon Thermodynamic GA (entropy-collapse driver) ──
         LIB/shannon_ga.cpp
@@ -1044,7 +1044,7 @@ if(BUILD_TESTING)
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
         LIB/NATURaL/NucleationDetector.cpp
-        LIB/hardware_dispatch.cpp
+        LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
     )
     target_include_directories(test_shannon_ga PRIVATE
