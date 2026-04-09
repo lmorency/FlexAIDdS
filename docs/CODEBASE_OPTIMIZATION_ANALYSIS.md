@@ -368,10 +368,10 @@ All SIMD selection is compile-time (`#ifdef __AVX512F__`). No `cpuid` check for 
 ### 8.7 CUDA Architecture Targets
 
 ```cmake
-set(CMAKE_CUDA_ARCHITECTURES "70;75;80;86;89;90")
+set(CMAKE_CUDA_ARCHITECTURES "70;75;80;86;89;90;100;120")
 ```
 
-Covers Volta through Hopper. Good coverage, but binary size grows with each target. Consider providing a `FLEXAIDS_CUDA_ARCH` option for users to specify their specific GPU.
+Covers Volta through Blackwell. Blackwell targets (sm_100, sm_120) are version-gated (CUDA ≥ 12.6 / ≥ 12.8 respectively). Good coverage, but binary size grows with each target. Consider providing a `FLEXAIDS_CUDA_ARCH` option for users to specify their specific GPU.
 
 ---
 
