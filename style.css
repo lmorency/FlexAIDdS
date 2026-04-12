@@ -1373,12 +1373,10 @@ code {
   text-align: center;
 }
 
-.pplx-link {
+.footer-copy {
   font-size: var(--text-xs);
   color: var(--color-text-faint);
-  text-decoration: none;
 }
-.pplx-link:hover { color: var(--color-text-muted); }
 
 /* --- Scroll Animations --- */
 .fade-in {
@@ -2087,6 +2085,75 @@ code {
     grid-template-columns: 1fr;
   }
 }
+
+/* Publication full list */
+.pub-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 2.5rem 0 1rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.pub-list-header h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 0.8rem;
+}
+
+.btn-sm {
+  padding: 0.3rem 0.8rem;
+  font-size: 0.8rem;
+}
+
+.pub-list {
+  list-style: decimal;
+  padding-left: 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.pub-list-item {
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: var(--color-text-muted);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.4rem;
+}
+
+.pub-list-authors {
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.pub-list-title {
+  color: var(--color-text);
+}
+
+.pub-list-journal {
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+.pub-list-doi {
+  font-size: 0.75rem;
+  color: var(--color-accent);
+  text-decoration: none;
+  border: 1px solid currentColor;
+  padding: 0.05rem 0.4rem;
+  border-radius: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+.pub-list-doi:hover { opacity: 1; }
 
 /* ==========================================================================
    Contributing Section
