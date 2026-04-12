@@ -5,10 +5,8 @@
 
 #include "../flexaid.h"
 
-#ifdef FLEXAIDS_HAS_EIGEN
-#  include <Eigen/Dense>
-#  include <Eigen/Geometry>
-#endif
+#include <Eigen/Dense>
+#include <Eigen/Geometry>
 
 #include <algorithm>
 #include <cmath>
@@ -20,7 +18,7 @@
 namespace chiral {
 
 static std::mt19937& rng() {
-    static std::mt19937 gen(std::random_device{}());
+    thread_local std::mt19937 gen(std::random_device{}());
     return gen;
 }
 
@@ -134,7 +132,6 @@ void ChiralCenterGene::invert_center(atom* atoms, int cidx) const {
         int s2 = c.substituent_indices[2];
         if (s0 < 0 || s1 < 0 || s2 < 0) return;
 
-#ifdef FLEXAIDS_HAS_EIGEN
         // Proper tetrahedral inversion via Eigen:
         // Reflect substituent s0 through the plane spanned by (s1,s2) relative
         // to the chiral center. This is an exact R↔S inversion.
@@ -162,14 +159,6 @@ void ChiralCenterGene::invert_center(atom* atoms, int cidx) const {
         atoms[s0].coor[0] = origin[0] + v0_reflected[0];
         atoms[s0].coor[1] = origin[1] + v0_reflected[1];
         atoms[s0].coor[2] = origin[2] + v0_reflected[2];
-#else
-        // Scalar fallback: swap x/y of s0 and s1 relative to center
-        float cx = atoms[cidx].coor[0], cy = atoms[cidx].coor[1];
-        float dx0 = atoms[s0].coor[0] - cx, dx1 = atoms[s1].coor[0] - cx;
-        float dy0 = atoms[s0].coor[1] - cy, dy1 = atoms[s1].coor[1] - cy;
-        atoms[s0].coor[0] = cx + dx1;  atoms[s1].coor[0] = cx + dx0;
-        atoms[s0].coor[1] = cy + dy1;  atoms[s1].coor[1] = cy + dy0;
-#endif
         return;
     }
 }

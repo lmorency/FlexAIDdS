@@ -1,7 +1,7 @@
 # Build: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build
 
 cmake_minimum_required(VERSION 3.18)
-project(FlexAID LANGUAGES CXX)
+project(FlexAID VERSION 2.0.0 LANGUAGES CXX)
 
 include(CheckCXXCompilerFlag)
 
@@ -31,14 +31,17 @@ endif()
 
 # ─── options ────────────────────────────────────────────────────────────────
 option(FLEXAIDS_USE_CUDA    "Enable CUDA GPU evaluation"          OFF)
+option(FLEXAIDS_USE_ROCM    "Enable ROCm/HIP GPU evaluation"      OFF)
 option(FLEXAIDS_USE_METAL   "Enable Metal GPU acceleration"       OFF)
 option(FLEXAIDS_USE_AVX2    "Enable AVX2 SIMD acceleration"       ON)
 option(FLEXAIDS_USE_AVX512  "Enable AVX-512 SIMD acceleration"    OFF)
 option(FLEXAIDS_USE_OPENMP  "Enable OpenMP thread parallelism"    ON)
-option(FLEXAIDS_USE_EIGEN   "Enable Eigen3 vectorised linear algebra" ON)
+# Eigen3 is a hard requirement — no option to disable
+set(FLEXAIDS_USE_EIGEN ON)
 option(FLEXAIDS_USE_256_MATRIX "Enable 256×256 soft contact matrix" ON)
 option(FLEXAIDS_USE_MPI     "Enable MPI distributed parallel docking" OFF)
 option(BUILD_PYTHON_BINDINGS "Build Python bindings via pybind11" OFF)
+option(FLEXAIDS_BUILD_CORE  "Build core executables (FlexAID/FlexAIDdS/tENCoM)" ON)
 
 # ─── platform / SIMD helpers ───────────────────────────────────────────────
 string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" FLEXAIDS_SYSTEM_PROCESSOR_LOWER)
@@ -117,49 +120,50 @@ if(FLEXAIDS_USE_OPENMP)
     find_package(OpenMP)
 endif()
 
-# ─── Eigen3 (header-only; optional but strongly recommended) ──────────────────────
-if(FLEXAIDS_USE_EIGEN)
-    find_package(Eigen3 3.4 QUIET NO_MODULE)
-    if(Eigen3_FOUND)
-        message(STATUS "Eigen3 ${Eigen3_VERSION} found — enabling vectorised entropy/geometry")
+# ─── Eigen3 (header-only; REQUIRED) ─────────────────────────────────────────────
+find_package(Eigen3 3.4 QUIET NO_MODULE)
+if(Eigen3_FOUND)
+    message(STATUS "Eigen3 ${Eigen3_VERSION} found — enabling vectorised entropy/geometry")
+else()
+    # Try pkg-config fallback
+    find_package(PkgConfig QUIET)
+    if(PKG_CONFIG_FOUND)
+        pkg_check_modules(EIGEN3 QUIET eigen3)
+    endif()
+    if(EIGEN3_FOUND)
+        message(STATUS "Eigen3 found via pkg-config")
+        add_library(Eigen3::Eigen INTERFACE IMPORTED)
+        set_target_properties(Eigen3::Eigen PROPERTIES
+            INTERFACE_INCLUDE_DIRECTORIES "${EIGEN3_INCLUDE_DIRS}")
+        set(Eigen3_FOUND TRUE)
     else()
-        # Try pkg-config fallback
-        find_package(PkgConfig QUIET)
-        if(PKG_CONFIG_FOUND)
-            pkg_check_modules(EIGEN3 QUIET eigen3)
-        endif()
-        if(EIGEN3_FOUND)
-            message(STATUS "Eigen3 found via pkg-config")
-        else()
-            # FetchContent fallback — download header-only Eigen tarball
-            # Use FetchContent_Populate (not MakeAvailable) to avoid pulling
-            # in Eigen's own 15 000 tests/benchmarks via add_subdirectory.
-            message(STATUS "Eigen3 not found locally — fetching via FetchContent")
-            include(FetchContent)
-            FetchContent_Declare(eigen3
-                URL      https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz
-                URL_HASH SHA256=8586084f71f9bde545ee7fa6d00288b264a2b7ac3607b974e54d13e7162c1c72
-                DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
-            FetchContent_Populate(eigen3)
-            add_library(Eigen3::Eigen INTERFACE IMPORTED)
-            set_target_properties(Eigen3::Eigen PROPERTIES
-                INTERFACE_INCLUDE_DIRECTORIES "${eigen3_SOURCE_DIR}")
-            set(Eigen3_FOUND TRUE)
-            message(STATUS "Eigen3 3.4.0 fetched via FetchContent (headers only)")
-        endif()
+        # FetchContent fallback — download header-only Eigen tarball
+        # Use FetchContent_Populate (not MakeAvailable) to avoid pulling
+        # in Eigen's own 15 000 tests/benchmarks via add_subdirectory.
+        message(STATUS "Eigen3 not found locally — fetching via FetchContent")
+        include(FetchContent)
+        FetchContent_Declare(eigen3
+            URL      https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.tar.gz
+            URL_HASH SHA256=8586084f71f9bde545ee7fa6d00288b264a2b7ac3607b974e54d13e7162c1c72
+            DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+        FetchContent_Populate(eigen3)
+        add_library(Eigen3::Eigen INTERFACE IMPORTED)
+        set_target_properties(Eigen3::Eigen PROPERTIES
+            INTERFACE_INCLUDE_DIRECTORIES "${eigen3_SOURCE_DIR}")
+        set(Eigen3_FOUND TRUE)
+        message(STATUS "Eigen3 3.4.0 fetched via FetchContent (headers only)")
     endif()
 endif()
-
-# ─── nlohmann/json (header-only JSON parser, MIT license) ──────────────────
-include(FetchContent)
-FetchContent_Declare(
-    nlohmann_json
-    GIT_REPOSITORY https://github.com/nlohmann/json.git
-    GIT_TAG        v3.12.0
-    GIT_SHALLOW    TRUE
-)
-FetchContent_MakeAvailable(nlohmann_json)
-message(STATUS "nlohmann/json fetched — JSON config support enabled")
+if(NOT Eigen3_FOUND)
+    message(FATAL_ERROR
+        "Eigen3 is required but was not found. "
+        "Install: apt install libeigen3-dev / brew install eigen")
+endif()
+if(NOT Eigen3_FOUND)
+    message(FATAL_ERROR
+        "Eigen3 is required but was not found. "
+        "Install: apt install libeigen3-dev / brew install eigen")
+endif()
 
 # ─── pybind11 (for Python bindings) ────────────────────────────────────────
 if(BUILD_PYTHON_BINDINGS)
@@ -178,6 +182,28 @@ if(FLEXAIDS_USE_CUDA)
     find_package(CUDAToolkit REQUIRED)
 endif()
 
+# ─── ROCm / HIP (optional) ───────────────────────────────────────────────
+if(FLEXAIDS_USE_ROCM)
+    if(CMAKE_VERSION VERSION_LESS "3.21")
+        message(FATAL_ERROR "ROCm/HIP support requires CMake >= 3.21")
+    endif()
+
+    if(NOT DEFINED ENV{ROCM_PATH})
+        set(_rocm_hints /opt/rocm /usr/local/rocm)
+    else()
+        set(_rocm_hints $ENV{ROCM_PATH})
+    endif()
+    list(APPEND CMAKE_PREFIX_PATH ${_rocm_hints})
+
+    enable_language(HIP)
+    find_package(hip REQUIRED
+        HINTS ${_rocm_hints}
+        PATH_SUFFIXES lib/cmake/hip hip/lib/cmake/hip)
+
+    set(FLEXAIDS_HIP_ARCHITECTURES "gfx908;gfx90a;gfx942"
+        CACHE STRING "Semicolon-separated AMD GPU architectures for HIP")
+endif()
+
 # ─── Metal (optional, macOS only) ────────────────────────────────────────
 if(FLEXAIDS_USE_METAL)
     if(NOT APPLE)
@@ -193,7 +219,11 @@ else()
     endif()
 endif()
 
+# ─── Core library (LIB/) ────────────────────────────────────────────────
+add_subdirectory(LIB)
+
 # ─── executable ─────────────────────────────────────────────────────────
+if(FLEXAIDS_BUILD_CORE)
 add_executable(FlexAID "")
 target_sources(FlexAID PRIVATE
         LIB/top.cpp
@@ -299,12 +329,15 @@ target_sources(FlexAID PRIVATE
         LIB/hardware_detect.cpp
         LIB/hardware_dispatch.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
+        # ── Shannon Thermodynamic GA (entropy-collapse driver) ──
+        LIB/shannon_ga.cpp
         LIB/LigandRingFlex/RingConformerLibrary.cpp
         LIB/LigandRingFlex/SugarPucker.cpp
         LIB/LigandRingFlex/LigandRingFlex.cpp
         LIB/NATURaL/NATURaLDualAssembly.cpp
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
+        LIB/NATURaL/NucleationDetector.cpp
         LIB/ChiralCenter/ChiralCenterGene.cpp
         # ── CleftDetector + Mol2Reader + SdfReader ──
         LIB/CleftDetector.cpp
@@ -365,9 +398,6 @@ elseif(FLEXAIDS_USE_EIGEN AND EIGEN3_FOUND)
     target_compile_definitions(FlexAID PRIVATE FLEXAIDS_HAS_EIGEN)
 endif()
 
-# ─── nlohmann/json link ────────────────────────────────────────────────
-target_link_libraries(FlexAID PRIVATE nlohmann_json::nlohmann_json)
-
 # ─── OpenMP link ────────────────────────────────────────────────────────
 if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
     target_link_libraries(FlexAID PRIVATE OpenMP::OpenMP_CXX)
@@ -376,13 +406,7 @@ endif()
 # ─── MPI (optional, for distributed parallel docking) ──────────────────
 if(FLEXAIDS_USE_MPI)
     find_package(MPI REQUIRED)
-    target_sources(FlexAID PRIVATE LIB/MPITransport.cpp)
-    target_link_libraries(FlexAID PRIVATE MPI::MPI_CXX)
-    target_compile_definitions(FlexAID PRIVATE FLEXAIDS_USE_MPI)
     message(STATUS "MPI enabled — distributed parallel docking active")
-else()
-    # No-MPI stubs (single-rank fallback)
-    target_sources(FlexAID PRIVATE LIB/MPITransport.cpp)
 endif()
 
 # ─── CUDA sources ───────────────────────────────────────────────────────
@@ -397,12 +421,31 @@ LIB/tENCoM/tencm_cuda.cu                  # TENCoM contact discovery + Hessian a
     target_compile_definitions(FlexAID PRIVATE FLEXAIDS_USE_CUDA)
     if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
         set(CMAKE_CUDA_ARCHITECTURES "70;75;80;86;89;90")
+        if(CMAKE_CUDA_COMPILER_VERSION VERSION_GREATER_EQUAL "12.8")
+            list(APPEND CMAKE_CUDA_ARCHITECTURES 100 120)
+            message(STATUS "CUDA >= 12.8 — Blackwell sm_100 + sm_120 targets enabled")
+        elseif(CMAKE_CUDA_COMPILER_VERSION VERSION_GREATER_EQUAL "12.6")
+            list(APPEND CMAKE_CUDA_ARCHITECTURES 100)
+            message(STATUS "CUDA >= 12.6 — Blackwell sm_100 target enabled (sm_120 requires CUDA >= 12.8)")
+        else()
+            message(WARNING "CUDA < 12.6 — Blackwell targets (sm_100, sm_120) disabled")
+        endif()
     endif()
     set_target_properties(FlexAID PROPERTIES
         CUDA_SEPARABLE_COMPILATION ON
         CUDA_STANDARD 17)
     target_link_libraries(FlexAID PRIVATE CUDA::cudart CUDA::cudadevrt)
     message(STATUS "CUDA enabled — CF batch + Shannon histogram + TENCoM Hessian kernels")
+endif()
+
+if(FLEXAIDS_USE_ROCM)
+    target_sources(FlexAID PRIVATE LIB/hip_eval.hip)
+    set_source_files_properties(LIB/hip_eval.hip PROPERTIES LANGUAGE HIP)
+    set_property(TARGET FlexAID PROPERTY HIP_ARCHITECTURES ${FLEXAIDS_HIP_ARCHITECTURES})
+    target_compile_definitions(FlexAID PRIVATE FLEXAIDS_USE_ROCM)
+    target_include_directories(FlexAID PRIVATE ${hip_INCLUDE_DIRS})
+    target_link_libraries(FlexAID PRIVATE hip::host hip::device)
+    message(STATUS "ROCm/HIP enabled — CF batch + runtime detection")
 endif()
 
 # ─── Metal sources ──────────────────────────────────────────────────────
@@ -494,45 +537,7 @@ if(FLEXAIDS_USE_METAL)
 endif()
 
 # ─── Python bindings (pybind11 module) ─────────────────────────────────────────
-if(BUILD_PYTHON_BINDINGS AND pybind11_FOUND)
-    pybind11_add_module(_core
-        python/bindings/core_bindings.cpp
-        LIB/statmech.cpp
-        LIB/TurboQuant.cpp
-        LIB/hardware_dispatch.cpp
-        LIB/hardware_detect.cpp
-        LIB/encom.cpp
-        LIB/ShannonThermoStack/ShannonThermoStack.cpp
-        LIB/tENCoM/tencm.cpp
-        LIB/fast_optics.cpp
-        # BindingMode requires full GA infrastructure
-        # Partial exposure for now (thermodynamics only)
-    )
-    # Conditionally add 256×256 matrix bindings
-    if(FLEXAIDS_USE_256_MATRIX)
-        target_sources(_core PRIVATE python/bindings/bindings_matrix.cpp)
-        target_compile_definitions(_core PRIVATE FLEXAIDS_USE_256_MATRIX)
-    endif()
-    target_include_directories(_core PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ShannonThermoStack
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/tENCoM
-    )
-    target_compile_definitions(_core PRIVATE VERSION_INFO=${PROJECT_VERSION})
-    if(MSVC)
-        target_compile_definitions(_core PRIVATE
-            _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES NOMINMAX)
-    endif()
-
-    # Link Eigen3 if available
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(_core PRIVATE Eigen3::Eigen)
-        target_compile_definitions(_core PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
-
-    message(STATUS "Python bindings enabled — build target: _core.so")
-    message(STATUS "Install with: pip install -e python/")
-endif()
+add_subdirectory(python)
 
 # ─── TeNCoM benchmark (optional standalone binary) ────────────────────────────────
 option(ENABLE_TENCOM_BENCHMARK "Build the TeNCoM benchmark binary" OFF)
@@ -542,7 +547,7 @@ if(ENABLE_TENCOM_BENCHMARK)
         LIB/tENCoM/tencm.cpp
         LIB/statmech.cpp
         LIB/TurboQuant.cpp
-        LIB/hardware_dispatch.cpp
+        LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
         LIB/encom.cpp
     )
@@ -558,10 +563,9 @@ if(ENABLE_TENCOM_BENCHMARK)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(benchmark_tencom PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(benchmark_tencom PRIVATE Eigen3::Eigen)
-        target_compile_definitions(benchmark_tencom PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(benchmark_tencom PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(benchmark_tencom PRIVATE FLEXAIDS_HAS_EIGEN)
     if(MSVC)
         target_compile_definitions(benchmark_tencom PRIVATE
             _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES NOMINMAX)
@@ -581,7 +585,7 @@ if(ENABLE_TENCOM_TOOL)
         LIB/tENCoM/tencm.cpp
         LIB/statmech.cpp
         LIB/TurboQuant.cpp
-        LIB/hardware_dispatch.cpp
+        LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
         LIB/encom.cpp
     )
@@ -606,9 +610,13 @@ if(ENABLE_TENCOM_TOOL)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(tENCoM PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(tENCoM PRIVATE Eigen3::Eigen)
-        target_compile_definitions(tENCoM PRIVATE FLEXAIDS_HAS_EIGEN)
+    target_link_libraries(tENCoM PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(tENCoM PRIVATE FLEXAIDS_HAS_EIGEN)
+    if(FLEXAIDS_USE_ROCM)
+        target_compile_definitions(tENCoM PRIVATE FLEXAIDS_USE_ROCM)
+        target_include_directories(tENCoM PRIVATE ${hip_INCLUDE_DIRS})
+        target_link_libraries(tENCoM PRIVATE hip::host)
     endif()
     # CUDA GPU acceleration for large proteins (N > 256 residues)
     if(FLEXAIDS_USE_CUDA)
@@ -653,22 +661,12 @@ if(ENABLE_VCFBATCH_BENCHMARK)
 endif()
 
 # ─── FlexAIDdS: ultra-fast docking executable ─────────────────────────────
+# Uses flexaid_core OBJECT library (same sources as FlexAID) with aggressive
+# LTO and native-arch flags for production deployments.
 option(BUILD_FLEXAIDDS_FAST "Build ultra-fast FlexAIDdS docking executable (LTO + native)" ON)
 if(BUILD_FLEXAIDDS_FAST)
-    add_executable(FlexAIDdS "")
-    get_target_property(_flexaid_sources FlexAID SOURCES)
-    target_sources(FlexAIDdS PRIVATE ${_flexaid_sources})
-
-    target_include_directories(FlexAIDdS PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/tENCoM
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ShannonThermoStack
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/LigandRingFlex
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ChiralCenter
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect
-        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/PTMAttachment
-    )
+    add_executable(FlexAIDdS $<TARGET_OBJECTS:flexaid_core>)
+    target_link_libraries(FlexAIDdS PRIVATE flexaid_core)
 
     if(MSVC)
         target_compile_options(FlexAIDdS PRIVATE /O2 /GL /DNDEBUG /MT)
@@ -686,18 +684,21 @@ if(BUILD_FLEXAIDDS_FAST)
     endif()
 
     flexaids_configure_simd(FlexAIDdS)
-    target_link_libraries(FlexAIDdS PRIVATE nlohmann_json::nlohmann_json)
 
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(FlexAIDdS PRIVATE Eigen3::Eigen)
-        target_compile_definitions(FlexAIDdS PRIVATE FLEXAIDS_HAS_EIGEN)
-    elseif(FLEXAIDS_USE_EIGEN AND EIGEN3_FOUND)
-        target_include_directories(FlexAIDdS PRIVATE ${EIGEN3_INCLUDE_DIRS})
-        target_compile_definitions(FlexAIDdS PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(FlexAIDdS PRIVATE Eigen3::Eigen)
+
+
+    target_compile_definitions(FlexAIDdS PRIVATE FLEXAIDS_HAS_EIGEN)
 
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(FlexAIDdS PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+
+    if(FLEXAIDS_USE_ROCM)
+        target_compile_definitions(FlexAIDdS PRIVATE FLEXAIDS_USE_ROCM)
+        target_include_directories(FlexAIDdS PRIVATE ${hip_INCLUDE_DIRS})
+        target_link_libraries(FlexAIDdS PRIVATE hip::host hip::device)
+        set_property(TARGET FlexAIDdS PROPERTY HIP_ARCHITECTURES ${FLEXAIDS_HIP_ARCHITECTURES})
     endif()
 
     message(STATUS "FlexAIDdS fast executable enabled")
@@ -713,6 +714,7 @@ if(ENABLE_NATURAL_HAMMERHEAD)
         tools/natural_hammerhead.cpp
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
+        LIB/NATURaL/NucleationDetector.cpp
     )
     target_include_directories(natural_hammerhead PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB
@@ -729,13 +731,9 @@ if(ENABLE_NATURAL_HAMMERHEAD)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(natural_hammerhead PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(natural_hammerhead PRIVATE Eigen3::Eigen)
-        target_compile_definitions(natural_hammerhead PRIVATE FLEXAIDS_HAS_EIGEN)
-    elseif(FLEXAIDS_USE_EIGEN AND EIGEN3_FOUND)
-        target_include_directories(natural_hammerhead PRIVATE ${EIGEN3_INCLUDE_DIRS})
-        target_compile_definitions(natural_hammerhead PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(natural_hammerhead PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(natural_hammerhead PRIVATE FLEXAIDS_HAS_EIGEN)
     message(STATUS "NATURaL HHRz simulation enabled — build target: natural_hammerhead")
 endif()
 
@@ -744,7 +742,7 @@ option(ENABLE_DISPATCH_BENCHMARK "Build the hardware dispatch benchmark binary" 
 if(ENABLE_DISPATCH_BENCHMARK)
     add_executable(benchmark_dispatch
         LIB/benchmark_dispatch.cpp
-        LIB/HardwareDispatch.cpp
+        LIB/UnifiedHardwareDispatch.cpp
     )
     target_include_directories(benchmark_dispatch PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
     if(MSVC)
@@ -756,15 +754,13 @@ if(ENABLE_DISPATCH_BENCHMARK)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(benchmark_dispatch PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(benchmark_dispatch PRIVATE Eigen3::Eigen)
-        target_compile_definitions(benchmark_dispatch PRIVATE FLEXAIDS_HAS_EIGEN)
-    elseif(FLEXAIDS_USE_EIGEN AND EIGEN3_FOUND)
-        target_include_directories(benchmark_dispatch PRIVATE ${EIGEN3_INCLUDE_DIRS})
-        target_compile_definitions(benchmark_dispatch PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(benchmark_dispatch PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(benchmark_dispatch PRIVATE FLEXAIDS_HAS_EIGEN)
     message(STATUS "Dispatch benchmark enabled — build target: benchmark_dispatch")
 endif()
+
+endif() # FLEXAIDS_BUILD_CORE
 
 # ─── Benchmark Dataset Runner ──────────────────────────────────────────────
 option(ENABLE_BENCHMARK_DATASETS "Build benchmark dataset runner" ON)
@@ -822,7 +818,7 @@ if(BUILD_TESTING)
     # test_statmech — StatMechEngine unit tests
     add_executable(test_statmech tests/test_statmech.cpp LIB/statmech.cpp
         LIB/TurboQuant.cpp
-                   LIB/hardware_dispatch.cpp LIB/hardware_detect.cpp)
+                   LIB/UnifiedHardwareDispatch.cpp LIB/hardware_detect.cpp)
     target_include_directories(test_statmech PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
     target_link_libraries(test_statmech PRIVATE GTest::gtest GTest::gtest_main)
     if(MSVC)
@@ -834,13 +830,9 @@ if(BUILD_TESTING)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(test_statmech PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(test_statmech PRIVATE Eigen3::Eigen)
-        target_compile_definitions(test_statmech PRIVATE FLEXAIDS_HAS_EIGEN)
-    elseif(FLEXAIDS_USE_EIGEN AND EIGEN3_FOUND)
-        target_include_directories(test_statmech PRIVATE ${EIGEN3_INCLUDE_DIRS})
-        target_compile_definitions(test_statmech PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(test_statmech PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(test_statmech PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_statmech)
     add_test(NAME StatMechTests COMMAND test_statmech)
 
@@ -856,13 +848,25 @@ if(BUILD_TESTING)
     flexaids_configure_msvc_test(test_json_config)
     add_test(NAME JsonConfigTests COMMAND test_json_config)
 
+    # test_metal_coordination — Metal ion coordination potential tests (header-only)
+    add_executable(test_metal_coordination tests/test_metal_coordination.cpp)
+    target_include_directories(test_metal_coordination PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_metal_coordination PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_metal_coordination PRIVATE /O2)
+    else()
+        target_compile_options(test_metal_coordination PRIVATE -O2)
+    endif()
+    flexaids_configure_msvc_test(test_metal_coordination)
+    add_test(NAME MetalCoordinationTests COMMAND test_metal_coordination)
+
     # test_hardware_dispatch — ShannonThermoStack dispatch layer tests
     add_executable(test_hardware_dispatch
         tests/test_hardware_dispatch.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
         LIB/statmech.cpp
         LIB/TurboQuant.cpp
-        LIB/hardware_dispatch.cpp
+        LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
         LIB/tENCoM/tencm.cpp)
     target_include_directories(test_hardware_dispatch PRIVATE
@@ -878,13 +882,9 @@ if(BUILD_TESTING)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(test_hardware_dispatch PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(test_hardware_dispatch PRIVATE Eigen3::Eigen)
-        target_compile_definitions(test_hardware_dispatch PRIVATE FLEXAIDS_HAS_EIGEN)
-    elseif(FLEXAIDS_USE_EIGEN AND EIGEN3_FOUND)
-        target_include_directories(test_hardware_dispatch PRIVATE ${EIGEN3_INCLUDE_DIRS})
-        target_compile_definitions(test_hardware_dispatch PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(test_hardware_dispatch PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(test_hardware_dispatch PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_hardware_dispatch)
     add_test(NAME HardwareDispatchTests COMMAND test_hardware_dispatch)
 
@@ -892,7 +892,7 @@ if(BUILD_TESTING)
     add_executable(test_hardware_detect_dispatch
         tests/test_hardware_detect_dispatch.cpp
         LIB/hardware_detect.cpp
-        LIB/hardware_dispatch.cpp
+        LIB/UnifiedHardwareDispatch.cpp
         LIB/statmech.cpp
         LIB/TurboQuant.cpp)
     target_include_directories(test_hardware_detect_dispatch PRIVATE
@@ -907,19 +907,20 @@ if(BUILD_TESTING)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(test_hardware_detect_dispatch PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(test_hardware_detect_dispatch PRIVATE Eigen3::Eigen)
-        target_compile_definitions(test_hardware_detect_dispatch PRIVATE FLEXAIDS_HAS_EIGEN)
-    elseif(FLEXAIDS_USE_EIGEN AND EIGEN3_FOUND)
-        target_include_directories(test_hardware_detect_dispatch PRIVATE ${EIGEN3_INCLUDE_DIRS})
-        target_compile_definitions(test_hardware_detect_dispatch PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(test_hardware_detect_dispatch PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(test_hardware_detect_dispatch PRIVATE FLEXAIDS_HAS_EIGEN)
     if(FLEXAIDS_USE_CUDA)
         target_compile_definitions(test_hardware_detect_dispatch PRIVATE FLEXAIDS_USE_CUDA)
         target_link_libraries(test_hardware_detect_dispatch PRIVATE CUDA::cudart)
     endif()
     if(FLEXAIDS_USE_METAL)
         target_compile_definitions(test_hardware_detect_dispatch PRIVATE FLEXAIDS_USE_METAL)
+    endif()
+    if(FLEXAIDS_USE_ROCM)
+        target_compile_definitions(test_hardware_detect_dispatch PRIVATE FLEXAIDS_USE_ROCM)
+        target_include_directories(test_hardware_detect_dispatch PRIVATE ${hip_INCLUDE_DIRS})
+        target_link_libraries(test_hardware_detect_dispatch PRIVATE hip::host)
     endif()
     flexaids_configure_msvc_test(test_hardware_detect_dispatch)
     add_test(NAME HardwareDetectDispatchTests COMMAND test_hardware_detect_dispatch)
@@ -932,7 +933,7 @@ if(BUILD_TESTING)
         LIB/tENCoM/tencm.cpp
         LIB/statmech.cpp
         LIB/TurboQuant.cpp
-        LIB/hardware_dispatch.cpp
+        LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
         LIB/encom.cpp
     )
@@ -949,10 +950,9 @@ if(BUILD_TESTING)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(test_tencom_diff PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(test_tencom_diff PRIVATE Eigen3::Eigen)
-        target_compile_definitions(test_tencom_diff PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(test_tencom_diff PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(test_tencom_diff PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_tencom_diff)
     add_test(NAME TENCoMDiffTests COMMAND test_tencom_diff)
 
@@ -989,11 +989,13 @@ if(BUILD_TESTING)
         LIB/BindingMode.cpp
         LIB/fast_optics.cpp
         LIB/ShannonThermoStack/ShannonThermoStack.cpp
+        LIB/shannon_ga.cpp
         LIB/CleftDetector.cpp
         LIB/NATURaL/NATURaLDualAssembly.cpp
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
-        LIB/hardware_dispatch.cpp
+        LIB/NATURaL/NucleationDetector.cpp
+        LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
     )
     target_include_directories(test_gaboom PRIVATE
@@ -1012,12 +1014,58 @@ if(BUILD_TESTING)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(test_gaboom PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(test_gaboom PRIVATE Eigen3::Eigen)
-        target_compile_definitions(test_gaboom PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(test_gaboom PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(test_gaboom PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_gaboom)
     add_test(NAME GABoomTests COMMAND test_gaboom)
+
+    # test_shannon_ga — Shannon Thermodynamic GA entropy-collapse tests
+    add_executable(test_shannon_ga
+        tests/test_shannon_ga.cpp
+        tests/stubs.cpp
+        LIB/shannon_ga.cpp
+        LIB/gaboom.cpp
+        LIB/GAContext.cpp
+        LIB/Vcontacts.cpp
+        LIB/statmech.cpp
+        LIB/TurboQuant.cpp
+        LIB/geometry.cpp
+        LIB/tENCoM/tencm.cpp
+        LIB/encom.cpp
+        LIB/BindingMode.cpp
+        LIB/fast_optics.cpp
+        LIB/ShannonThermoStack/ShannonThermoStack.cpp
+        LIB/CleftDetector.cpp
+        LIB/NATURaL/NATURaLDualAssembly.cpp
+        LIB/NATURaL/RibosomeElongation.cpp
+        LIB/NATURaL/TransloconInsertion.cpp
+        LIB/NATURaL/NucleationDetector.cpp
+        LIB/hardware_dispatch.cpp
+        LIB/hardware_detect.cpp
+    )
+    target_include_directories(test_shannon_ga PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/tENCoM
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ShannonThermoStack
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect
+    )
+    target_link_libraries(test_shannon_ga PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_shannon_ga PRIVATE /O2)
+    else()
+        target_compile_options(test_shannon_ga PRIVATE -O2)
+    endif()
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(test_shannon_ga PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
+        target_link_libraries(test_shannon_ga PRIVATE Eigen3::Eigen)
+        target_compile_definitions(test_shannon_ga PRIVATE FLEXAIDS_HAS_EIGEN)
+    endif()
+    flexaids_configure_msvc_test(test_shannon_ga)
+    add_test(NAME ShannonGATests COMMAND test_shannon_ga)
 
     # test_vcontacts — Voronoi contact scoring math unit tests
     add_executable(test_vcontacts
@@ -1110,10 +1158,9 @@ if(BUILD_TESTING)
     else()
         target_compile_options(test_sugar_pucker PRIVATE -O2)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(test_sugar_pucker PRIVATE Eigen3::Eigen)
-        target_compile_definitions(test_sugar_pucker PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(test_sugar_pucker PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(test_sugar_pucker PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_sugar_pucker)
     add_test(NAME SugarPuckerTests COMMAND test_sugar_pucker)
 
@@ -1132,10 +1179,9 @@ if(BUILD_TESTING)
     else()
         target_compile_options(test_chiral_center PRIVATE -O2)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(test_chiral_center PRIVATE Eigen3::Eigen)
-        target_compile_definitions(test_chiral_center PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(test_chiral_center PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(test_chiral_center PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_chiral_center)
     add_test(NAME ChiralCenterTests COMMAND test_chiral_center)
 
@@ -1240,7 +1286,8 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/NATURaLDualAssembly.cpp
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
-        LIB/hardware_dispatch.cpp
+        LIB/NATURaL/NucleationDetector.cpp
+        LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
     )
     target_include_directories(test_binding_mode_statmech PRIVATE
@@ -1259,10 +1306,9 @@ flexaids_configure_simd(test_cavity_detect)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(test_binding_mode_statmech PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(test_binding_mode_statmech PRIVATE Eigen3::Eigen)
-        target_compile_definitions(test_binding_mode_statmech PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(test_binding_mode_statmech PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(test_binding_mode_statmech PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_binding_mode_statmech)
     add_test(NAME BindingModeStatMechTests COMMAND test_binding_mode_statmech)
 
@@ -1285,7 +1331,8 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/NATURaLDualAssembly.cpp
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
-        LIB/hardware_dispatch.cpp
+        LIB/NATURaL/NucleationDetector.cpp
+        LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
     )
     target_include_directories(test_ccbm PRIVATE
@@ -1304,10 +1351,9 @@ flexaids_configure_simd(test_cavity_detect)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(test_ccbm PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(test_ccbm PRIVATE Eigen3::Eigen)
-        target_compile_definitions(test_ccbm PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(test_ccbm PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(test_ccbm PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_ccbm)
     add_test(NAME CCBMTests COMMAND test_ccbm)
 
@@ -1330,7 +1376,8 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/NATURaLDualAssembly.cpp
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
-        LIB/hardware_dispatch.cpp
+        LIB/NATURaL/NucleationDetector.cpp
+        LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
     )
     target_include_directories(test_binding_mode_advanced PRIVATE
@@ -1349,10 +1396,9 @@ flexaids_configure_simd(test_cavity_detect)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(test_binding_mode_advanced PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(test_binding_mode_advanced PRIVATE Eigen3::Eigen)
-        target_compile_definitions(test_binding_mode_advanced PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(test_binding_mode_advanced PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(test_binding_mode_advanced PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_binding_mode_advanced)
     add_test(NAME BindingModeAdvancedTests COMMAND test_binding_mode_advanced)
 
@@ -1375,7 +1421,8 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/NATURaLDualAssembly.cpp
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
-        LIB/hardware_dispatch.cpp
+        LIB/NATURaL/NucleationDetector.cpp
+        LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
     )
     target_include_directories(test_ga_core PRIVATE
@@ -1394,10 +1441,9 @@ flexaids_configure_simd(test_cavity_detect)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(test_ga_core PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(test_ga_core PRIVATE Eigen3::Eigen)
-        target_compile_definitions(test_ga_core PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(test_ga_core PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(test_ga_core PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_ga_core)
     add_test(NAME GACoreTests COMMAND test_ga_core)
 
@@ -1420,7 +1466,8 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/NATURaLDualAssembly.cpp
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
-        LIB/hardware_dispatch.cpp
+        LIB/NATURaL/NucleationDetector.cpp
+        LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
     )
     target_include_directories(test_ga_validation PRIVATE
@@ -1439,10 +1486,9 @@ flexaids_configure_simd(test_cavity_detect)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(test_ga_validation PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(test_ga_validation PRIVATE Eigen3::Eigen)
-        target_compile_definitions(test_ga_validation PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(test_ga_validation PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(test_ga_validation PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_ga_validation)
     add_test(NAME GAValidationTests COMMAND test_ga_validation)
 
@@ -1455,7 +1501,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/TurboQuant.cpp
             LIB/encom.cpp
             LIB/tENCoM/tencm.cpp
-            LIB/hardware_dispatch.cpp
+            LIB/UnifiedHardwareDispatch.cpp
             LIB/hardware_detect.cpp
         )
         target_include_directories(test_soft_contact_matrix PRIVATE
@@ -1472,10 +1518,9 @@ flexaids_configure_simd(test_cavity_detect)
         if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
             target_link_libraries(test_soft_contact_matrix PRIVATE OpenMP::OpenMP_CXX)
         endif()
-        if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-            target_link_libraries(test_soft_contact_matrix PRIVATE Eigen3::Eigen)
-            target_compile_definitions(test_soft_contact_matrix PRIVATE FLEXAIDS_HAS_EIGEN)
-        endif()
+        target_link_libraries(test_soft_contact_matrix PRIVATE Eigen3::Eigen)
+
+        target_compile_definitions(test_soft_contact_matrix PRIVATE FLEXAIDS_HAS_EIGEN)
         add_test(NAME SoftContactMatrixTests COMMAND test_soft_contact_matrix)
     endif()
 
@@ -1498,10 +1543,9 @@ flexaids_configure_simd(test_cavity_detect)
         if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
             target_link_libraries(test_compare_energy_matrices PRIVATE OpenMP::OpenMP_CXX)
         endif()
-        if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-            target_link_libraries(test_compare_energy_matrices PRIVATE Eigen3::Eigen)
-            target_compile_definitions(test_compare_energy_matrices PRIVATE FLEXAIDS_HAS_EIGEN)
-        endif()
+        target_link_libraries(test_compare_energy_matrices PRIVATE Eigen3::Eigen)
+
+        target_compile_definitions(test_compare_energy_matrices PRIVATE FLEXAIDS_HAS_EIGEN)
         add_test(NAME CompareEnergyMatricesTests COMMAND test_compare_energy_matrices)
     endif()
 
@@ -1541,7 +1585,8 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/NATURaLDualAssembly.cpp
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
-        LIB/hardware_dispatch.cpp
+        LIB/NATURaL/NucleationDetector.cpp
+        LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
     )
     target_include_directories(test_entropy_ga PRIVATE
@@ -1559,10 +1604,9 @@ flexaids_configure_simd(test_cavity_detect)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(test_entropy_ga PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(test_entropy_ga PRIVATE Eigen3::Eigen)
-        target_compile_definitions(test_entropy_ga PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(test_entropy_ga PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(test_entropy_ga PRIVATE FLEXAIDS_HAS_EIGEN)
     add_test(NAME EntropyGATests COMMAND test_entropy_ga)
 
     # test_cube_grid — GridKey reproducibility, diagonal formula, neighbor probing
@@ -1586,7 +1630,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/SharedPosePool.cpp
         LIB/statmech.cpp
         LIB/TurboQuant.cpp
-        LIB/hardware_dispatch.cpp
+        LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
     )
     target_include_directories(test_parallel_dock PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
@@ -1599,19 +1643,33 @@ flexaids_configure_simd(test_cavity_detect)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(test_parallel_dock PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(test_parallel_dock PRIVATE Eigen3::Eigen)
-        target_compile_definitions(test_parallel_dock PRIVATE FLEXAIDS_HAS_EIGEN)
-    elseif(FLEXAIDS_USE_EIGEN AND EIGEN3_FOUND)
-        target_include_directories(test_parallel_dock PRIVATE ${EIGEN3_INCLUDE_DIRS})
-        target_compile_definitions(test_parallel_dock PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(test_parallel_dock PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(test_parallel_dock PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_parallel_dock)
     add_test(NAME ParallelDockTests COMMAND test_parallel_dock)
+
+    # test_knowledge_pool — TargetKnowledgeBase + SharedPosePool + MPIMergeable
+    add_executable(test_knowledge_pool
+        tests/test_knowledge_pool.cpp
+        LIB/TargetKnowledgeBase.cpp
+        LIB/SharedPosePool.cpp
+    )
+    target_include_directories(test_knowledge_pool PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_knowledge_pool PRIVATE GTest::gtest GTest::gtest_main)
+    target_compile_features(test_knowledge_pool PRIVATE cxx_std_20)
+    if(MSVC)
+        target_compile_options(test_knowledge_pool PRIVATE /O2)
+    else()
+        target_compile_options(test_knowledge_pool PRIVATE -O2)
+    endif()
+    flexaids_configure_msvc_test(test_knowledge_pool)
+    add_test(NAME KnowledgePoolTests COMMAND test_knowledge_pool)
 
     # ── Mol2Reader / SdfReader tests ──────────────────────────────────────
     add_executable(test_mol2_sdf_reader
         tests/test_mol2_sdf_reader.cpp
+        tests/stubs.cpp
         LIB/Mol2Reader.cpp
         LIB/SdfReader.cpp
     )
@@ -1634,13 +1692,9 @@ flexaids_configure_simd(test_cavity_detect)
     else()
         target_compile_options(test_turboquant PRIVATE -O2)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(test_turboquant PRIVATE Eigen3::Eigen)
-        target_compile_definitions(test_turboquant PRIVATE FLEXAIDS_HAS_EIGEN)
-    elseif(FLEXAIDS_USE_EIGEN AND EIGEN3_FOUND)
-        target_include_directories(test_turboquant PRIVATE ${EIGEN3_INCLUDE_DIRS})
-        target_compile_definitions(test_turboquant PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(test_turboquant PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(test_turboquant PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_turboquant)
     add_test(NAME TurboQuantTests COMMAND test_turboquant)
 
@@ -1684,7 +1738,8 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/NATURaL/NATURaLDualAssembly.cpp
         LIB/NATURaL/RibosomeElongation.cpp
         LIB/NATURaL/TransloconInsertion.cpp
-        LIB/hardware_dispatch.cpp
+        LIB/NATURaL/NucleationDetector.cpp
+        LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
     )
     target_include_directories(test_binding_mode_vibrational PRIVATE
@@ -1703,10 +1758,9 @@ flexaids_configure_simd(test_cavity_detect)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(test_binding_mode_vibrational PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(test_binding_mode_vibrational PRIVATE Eigen3::Eigen)
-        target_compile_definitions(test_binding_mode_vibrational PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(test_binding_mode_vibrational PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(test_binding_mode_vibrational PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_binding_mode_vibrational)
     add_test(NAME BindingModeVibrationalTests COMMAND test_binding_mode_vibrational)
 
@@ -1733,7 +1787,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/tENCoM/tencm.cpp
         LIB/statmech.cpp
         LIB/TurboQuant.cpp
-        LIB/hardware_dispatch.cpp
+        LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
         LIB/encom.cpp
     )
@@ -1747,13 +1801,9 @@ flexaids_configure_simd(test_cavity_detect)
         target_compile_options(test_tencom_entropy_diff PRIVATE -O2)
     endif()
     flexaids_configure_simd(test_tencom_entropy_diff)
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(test_tencom_entropy_diff PRIVATE Eigen3::Eigen)
-        target_compile_definitions(test_tencom_entropy_diff PRIVATE FLEXAIDS_HAS_EIGEN)
-    elseif(FLEXAIDS_USE_EIGEN AND EIGEN3_FOUND)
-        target_include_directories(test_tencom_entropy_diff PRIVATE ${EIGEN3_INCLUDE_DIRS})
-        target_compile_definitions(test_tencom_entropy_diff PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(test_tencom_entropy_diff PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(test_tencom_entropy_diff PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_tencom_entropy_diff)
     add_test(NAME TencomEntropyDiffTests COMMAND test_tencom_entropy_diff)
 
@@ -1778,7 +1828,7 @@ flexaids_configure_simd(test_cavity_detect)
         tests/test_grand_partition.cpp
         LIB/GrandPartitionFunction.cpp
         LIB/statmech.cpp
-        LIB/hardware_dispatch.cpp
+        LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
     )
     target_include_directories(test_grand_partition PRIVATE
@@ -1793,13 +1843,9 @@ flexaids_configure_simd(test_cavity_detect)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(test_grand_partition PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(test_grand_partition PRIVATE Eigen3::Eigen)
-        target_compile_definitions(test_grand_partition PRIVATE FLEXAIDS_HAS_EIGEN)
-    elseif(FLEXAIDS_USE_EIGEN AND EIGEN3_FOUND)
-        target_include_directories(test_grand_partition PRIVATE ${EIGEN3_INCLUDE_DIRS})
-        target_compile_definitions(test_grand_partition PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(test_grand_partition PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(test_grand_partition PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_grand_partition)
     add_test(NAME GrandPartitionTests COMMAND test_grand_partition)
 
@@ -1811,7 +1857,7 @@ flexaids_configure_simd(test_cavity_detect)
         LIB/GrandPartitionFunction.cpp
         LIB/TargetKnowledgeBase.cpp
         LIB/statmech.cpp
-        LIB/hardware_dispatch.cpp
+        LIB/UnifiedHardwareDispatch.cpp
         LIB/hardware_detect.cpp
     )
     target_include_directories(test_target_server PRIVATE
@@ -1826,13 +1872,9 @@ flexaids_configure_simd(test_cavity_detect)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(test_target_server PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(test_target_server PRIVATE Eigen3::Eigen)
-        target_compile_definitions(test_target_server PRIVATE FLEXAIDS_HAS_EIGEN)
-    elseif(FLEXAIDS_USE_EIGEN AND EIGEN3_FOUND)
-        target_include_directories(test_target_server PRIVATE ${EIGEN3_INCLUDE_DIRS})
-        target_compile_definitions(test_target_server PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(test_target_server PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(test_target_server PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_target_server)
     add_test(NAME TargetServerTests COMMAND test_target_server)
 
@@ -1940,10 +1982,9 @@ flexaids_configure_simd(test_cavity_detect)
     else()
         target_compile_options(test_ga_context PRIVATE -O2)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(test_ga_context PRIVATE Eigen3::Eigen)
-        target_compile_definitions(test_ga_context PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(test_ga_context PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(test_ga_context PRIVATE FLEXAIDS_HAS_EIGEN)
     flexaids_configure_msvc_test(test_ga_context)
     add_test(NAME GAContextTests COMMAND test_ga_context)
 
@@ -1994,7 +2035,7 @@ if(BUILD_SWIFT_BRIDGE)
     # test_unified_dispatch — runtime HardwareDispatcher tests
     add_executable(test_unified_dispatch
         tests/test_unified_dispatch.cpp
-        LIB/HardwareDispatch.cpp
+        LIB/UnifiedHardwareDispatch.cpp
     )
     target_include_directories(test_unified_dispatch PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
@@ -2008,13 +2049,9 @@ if(BUILD_SWIFT_BRIDGE)
     if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
         target_link_libraries(test_unified_dispatch PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    if(FLEXAIDS_USE_EIGEN AND Eigen3_FOUND)
-        target_link_libraries(test_unified_dispatch PRIVATE Eigen3::Eigen)
-        target_compile_definitions(test_unified_dispatch PRIVATE FLEXAIDS_HAS_EIGEN)
-    elseif(FLEXAIDS_USE_EIGEN AND EIGEN3_FOUND)
-        target_include_directories(test_unified_dispatch PRIVATE ${EIGEN3_INCLUDE_DIRS})
-        target_compile_definitions(test_unified_dispatch PRIVATE FLEXAIDS_HAS_EIGEN)
-    endif()
+    target_link_libraries(test_unified_dispatch PRIVATE Eigen3::Eigen)
+
+    target_compile_definitions(test_unified_dispatch PRIVATE FLEXAIDS_HAS_EIGEN)
     add_test(NAME UnifiedDispatchTests COMMAND test_unified_dispatch)
 
     # test_coarse_screen — NRGRank CoarseScreen + TwoStageScreen unit tests

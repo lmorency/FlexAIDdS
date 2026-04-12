@@ -33,6 +33,7 @@
 !README.md
 !CLAUDE.md
 !VERSION
+!VERSION.md
 # documentation
 !CONTRIBUTING.md
 !CODE_OF_CONDUCT.md
@@ -60,6 +61,7 @@ python/**/*.egg-info
 python/**/*.egg-info/**
 python/**/*.so
 python/data/training_runs
+data/training_runs
 # dependencies files
 !*.def
 !*.dat
@@ -78,3 +80,7 @@ python/data/training_runs
 # standalone tools / simulation drivers
 !tools
 !tools/**
+# benchmark suite
+!benchmarks
+!benchmarks/**
+benchmarks/**/__pycache__

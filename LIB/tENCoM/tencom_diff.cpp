@@ -7,9 +7,7 @@
 #include <iostream>
 #include <cmath>
 
-#ifdef FLEXAIDS_HAS_EIGEN
-#  include <Eigen/Dense>
-#endif
+#include <Eigen/Dense>
 
 namespace tencom_diff {
 
@@ -98,18 +96,10 @@ DifferentialResult compute_differential(
         if (dims_match && !ref_modes[i].eigenvector.empty()
                        && !tgt_modes[i].eigenvector.empty()
                        && ref_modes[i].eigenvector.size() == tgt_modes[i].eigenvector.size()) {
-#ifdef FLEXAIDS_HAS_EIGEN
             Eigen::Index dim = static_cast<Eigen::Index>(ref_modes[i].eigenvector.size());
             Eigen::Map<const Eigen::VectorXd> v_ref(ref_modes[i].eigenvector.data(), dim);
             Eigen::Map<const Eigen::VectorXd> v_tgt(tgt_modes[i].eigenvector.data(), dim);
             mc.overlap = std::abs(v_ref.dot(v_tgt));
-#else
-            double dot = 0.0;
-            for (size_t j = 0; j < ref_modes[i].eigenvector.size(); ++j) {
-                dot += ref_modes[i].eigenvector[j] * tgt_modes[i].eigenvector[j];
-            }
-            mc.overlap = std::abs(dot);
-#endif
         } else {
             mc.overlap = std::numeric_limits<double>::quiet_NaN();
         }
@@ -125,16 +115,10 @@ DifferentialResult compute_differential(
     int n_bf = std::min(static_cast<int>(result.bfactors_ref.size()),
                         static_cast<int>(result.bfactors_tgt.size()));
     result.delta_bfactors.resize(static_cast<std::size_t>(n_bf));
-#ifdef FLEXAIDS_HAS_EIGEN
     Eigen::Map<const Eigen::ArrayXf> bf_ref(result.bfactors_ref.data(), n_bf);
     Eigen::Map<const Eigen::ArrayXf> bf_tgt(result.bfactors_tgt.data(), n_bf);
     Eigen::Map<Eigen::ArrayXf> bf_delta(result.delta_bfactors.data(), n_bf);
     bf_delta = bf_tgt - bf_ref;
-#else
-    for (int i = 0; i < n_bf; ++i) {
-        result.delta_bfactors[i] = result.bfactors_tgt[i] - result.bfactors_ref[i];
-    }
-#endif
 
     // ── Per-residue vibrational entropy decomposition ────────────────────────
     // Distribute global S_vib across residues proportional to their B-factors.
@@ -143,7 +127,6 @@ DifferentialResult compute_differential(
     auto decompose_svib = [](const std::vector<float>& bfactors, double total_svib) {
         std::vector<double> per_res(bfactors.size(), 0.0);
         if (bfactors.empty()) return per_res;
-#ifdef FLEXAIDS_HAS_EIGEN
         Eigen::Map<const Eigen::ArrayXf> bf(bfactors.data(),
             static_cast<Eigen::Index>(bfactors.size()));
         double sum_bf = static_cast<double>(bf.sum());
@@ -152,15 +135,6 @@ DifferentialResult compute_differential(
                 static_cast<Eigen::Index>(per_res.size()));
             pr = total_svib * (bf.cast<double>() / sum_bf);
         }
-#else
-        double sum_bf = 0.0;
-        for (float bf : bfactors) sum_bf += bf;
-        if (sum_bf > 0.0) {
-            for (size_t i = 0; i < bfactors.size(); ++i) {
-                per_res[i] = total_svib * (bfactors[i] / sum_bf);
-            }
-        }
-#endif
         return per_res;
     };
 
@@ -172,19 +146,12 @@ DifferentialResult compute_differential(
     int n_pr = std::min(static_cast<int>(result.per_residue_svib_ref.size()),
                         static_cast<int>(result.per_residue_svib_tgt.size()));
     result.per_residue_delta_svib.resize(static_cast<std::size_t>(n_pr));
-#ifdef FLEXAIDS_HAS_EIGEN
     if (n_pr > 0) {
         Eigen::Map<const Eigen::ArrayXd> pr_ref(result.per_residue_svib_ref.data(), n_pr);
         Eigen::Map<const Eigen::ArrayXd> pr_tgt(result.per_residue_svib_tgt.data(), n_pr);
         Eigen::Map<Eigen::ArrayXd> pr_delta(result.per_residue_delta_svib.data(), n_pr);
         pr_delta = pr_tgt - pr_ref;
     }
-#else
-    for (int i = 0; i < n_pr; ++i) {
-        result.per_residue_delta_svib[i] =
-            result.per_residue_svib_tgt[i] - result.per_residue_svib_ref[i];
-    }
-#endif
 
     return result;
 }

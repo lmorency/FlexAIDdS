@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "flexaidds"
-version = "1.0.0a1"
+version = "2.0.0"
 description = "Python bindings for the FlexAID∆S thermodynamic core"
 authors = [
   { name = "Louis-Philippe Morency" },
@@ -21,12 +21,21 @@ classifiers = [
 
 [project.optional-dependencies]
 dev = ["pytest", "pytest-cov"]
+benchmarks = ["numpy>=1.20", "pyyaml>=5.0"]
+benchmarks-mpi = ["numpy>=1.20", "pyyaml>=5.0", "mpi4py>=3.0"]
+
+[project.scripts]
+flexaidds-benchmark = "flexaidds.dataset_runner.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/lmorency/FlexAIDdS"
 
-[tool.setuptools]
-packages = ["flexaidds"]
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["flexaidds*"]
+
+[tool.setuptools.package-data]
+"flexaidds.dataset_runner" = ["datasets/*.yaml"]
 
 [tool.setuptools.package-dir]
 "" = "."

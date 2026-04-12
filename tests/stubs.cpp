@@ -45,6 +45,10 @@ void write_contributions(FA_Global*, FILE*, bool) {}
 void buildcc(FA_Global*, atom*, int, int[]) {}
 void buildic(FA_Global*, atom*, resid*, int) {}
 void build_rotamers(FA_Global*, atom**, resid*, rot*) {}
+void bondedlist(atom*, int, int, int*, int*, int*) {}
+void update_bonded(resid*, int, int, int*, int*) {}
+void shortest_path(resid*, int, atom*) {}
+void assign_shortflex(resid*, int, int, atom*) {}
 int check_clash(FA_Global*, atom*, resid*, int, int, int[]) { return 0; }
 void create_rebuild_list(FA_Global*, atom*, resid*) {}
 

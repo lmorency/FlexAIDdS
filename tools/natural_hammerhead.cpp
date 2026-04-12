@@ -178,9 +178,18 @@ static std::vector<GrowthStep> run_rnap_natural(
     const auto& k_el = rnap.elongation_rates();
 
     // Harmonic mean rate (for pause detection at 15% threshold per Neuman 2003)
+    // Filter NaN/Inf/zero values to prevent division-by-zero propagation
     double inv_sum = 0.0;
-    for (double k : k_el) if (k > 1e-9) inv_sum += 1.0 / k;
-    double hmean = (inv_sum > 0) ? N / inv_sum : MEAN_NT_RATE_ECOLI;
+    int valid_count = 0;
+    for (double k : k_el) {
+        if (std::isfinite(k) && k > 1e-9) {
+            inv_sum += 1.0 / k;
+            ++valid_count;
+        }
+    }
+    double hmean = (valid_count > 0 && inv_sum > 1e-15)
+                   ? static_cast<double>(valid_count) / inv_sum
+                   : MEAN_NT_RATE_ECOLI;
 
     // ── Pre-compute analytical arrival times (Zhao 2011 Eq. 7) ─────────────
     // <T_n> = 1/k_ini + Σ_{i=0}^{n-1} 1/k_i
@@ -188,7 +197,8 @@ static std::vector<GrowthStep> run_rnap_natural(
     t_arrival[0] = 1.0 / rnap.k_ini();
     for (int n = 1; n <= N; ++n) {
         double k = (n - 1 < (int)k_el.size()) ? k_el[n - 1] : hmean;
-        t_arrival[n] = t_arrival[n - 1] + 1.0 / k;
+        double inv_k = (std::isfinite(k) && k > 1e-9) ? 1.0 / k : 1.0 / hmean;
+        t_arrival[n] = t_arrival[n - 1] + inv_k;
     }
 
     // ── Main growth loop (mirrors DualAssemblyEngine::run()) ─────────────────
@@ -201,7 +211,9 @@ static std::vector<GrowthStep> run_rnap_natural(
 
     for (int step = 0; step < N; ++step) {
         double k_n       = (step < (int)k_el.size()) ? k_el[step] : hmean;
-        double dwell     = 1.0 / k_n;
+        double dwell     = (std::isfinite(k_n) && k_n > 1e-9)
+                           ? 1.0 / k_n
+                           : 1.0 / hmean;
         double t_arr     = (step < (int)t_arrival.size()) ? t_arrival[step] : 0.0;
 
         // RNAP tunnel: first RNAP_TUNNEL_NT nt are inside the RNA:DNA hybrid

@@ -30,10 +30,8 @@
 #include <string>
 #include <array>
 
-#ifdef FLEXAIDS_HAS_EIGEN
-#  include <Eigen/Dense>
-#  include <Eigen/Core>
-#endif
+#include <Eigen/Dense>
+#include <Eigen/Core>
 
 #ifdef FLEXAIDS_USE_AVX512
 #  include <immintrin.h>

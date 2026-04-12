@@ -2,6 +2,7 @@
 #include "GISTEvaluator.h"
 #include "HBondEvaluator.h"
 #include "hbond_potential.h"
+#include "metal_coordination.h"
 #include "GISTGrid.h"
 #include <cmath>
 
@@ -29,6 +30,7 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 		FA->optres[j].cf.gist=0.0;
 		FA->optres[j].cf.hbond=0.0;
 		FA->optres[j].cf.gist_desolv=0.0;
+		FA->optres[j].cf.metal_coord=0.0;
 		FA->optres[j].cf.sas=0.0;
 		FA->optres[j].cf.totsas=0.0;
 	}
@@ -309,7 +311,14 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
                         
 			if (VC->ca_rec[currindex].dist < clash_distance){
 				
-				double Ewall = KWALL*(pow(VC->ca_rec[currindex].dist,-12.0)-pow(permea*rAB,-12.0));
+				// Fast multiplication chain for r⁻¹² (replaces slow pow() calls)
+			double d  = VC->ca_rec[currindex].dist;
+			double d2 = d * d; double d4 = d2 * d2; double d6 = d4 * d2;
+			double inv_d12 = 1.0 / (d6 * d6);
+			double cr = permea * rAB;
+			double cr2 = cr * cr; double cr4 = cr2 * cr2; double cr6 = cr4 * cr2;
+			double inv_cr12 = 1.0 / (cr6 * cr6);
+			double Ewall = KWALL * (inv_d12 - inv_cr12);
 				
 				cfs->wal += Ewall;
 
@@ -394,6 +403,15 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 							FA->hbond_sigma_dist, FA->hbond_sigma_angle,
 							FA->hbond_weight, FA->hbond_salt_bridge_weight);
 						cfs->hbond += E_hb;
+					}
+
+					// Metal ion coordination potential (Morse)
+					if (FA->use_metal_coord) {
+						double dist = VC->ca_rec[currindex].dist;
+						double E_mc = metal_coord::compute_metal_coord_energy(
+							atoms, atomzero, atomcont, dist,
+							FA->metal_coord_weight, FA->metal_coord_morse_a);
+						cfs->metal_coord += E_mc;
 					}
 
 #if DEBUG_LEVEL > 0
@@ -491,8 +509,8 @@ double vcfunction(FA_Global* FA,VC_Global* VC,atom* atoms,resid* residue, std::v
 		FA->contacts[VC->Calc[i].atom->number] = 1;
 
 		// GIST desolvation: accumulate grid-based water displacement energy
-		if (FA->use_gist && FA->gist_grid != NULL) {
-			const auto* grid = static_cast<const gist::GISTGrid*>(FA->gist_grid);
+		if (FA->use_gist && FA->gist_evaluator != NULL) {
+			const auto* grid = static_cast<const gist::GISTGrid*>(FA->gist_evaluator);
 			double E_gist = FA->gist_weight *
 				grid->desolvation_energy(
 					atoms[atomzero].coor[0],

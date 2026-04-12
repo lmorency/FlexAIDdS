@@ -204,6 +204,39 @@ TEST(ShannonEnergyMatrix, DiagonalEntriesFinite) {
     }
 }
 
+TEST(ShannonEnergyMatrix, InitialiseFromDataUndersized) {
+    // Bug fix test: initialise_from_data with fewer elements than 256*256
+    // Previously caused OOB read by clamping count UP to expected
+    std::vector<float> small(100, 1.0f);
+    auto& mat = ShannonEnergyMatrix::instance();
+    mat.initialise_from_data(small.data(), 100);
+    EXPECT_TRUE(mat.is_initialised());
+    // First 100 values should be 1.0, rest should be zero-filled
+    EXPECT_NEAR(mat.data()[0], 1.0, 1e-6);
+    EXPECT_NEAR(mat.data()[99], 1.0, 1e-6);
+    EXPECT_NEAR(mat.data()[100], 0.0, 1e-6);
+    EXPECT_NEAR(mat.data()[SHANNON_BINS * SHANNON_BINS - 1], 0.0, 1e-6);
+}
+
+TEST(ShannonEnergyMatrix, InitialiseFromDataExactSize) {
+    // Verify full-size buffer works correctly
+    std::vector<float> full(SHANNON_BINS * SHANNON_BINS, 0.5f);
+    auto& mat = ShannonEnergyMatrix::instance();
+    mat.initialise_from_data(full.data(), SHANNON_BINS * SHANNON_BINS);
+    EXPECT_TRUE(mat.is_initialised());
+    EXPECT_NEAR(mat.data()[0], 0.5, 1e-6);
+    EXPECT_NEAR(mat.data()[SHANNON_BINS * SHANNON_BINS - 1], 0.5, 1e-6);
+}
+
+TEST(ShannonEnergyMatrix, InitialiseFromDataOversized) {
+    // count > expected should only read expected elements
+    std::vector<float> big(SHANNON_BINS * SHANNON_BINS + 1000, 2.0f);
+    auto& mat = ShannonEnergyMatrix::instance();
+    mat.initialise_from_data(big.data(), SHANNON_BINS * SHANNON_BINS + 1000);
+    EXPECT_TRUE(mat.is_initialised());
+    EXPECT_EQ(mat.size(), SHANNON_BINS * SHANNON_BINS);
+}
+
 // ===========================================================================
 // TORSIONAL VIBRATIONAL ENTROPY
 // ===========================================================================
@@ -514,7 +547,6 @@ TEST(BackendDetection, ActiveBackendReported) {
 #endif
 }
 
-#ifdef FLEXAIDS_HAS_EIGEN
 TEST(BackendDetection, EigenTagInReport) {
     statmech::StatMechEngine eng(298.15);
     eng.add_sample(-10.0);
@@ -524,7 +556,6 @@ TEST(BackendDetection, EigenTagInReport) {
     EXPECT_NE(result.report.find("Eigen"), std::string::npos)
         << "Expected +Eigen in report: " << result.report;
 }
-#endif
 
 // ===========================================================================
 // DISPATCH EDGE CASES — UNIFIED DISPATCH LAYER COVERAGE

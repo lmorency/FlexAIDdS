@@ -162,10 +162,17 @@ int spfunction(FA_Global* FA,atom* atoms,resid* residue){
 	  } // end of constraint
        	
 	  // WALL term
-	  if(dis <= (FA->permeability*rAB)*(FA->permeability*rAB)  &&
-	     !covalent || dis <= 1.5*1.5){
-	    
-	    cfs->wal += Kwall*(pow(dis,-6.0f)-pow(FA->permeability*rAB,-12.0f));
+	  if((dis <= (FA->permeability*rAB)*(FA->permeability*rAB)  &&
+	     !covalent) || dis <= 1.5f*1.5f){
+
+	    // Fast integer-exponent wall energy (replaces slow pow() calls)
+	    // dis is squared distance from sqrdist(), so dis^3 = r^6
+	    float dis3 = dis * dis * dis;
+	    float inv_d6 = 1.0f / dis3;
+	    float cr = FA->permeability * rAB;
+	    float cr2 = cr * cr; float cr4 = cr2 * cr2; float cr6 = cr4 * cr2;
+	    float inv_cr12 = 1.0f / (cr6 * cr6);
+	    cfs->wal += Kwall * (inv_d6 - inv_cr12);
 
 	    if(dis <= (FA->dee_clash*rAB)){cfs->rclash=1;}
 
@@ -205,7 +212,7 @@ int spfunction(FA_Global* FA,atom* atoms,resid* residue){
 
       if(npoints > FA->tspoints){ npoints = FA->tspoints; }
 
-      printf("number of points in contact for atom[%d] = %d\n",j,npoints);
+      // printf("number of points in contact for atom[%d] = %d\n",j,npoints);
 
       cfs->sas += (FA->tspoints-npoints)*constant;
 

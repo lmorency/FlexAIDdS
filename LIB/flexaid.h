@@ -9,6 +9,11 @@
 #define _CRT_SECURE_NO_WARNINGS
 #endif
 
+// MSVC does not support __restrict__ (GCC/Clang extension); map to __restrict
+#ifndef __restrict__
+#define __restrict__ __restrict
+#endif
+
 #endif
 
 #include <stdlib.h>
@@ -28,6 +33,8 @@
 #include <utility>
 #include <map>
 #include <cstdint>
+
+#include "flexaid_exception.h"
 
 //const int endian_t = 1;
 //#define IS_BIG_ENDIAN() ( ( *(char *) &endian_t ) == 0 ) // cross-platform development
@@ -81,8 +88,7 @@ constexpr float KWALL = 1.0e6f;
 #define Rw 1.4f
 
 #define NEW(p,type)     if ((p=(type *) malloc (sizeof(type))) == NULL) { \
-		printf("Out of Memory!\n");				\
-		exit(0);						\
+		throw FlexAIDException("Out of Memory allocating " #type);	\
 	}
 
 #define FREE(p)         if (p) { free ((char *) p); p = NULL; }
@@ -122,6 +128,7 @@ struct cf_str{  // Complementarity Function value structure
 	double gist;   // GIST water displacement score
 	double hbond;  // angular-dependent hydrogen bond energy
 	double gist_desolv; // GIST grid-based desolvation energy
+	double metal_coord; // metal ion coordination energy (Morse potential)
 	double totsas; // overall sas of molecule
 	int   rclash; // flag that shows whether the residue is making steric clashes
 };
@@ -373,13 +380,23 @@ struct FA_Global_struct{
 	int   use_gist;                      // enable GIST water displacement scoring
 	char  gist_dg_file[MAX_PATH__];      // path to GIST free-energy .dx file
 	char  gist_dens_file[MAX_PATH__];    // path to GIST density .dx file
-	float gist_weight;                   // weight for GIST term (default 1.0)
+	double gist_weight;                  // weight for GIST term (default 1.0)
 	float gist_dg_cutoff;                // free-energy cutoff (kcal/mol, default 1.0)
 	float gist_rho_cutoff;               // density cutoff (relative to bulk, default 4.8)
 	float gist_divisor;                  // Gaussian sigma = radius/divisor (default 2.0)
+	void* gist_evaluator;               // GISTEvaluator* (cast in vcfunction.cpp)
 
-	int   use_hbond;                     // enable directional H-bond scoring
-	float hbond_weight;                  // weight for H-bond angular correction (default 1.0)
+	int    use_hbond;                    // enable directional H-bond scoring
+	double hbond_weight;                 // energy weight (kcal/mol), default -2.5
+	double hbond_optimal_dist;           // D-A distance (Å), default 2.8
+	double hbond_optimal_angle;          // D-H...A angle (°), default 180
+	double hbond_sigma_dist;             // Gaussian width distance (Å), default 0.4
+	double hbond_sigma_angle;            // Gaussian width angle (°), default 30
+	double hbond_salt_bridge_weight;     // salt bridge weight (kcal/mol), default -5.0
+
+	int    use_metal_coord;              // enable metal ion coordination scoring
+	double metal_coord_weight;           // global weight multiplier (default 1.0)
+	double metal_coord_morse_a;          // Morse steepness parameter (default 2.0 A^-1)
 
 	constraint* constraints;             // list of constraints
 	int num_constraints;                 // constraints counter
@@ -444,6 +461,7 @@ struct FA_Global_struct{
 	int   clashed;                       // skipped individuals due to steric clashes
 	int   omit_buried;                   // skip buried atoms in the Vcontacts procedure
 	int   assume_folded;                 // assume receptor is fully folded — skip NATURaL co-translational/co-transcriptional chain growth
+	double natural_deltaG;              // NATURaL co-translational ΔG (kcal/mol); 0.0 if not run or assume_folded
 	int   vindex;                        // use indexed boxes and atoms in Vcontacts index_proteins
 
 	//rot    rotamer[MAX_ROTLIBSIZE];       // array of rotamer library rotamers OR observed rotamer list
@@ -550,21 +568,7 @@ struct FA_Global_struct{
 	std::vector<std::vector<float>> model_coords;  // model_coords[model_idx][atom_idx*3+{0,1,2}]
 	std::vector<double>             model_strain;  // strain energy per model (kcal/mol)
 
-	// ── GIST evaluator (opaque pointer, allocated when use_gist=1) ──
-	void*   gist_evaluator;          // GISTEvaluator* (cast in vcfunction.cpp)
-	// ── Angular-Dependent H-Bond Scoring ──
-	int     use_hbond;               // 0=off (default), 1=on
-	double  hbond_optimal_dist;      // D-A distance (Å), default 2.8
-	double  hbond_optimal_angle;     // D-H...A angle (°), default 180
-	double  hbond_sigma_dist;        // Gaussian width distance (Å), default 0.4
-	double  hbond_sigma_angle;       // Gaussian width angle (°), default 30
-	double  hbond_weight;            // energy weight (kcal/mol), default -2.5
-	double  hbond_salt_bridge_weight;// salt bridge weight (kcal/mol), default -5.0
-
-	// ── GIST Desolvation Scoring ──
-	int     use_gist;                // 0=off (default), 1=on
-	double  gist_weight;             // weighting coefficient (default 1.0)
-	void*   gist_grid;               // pointer to gist::GISTGrid (opaque, NULL when disabled)
+	// (GIST evaluator and H-bond fields are declared above, near use_gist/use_hbond)
 };
 typedef struct FA_Global_struct FA_Global;
 

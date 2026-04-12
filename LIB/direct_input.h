@@ -1,6 +1,6 @@
 // direct_input.h — Direct PDB/MOL2 input pipeline (no .inp files)
 //
-// Implements the "Phase 2" TODO: load receptor PDB and ligand MOL2
+// Implements direct loading of receptor PDB and ligand MOL2
 // directly from file paths, auto-detect the binding cleft, and set up
 // all FlexAID data structures required by the GA engine.
 //

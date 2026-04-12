@@ -43,7 +43,7 @@ protected:
 
 TEST_F(HBondPotentialTest, NonHBondCapableAtomsReturnZero) {
     // Two carbon atoms (not H-bond capable)
-    uint8_t c_type = atom256::encode(atom256::C_sp3, atom256::Q_WEAK_POS, false);
+    uint8_t c_type = atom256::encode(atom256::C_sp3, atom256::Q_POSITIVE, false);
     atom atoms[2] = {
         make_atom(0, 0, 0, c_type),
         make_atom(2.8f, 0, 0, c_type),
@@ -58,8 +58,9 @@ TEST_F(HBondPotentialTest, NonHBondCapableAtomsReturnZero) {
 TEST_F(HBondPotentialTest, HBondAtOptimalGeometry) {
     // N-H...O at optimal distance 2.8 A, angle ~180 degrees
     // Donor N at origin, H along x-axis, Acceptor O at 2.8 A
-    uint8_t n_type = atom256::encode(atom256::N_sp3, atom256::Q_WEAK_POS, true);
-    uint8_t o_type = atom256::encode(atom256::O_sp2, atom256::Q_WEAK_NEG, true);
+    // Use same charge polarity to avoid salt bridge path
+    uint8_t n_type = atom256::encode(atom256::N_sp3, atom256::Q_NEGATIVE, true);
+    uint8_t o_type = atom256::encode(atom256::O_sp2, atom256::Q_NEGATIVE, true);
 
     atom atoms[3];
     atoms[0] = make_atom(0, 0, 0, n_type);         // N (donor)
@@ -80,8 +81,9 @@ TEST_F(HBondPotentialTest, HBondAtOptimalGeometry) {
 }
 
 TEST_F(HBondPotentialTest, DistanceDependence) {
-    uint8_t n_type = atom256::encode(atom256::N_sp3, atom256::Q_WEAK_POS, true);
-    uint8_t o_type = atom256::encode(atom256::O_sp2, atom256::Q_WEAK_NEG, true);
+    // Use same charge polarity to test standard H-bond (not salt bridge)
+    uint8_t n_type = atom256::encode(atom256::N_sp3, atom256::Q_NEGATIVE, true);
+    uint8_t o_type = atom256::encode(atom256::O_sp2, atom256::Q_NEGATIVE, true);
 
     atom atoms[3];
     atoms[0] = make_atom(0, 0, 0, n_type);
@@ -104,8 +106,8 @@ TEST_F(HBondPotentialTest, DistanceDependence) {
 
 TEST_F(HBondPotentialTest, SaltBridgeDetection) {
     // Anionic + cationic pair should use salt_bridge_weight
-    uint8_t anion_type = atom256::encode(atom256::O_co2, atom256::Q_ANIONIC, true);
-    uint8_t cation_type = atom256::encode(atom256::N_quat, atom256::Q_CATIONIC, true);
+    uint8_t anion_type = atom256::encode(atom256::O_co2, atom256::Q_NEGATIVE, true);
+    uint8_t cation_type = atom256::encode(atom256::N_quat, atom256::Q_POSITIVE, true);
 
     atom atoms[3];
     atoms[0] = make_atom(0, 0, 0, anion_type);

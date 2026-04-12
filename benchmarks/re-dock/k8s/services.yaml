@@ -1,0 +1,156 @@
+# RE-DOCK Services
+# Headless service for DNS discovery + per-replica ClusterIP services
+---
+# Headless service: enables DNS like redock-worker-{i}.redock-workers.flexaids-redock.svc
+apiVersion: v1
+kind: Service
+metadata:
+  name: redock-workers
+  namespace: flexaids-redock
+  labels:
+    app: redock-worker
+spec:
+  clusterIP: None
+  selector:
+    app: redock-worker
+  ports:
+    - port: 8000
+      targetPort: 8000
+      name: http
+---
+# Per-replica services for direct exchange communication
+apiVersion: v1
+kind: Service
+metadata:
+  name: redock-worker-0
+  namespace: flexaids-redock
+  labels:
+    app: redock-worker
+    replica-index: "0"
+spec:
+  selector:
+    app: redock-worker
+    replica-index: "0"
+  ports:
+    - port: 8000
+      targetPort: 8000
+      name: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redock-worker-1
+  namespace: flexaids-redock
+  labels:
+    app: redock-worker
+    replica-index: "1"
+spec:
+  selector:
+    app: redock-worker
+    replica-index: "1"
+  ports:
+    - port: 8000
+      targetPort: 8000
+      name: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redock-worker-2
+  namespace: flexaids-redock
+  labels:
+    app: redock-worker
+    replica-index: "2"
+spec:
+  selector:
+    app: redock-worker
+    replica-index: "2"
+  ports:
+    - port: 8000
+      targetPort: 8000
+      name: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redock-worker-3
+  namespace: flexaids-redock
+  labels:
+    app: redock-worker
+    replica-index: "3"
+spec:
+  selector:
+    app: redock-worker
+    replica-index: "3"
+  ports:
+    - port: 8000
+      targetPort: 8000
+      name: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redock-worker-4
+  namespace: flexaids-redock
+  labels:
+    app: redock-worker
+    replica-index: "4"
+spec:
+  selector:
+    app: redock-worker
+    replica-index: "4"
+  ports:
+    - port: 8000
+      targetPort: 8000
+      name: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redock-worker-5
+  namespace: flexaids-redock
+  labels:
+    app: redock-worker
+    replica-index: "5"
+spec:
+  selector:
+    app: redock-worker
+    replica-index: "5"
+  ports:
+    - port: 8000
+      targetPort: 8000
+      name: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redock-worker-6
+  namespace: flexaids-redock
+  labels:
+    app: redock-worker
+    replica-index: "6"
+spec:
+  selector:
+    app: redock-worker
+    replica-index: "6"
+  ports:
+    - port: 8000
+      targetPort: 8000
+      name: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redock-worker-7
+  namespace: flexaids-redock
+  labels:
+    app: redock-worker
+    replica-index: "7"
+spec:
+  selector:
+    app: redock-worker
+    replica-index: "7"
+  ports:
+    - port: 8000
+      targetPort: 8000
+      name: http

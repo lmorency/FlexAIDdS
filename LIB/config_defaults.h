@@ -35,6 +35,10 @@ inline json::Value flexaid_default_config() {
             {"hbond_sigma_angle",       V(30.0)},
             {"hbond_weight",            V(-2.5)},
             {"hbond_salt_bridge_weight",V(-5.0)},
+            // Metal ion coordination potential
+            {"metal_coord_enabled",     V(false)},
+            {"metal_coord_weight",      V(1.0)},
+            {"metal_coord_morse_alpha", V(2.0)},
             // GIST desolvation grid
             {"gist_enabled",  V(false)},
             {"gist_dx_file",  V("")},

@@ -1,6 +1,8 @@
 #include "gaboom.h"
 #include "Vcontacts.h"
 #include "fileio.h"
+#include "flexaid_exception.h"
+#include "ga_constants.h"
 #include "hardware_dispatch.h"
 #include "MIFGrid.h"
 #include "CavityDetect/SpatialGrid.h"
@@ -13,14 +15,14 @@
 #include <array>
 #include <memory>
 #include <span>
+#include <unordered_set>
+#include <unordered_map>
 
 #ifdef _OPENMP
 #include <omp.h>
 #endif
 
-#ifdef FLEXAIDS_HAS_EIGEN
 #include <Eigen/Dense>
-#endif
 
 #ifdef FLEXAIDS_USE_CUDA
 #include "cuda_eval.cuh"
@@ -41,7 +43,7 @@
 #include "NATURaL/NATURaLDualAssembly.h"
 
 // in milliseconds
-# define SLEEP 25
+# define SLEEP GA_SLEEP_MS
 
 #ifdef _WIN32
 # include <windows.h>
@@ -75,7 +77,7 @@ int reproduce(FA_Global* FA,GB_Global* GB,VC_Global* VC, chromosome* chrom, cons
                atom* atoms,resid* residue,gridpoint* cleftgrid,char* repmodel,
                double mutprob, double crossprob, int print,
                std::function<int32_t()> & dice,
-               std::map<std::string, int> & duplicates,
+               std::unordered_map<size_t, int> & duplicates,
                cfstr (*target)(FA_Global*,VC_Global*,atom*,resid*,gridpoint*,int,double*),
                GAContext& ctx);
 
@@ -110,15 +112,15 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	char gridfile[MAX_PATH__];
 	char gridfilename[MAX_PATH__];
 
-	int geninterval=50;
-	int popszpartition=100;
+	int geninterval=GA_DEFAULT_GEN_INTERVAL;
+	int popszpartition=GA_DEFAULT_POP_PARTITION;
 
 	int  state=0;
 	char PAUSEFILE[MAX_PATH__];
 	char ABORTFILE[MAX_PATH__];
 	char STOPFILE[MAX_PATH__];
 
-	const int INTERVAL = 1; // sleep interval between checking file state
+	const int INTERVAL = GA_STATE_CHECK_INTERVAL; // sleep interval between checking file state
 
 	*memchrom=0; //num chrom allocated in memory
 
@@ -156,15 +158,15 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	if (gainpfile[0] != '\0') {
 		//GB->rrg_skip=0;
 		GB->adaptive_ga=0;
-		GB->num_print=10;
-		GB->print_int=1;
-		GB->seed = 0;
+		GB->num_print=GA_DEFAULT_NUM_PRINT;
+		GB->print_int=GA_DEFAULT_PRINT_INT;
+		GB->seed = GA_DEFAULT_SEED;
 
 	// Entropy convergence defaults (opt-in)
 	GB->entropy_convergence    = 0;
-	GB->entropy_check_interval = 10;
-	GB->entropy_window         = 5;
-	GB->entropy_rel_threshold  = 0.01;
+	GB->entropy_check_interval = GA_DEFAULT_ENTROPY_CHECK_INTERVAL;
+	GB->entropy_window         = GA_DEFAULT_ENTROPY_WINDOW;
+	GB->entropy_rel_threshold  = GA_DEFAULT_ENTROPY_REL_THRESHOLD;
 
 	printf("file in GA is <%s>\n",gainpfile);
 
@@ -313,7 +315,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 	//	   i,(*gene_lim)[i].min,(*gene_lim)[i].max,(*gene_lim)[i].del);
 	//PAUSE;
 
-	std::map<std::string, int> duplicates;
+	std::unordered_map<size_t, int> duplicates;
 
 	populate_chromosomes(FA,GB,VC,(*chrom),(*gene_lim),atoms,residue,(*cleftgrid),
 			     GB->pop_init_method,target,GB->pop_init_file,at,0,print,dice,duplicates);
@@ -532,7 +534,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 
 	// Thermodynamic analysis of the final conformational ensemble
 	if(n_chrom_snapshot > 0) {
-		double T_K = (FA->temperature > 0) ? static_cast<double>(FA->temperature) : 300.0;
+		double T_K = (FA->temperature > 0) ? static_cast<double>(FA->temperature) : GA_DEFAULT_TEMPERATURE_K;
 		statmech::StatMechEngine sme(T_K);
 		for(int s = 0; s < n_chrom_snapshot; ++s)
 			sme.add_sample((*chrom_snapshot)[s].evalue);
@@ -543,7 +545,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 			for (int s = 0; s < n_chrom_snapshot; ++s)
 				energy_pts[s].coords = { (*chrom_snapshot)[s].evalue };
 
-			fast_optics::FastOPTICS foptics(energy_pts, std::max(4, n_chrom_snapshot / 20));
+			fast_optics::FastOPTICS foptics(energy_pts, std::max(GA_FOPTICS_MIN_POINTS, n_chrom_snapshot / GA_FOPTICS_DIVISOR));
 			auto sc_indices = foptics.extractSuperCluster(fast_optics::ClusterMode::SUPER_CLUSTER_ONLY);
 
 			if (!sc_indices.empty() && sc_indices.size() < static_cast<size_t>(n_chrom_snapshot)) {
@@ -580,14 +582,14 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 		//
 		// TurboQuant MSE bound: D_mse ≤ sqrt(3π/2) · 1/4^b ≈ 2.7/4^b
 		// At b=3 bits/coordinate: D_mse ≈ 0.03 (97% fidelity)
-		if (n_chrom_snapshot > 64) {
-			constexpr int TQ_BITS = 3;  // 3 bits/coord → 97% fidelity, 10.7× compression
+		if (n_chrom_snapshot > GA_TQENS_MIN_SNAPSHOTS) {
+			constexpr int TQ_BITS = GA_TQENS_BITS;  // 3 bits/coord → 97% fidelity, 10.7× compression
 
 			if (FA->use_tqens) {
 				// ── Multi-dimensional QuantizedEnsemble (full TurboQuantProd) ──
 				// Energy descriptor: (com, wal, sas, elec) → 4 dimensions
 				// Each chromosome's cfstr provides these component values.
-				constexpr int TQ_EDIM = 4;
+				constexpr int TQ_EDIM = GA_TQENS_ENERGY_DIM;
 				turboquant::QuantizedEnsemble qens(TQ_EDIM, TQ_BITS);
 				qens.reserve(n_chrom_snapshot);
 
@@ -644,15 +646,8 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 				printf("  log(Z) approx              = %.6f\n", static_cast<double>(log_Z_approx));
 				printf("  |Δlog(Z)|                  = %.6e\n", pf_err);
 			} else {
-				// ── Legacy scalar-only diagnostic (TQ_DIM=1) ──
+				// ── Legacy scalar-only diagnostic (d=1, skip TurboQuant which requires d>=2) ──
 				constexpr int TQ_DIM = 1;
-				turboquant::TurboQuantMSE tq_mse(TQ_DIM, TQ_BITS, /*seed=*/42);
-				tq_mse.initialize();
-
-				std::vector<float> energies_f(n_chrom_snapshot);
-				for (int s = 0; s < n_chrom_snapshot; ++s)
-					energies_f[s] = static_cast<float>((*chrom_snapshot)[s].evalue);
-
 				size_t raw_bytes = n_chrom_snapshot * sizeof(float);
 				size_t quant_bytes = n_chrom_snapshot * ((TQ_DIM * TQ_BITS + 7) / 8 + sizeof(float));
 				printf("--- TurboQuant ensemble compression (b=%d, d=%d) ---\n", TQ_BITS, TQ_DIM);
@@ -661,13 +656,12 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 				printf("  Quantized size             = %zu bytes\n", quant_bytes);
 				printf("  Compression ratio          = %.1f×\n",
 				       static_cast<double>(raw_bytes) / quant_bytes);
-				printf("  Theoretical MSE bound      = %.6f\n", tq_mse.theoretical_mse());
 			}
 		}
 
 		// ── Phase 3: TorsionalENM vibrational entropy ────────────────
 		tencm::TorsionalENM tencm_model;
-		if (FA->is_protein && FA->res_cnt > 6) {
+		if (FA->is_protein && FA->res_cnt > GA_TENCM_MIN_RESIDUES) {
 			tencm_model.build(atoms, residue, FA->res_cnt);
 			if (tencm_model.is_built()) {
 				// Store mode count on FA for BindingMode vibrational correction
@@ -700,7 +694,7 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 			if (ncfg.enabled) {
 				ncfg.temperature_K = (FA->temperature > 0)
 				                     ? static_cast<double>(FA->temperature)
-				                     : 310.0;
+				                     : GA_NATURAL_DEFAULT_TEMP;
 				natural::DualAssemblyEngine engine(
 					ncfg, FA, VC, atoms, residue, FA->MIN_NUM_RESIDUE);
 				auto trajectory = engine.run();
@@ -709,13 +703,33 @@ int GA(FA_Global* FA, GB_Global* GB,VC_Global* VC,chromosome** chrom,chromosome*
 				if (!trajectory.empty()) {
 					printf("  Final ΔG (co-translational) = %10.4f kcal/mol\n",
 					       engine.final_deltaG());
-					int n_pause = 0, n_tm = 0;
+					FA->natural_deltaG = engine.final_deltaG();
+
+					int  n_pause        = 0;
+					int  n_tm           = 0;
+					int  n_burst_events = 0;
+					int  max_burst_size = 0;
+					int  n_nuc_seeds    = 0;
+					std::unordered_set<int> seen_bursts, seen_seeds;
+
 					for (const auto& step : trajectory) {
 						if (step.is_pause_site) ++n_pause;
 						if (step.tm_inserted)   ++n_tm;
+						if (step.burst_unit_id >= 0 &&
+						    seen_bursts.insert(step.burst_unit_id).second) {
+							++n_burst_events;
+							if (step.burst_size > max_burst_size)
+								max_burst_size = step.burst_size;
+						}
+						if (step.nucleation_seed_id >= 0 &&
+						    seen_seeds.insert(step.nucleation_seed_id).second)
+							++n_nuc_seeds;
 					}
-					printf("  Pause sites detected        = %d\n", n_pause);
-					printf("  TM insertions               = %d\n", n_tm);
+					printf("  Pause sites detected        = %d\n",    n_pause);
+					printf("  TM insertions               = %d\n",    n_tm);
+					printf("  Burst elongation events     = %d (max %d residues/burst)\n",
+					       n_burst_events, max_burst_size);
+					printf("  Nucleation seeds detected   = %d\n",    n_nuc_seeds);
 				}
 			}
 		}
@@ -848,10 +862,13 @@ void adapt_prob(GB_Global* GB,double fit1, double fit2, double* mutp, double* cr
 	//crossp/mutp=0 when high=max
 
 	//calculate new probabilities (pc/pm)
-	if (GB->fit_high > GB->fit_avg) *crossp = GB->k1*(GB->fit_max-GB->fit_high)/(GB->fit_max-GB->fit_avg);
+	double denom = GB->fit_max - GB->fit_avg;
+	if (denom < GA_FITNESS_DENOM_FLOOR) denom = GA_FITNESS_DENOM_FLOOR;  // prevent division by zero when converged
+
+	if (GB->fit_high > GB->fit_avg) *crossp = GB->k1*(GB->fit_max-GB->fit_high)/denom;
 	else *crossp = GB->k3;
 
-	if (GB->fit_low > GB->fit_avg) *mutp = GB->k2*(GB->fit_max-GB->fit_low)/(GB->fit_max-GB->fit_avg);
+	if (GB->fit_low > GB->fit_avg) *mutp = GB->k2*(GB->fit_max-GB->fit_low)/denom;
 	else *mutp = GB->k4;
 
 	/*
@@ -870,7 +887,7 @@ int reproduce(FA_Global* FA,GB_Global* GB,VC_Global* VC, chromosome* chrom, cons
                atom* atoms,resid* residue,gridpoint* cleftgrid,char* repmodel,
                double mutprob, double crossprob, int print,
 	       std::function<int32_t()> & dice,
-	       std::map<std::string, int> & duplicates,
+	       std::unordered_map<size_t, int> & duplicates,
                cfstr (*target)(FA_Global*,VC_Global*,atom*,resid*,gridpoint*,int,double*),
                GAContext& ctx){
 
@@ -951,8 +968,8 @@ int reproduce(FA_Global* FA,GB_Global* GB,VC_Global* VC, chromosome* chrom, cons
 			chrop2_gen[j].to_ic = genetoic(&gene_lim[j],chrop2_gen[j].to_int32);
 		}
 
-		std::string sig1 = generate_sig(chrop1_gen,GB->num_genes);
-		std::string sig2 = generate_sig(chrop2_gen,GB->num_genes);
+		size_t sig1 = hash_genes(chrop1_gen,GB->num_genes);
+		size_t sig2 = hash_genes(chrop2_gen,GB->num_genes);
 
 		/************************************/
 		/****** CHECK DUPLICATION  ********/
@@ -1020,11 +1037,20 @@ int reproduce(FA_Global* FA,GB_Global* GB,VC_Global* VC, chromosome* chrom, cons
 	return nrejected;
 }
 
-std::string generate_sig(gene genes[], int num_genes){
-	std::stringstream ss;
-	for(int i=0;i<num_genes;i++)
-		ss << (int)(genes[i].to_ic+0.5) << "/";
-	return ss.str();
+<<<<<<< HEAD
+static size_t hash_genes(const gene genes[], int num_genes){
+	size_t h = 0;
+	for(int i = 0; i < num_genes; ++i){
+		auto v = static_cast<int32_t>(genes[i].to_ic + 0.5);
+		h ^= std::hash<int32_t>{}(v) + 0x9e3779b9 + (h << 6) + (h >> 2);
+	}
+=======
+size_t hash_genes(const gene* g, int n){
+	size_t h = 0;
+	for(int i = 0; i < n; ++i)
+		h ^= std::hash<int32_t>{}(static_cast<int32_t>(g[i].to_ic + 0.5)) + 0x9e3779b9 + (h << 6) + (h >> 2);
+>>>>>>> ce3b671 (perf: replace string chromosome signatures with integer hashing)
+	return h;
 }
 
 /***********************************************************************/
@@ -1039,10 +1065,10 @@ int filter_deelig(FA_Global* FA, GB_Global* GB, chromosome* chrom, gene* genes, 
 
 	if(FA->deelig_flex && FA->nflexbonds){
 
-		int j,deelig_list[100];
+		int j,deelig_list[GA_MAX_DEELIG_DIHEDRALS];
 
 		for(j=1; j<=FA->resligand->fdih; j++)
-			deelig_list[j] = -1000;
+			deelig_list[j] = GA_DEELIG_SENTINEL;
 
 		for(j=0; j<GB->num_genes; j++)
 			if(FA->map_par[j].typ == 2 && FA->map_par[j].bnd != -1)
@@ -1077,7 +1103,7 @@ int filter_deelig(FA_Global* FA, GB_Global* GB, chromosome* chrom, gene* genes, 
 							   FA->map_par_flexbond_first_index+FA->nflexbonds);
 
 				for(j=1; j<=FA->resligand->fdih; j++)
-					deelig_list[j] = -1000;
+					deelig_list[j] = GA_DEELIG_SENTINEL;
 
 				for(j=0; j<GB->num_genes; j++)
 					if(FA->map_par[j].typ == 2 && FA->map_par[j].bnd != -1)
@@ -1121,7 +1147,7 @@ int deelig_search(struct deelig_node_struct* root_node, int* deelig_list, int fd
 	for(int i=1; i<=fdih; i++){
 		//printf("[%d]: searching %d\n", i, deelig_list[i]);
 		if((it=node->childs.find(deelig_list[i])) != node->childs.end() ||
-		   (deelig_list[i] != -1000 && (it=node->childs.find(-1000)) != node->childs.end())){
+		   (deelig_list[i] != GA_DEELIG_SENTINEL && (it=node->childs.find(GA_DEELIG_SENTINEL)) != node->childs.end())){
 			//printf("found %d\n", it->first);
 			node = it->second;
 		}else{
@@ -1143,22 +1169,23 @@ int roullete_wheel(const chromosome* chrom,int n){
 	double tot=0.0;
 	int i;
 
+	if (n <= 0) return 0;
+
 	for(i=0;i<n;i++){tot += chrom[i].fitnes;}
-	//printf("tot=%f\n",tot);
-	//PAUSE;
+
+	// Guard: if total fitness is zero or negative, return random index
+	if (tot <= 0.0) return static_cast<int>(RandomDouble() * n) % n;
 
 	r=RandomDouble()*tot;
 
 	i=0;
 	tot=0.0;
-	while(tot <= r){
+	while(tot <= r && i < n){
 		tot += chrom[i].fitnes;
 		i++;
 	}
-	//printf("r=%f tot=%f i=%d\n",r,tot,i);
 	i--;
-
-	//PAUSE;
+	if (i < 0) i = 0;
 
 	return i;
 }
@@ -1200,13 +1227,13 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 				if (em->energy_values != NULL) {
 					// Sample the density-of-contact curve at area = 0.5
 					// This gives the representative interaction strength
-					flat_matrix[t1 * QCM_DIM + t2] = static_cast<float>(get_yval(em, 0.5));
+					flat_matrix[t1 * QCM_DIM + t2] = static_cast<float>(get_yval(em, GA_TQCM_SAMPLE_AREA));
 				}
 			}
 		}
 
 		delete s_tqcm;
-		s_tqcm = new turboquant::QuantizedContactMatrix(/*bit_width=*/2);
+		s_tqcm = new turboquant::QuantizedContactMatrix(/*bit_width=*/GA_TQCM_BIT_WIDTH);
 		s_tqcm->build(flat_matrix.data());
 		s_tqcm_ntypes = nt;
 
@@ -1223,7 +1250,7 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 		// Validate: spot-check a few type pairs against exact values
 		if (nt >= 2) {
 			double max_err = 0.0;
-			int n_checks = std::min(nt * nt, 1000);
+			int n_checks = std::min(nt * nt, GA_TQCM_MAX_SPOT_CHECKS);
 			for (int c = 0; c < n_checks; ++c) {
 				int ti = c / nt, tj = c % nt;
 				float exact_val = flat_matrix[ti * QCM_DIM + tj];
@@ -1252,7 +1279,6 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 		const size_t total = static_cast<size_t>(n_types) * n_types * n_samples;
 		std::vector<float> out(total, 0.0f);
 
-#ifdef FLEXAIDS_HAS_EIGEN
 		// Build the x-sample linspace via Eigen (vectorised).
 		Eigen::ArrayXd xs = Eigen::ArrayXd::LinSpaced(n_samples, 0.0, 1.0);
 		for (int t1 = 0; t1 < n_types; ++t1) {
@@ -1264,19 +1290,6 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 					dst[k] = static_cast<float>(get_yval(em, xs[k]));
 			}
 		}
-#else
-		for (int t1 = 0; t1 < n_types; ++t1) {
-			for (int t2 = 0; t2 < n_types; ++t2) {
-				struct energy_matrix* em = &FA->energy_matrix[t1 * n_types + t2];
-				if (em->energy_values == NULL) continue;
-				for (int k = 0; k < n_samples; ++k) {
-					double x = static_cast<double>(k) / (n_samples - 1);
-					out[(t1 * n_types + t2) * n_samples + k] =
-						static_cast<float>(get_yval(em, x));
-				}
-			}
-		}
-#endif
 		return out;
 	};
 
@@ -1302,7 +1315,7 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 				chrom[c].cf.gist   = 0.0;
 				chrom[c].cf.hbond  = 0.0;
 				chrom[c].cf.totsas = 0.0;
-				chrom[c].cf.rclash = (h_wal[c] > 1e4) ? 1 : 0;
+				chrom[c].cf.rclash = (h_wal[c] > GA_WALL_CLASH_THRESHOLD) ? 1 : 0;
 				chrom[c].evalue     = get_cf_evalue(&chrom[c].cf);
 				chrom[c].app_evalue = get_apparent_cf_evalue(&chrom[c].cf);
 				ccbm_inject_strain(FA, chrom[c], gene_lim);  // CCBM strain
@@ -1492,10 +1505,10 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 
 		// Per-thread mutable atom arrays.
 		std::vector<std::vector<atom>>  tl_atoms(n_thr,
-		    std::vector<atom>(atoms, atoms + natm));
+		    std::vector<atom>(atoms, atoms + natm + 1));
 		// Per-thread residue arrays (pointer fields shared read-only; .rot private).
 		std::vector<std::vector<resid>> tl_res(n_thr,
-		    std::vector<resid>(residue, residue + nres));
+		    std::vector<resid>(residue, residue + nres + 1));
 		// Per-thread FA copies with redirected mutable scratch buffers.
 		std::vector<FA_Global>           tl_fa(n_thr, *FA);
 		std::vector<std::vector<int>>    tl_contacts(n_thr, std::vector<int>(MAX_ATOM_NUMBER, 0));
@@ -1512,7 +1525,7 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 		std::vector<std::vector<int>>        tl_seed(n_thr,
 		    std::vector<int>(3 * natmr));
 		std::vector<std::vector<contactlist>> tl_contlist(n_thr,
-		    std::vector<contactlist>(10000));
+		    std::vector<contactlist>(GA_CONTLIST_SIZE));
 		std::vector<std::vector<ptindex>>    tl_ptorder(n_thr,
 		    std::vector<ptindex>(MAX_PT));
 		std::vector<std::vector<vertex>>     tl_centerpt(n_thr,
@@ -1573,8 +1586,18 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 					tl_res[tid][ri] = residue[ri];
 				}
 			} else {
-				std::copy(atoms,   atoms + natm,   tl_atoms[tid].begin());
-				std::copy(residue, residue + nres, tl_res[tid].begin());
+				std::copy(atoms,   atoms + natm + 1,   tl_atoms[tid].begin());
+				std::copy(residue, residue + nres + 1, tl_res[tid].begin());
+			}
+			// Redirect per-thread atom optres pointers to per-thread optres array.
+			// atoms[j].optres points to FA->optres (original); redirect to tl_optres[tid]
+			// so vcfunction scoring writes to (and ic2cf reads from) the same buffer.
+			for (int ai = 1; ai <= natm; ++ai) {
+				atom& a = tl_atoms[tid][ai];
+				if (a.optres) {
+					ptrdiff_t oidx = a.optres - FA->optres;
+					a.optres = &tl_optres[tid][oidx];
+				}
 			}
 			// optres cf fields are cleared by vcfunction itself; pre-clear for safety.
 			for (int o = 0; o < nopt; ++o) {
@@ -1630,7 +1653,7 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 		   and is parallelised with OpenMP.
 		*/
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) default(none) \
+#pragma omp parallel for schedule(dynamic) default(none) \
 	shared(chrom, GB, FA, cleftgrid)
 #endif
 		for(int pi=0; pi<GB->num_chrom; pi++){
@@ -1688,7 +1711,7 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 			const double w = GB->entropy_weight;
 
 #ifdef _OPENMP
-#pragma omp parallel for schedule(static) default(none) \
+#pragma omp parallel for schedule(dynamic) default(none) \
 	shared(chrom, GB, FA, cleftgrid, max_bw, w)
 #endif
 			for (int pi = 0; pi < GB->num_chrom; pi++) {
@@ -1716,7 +1739,7 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 			}
 
 			// Log ensemble thermodynamics periodically.
-			if (gen_id % 50 == 0) {
+			if (gen_id % GA_SMFREE_LOG_INTERVAL == 0) {
 				fprintf(stderr, "[SMFREE] gen=%d  F=%.3f  <E>=%.3f  S=%.6f  Cv=%.4f  σ_E=%.3f\n",
 				        gen_id, thermo.free_energy, thermo.mean_energy,
 				        thermo.entropy, thermo.heat_capacity, thermo.std_energy);
@@ -1895,7 +1918,7 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
                           cfstr (*target)(FA_Global*,VC_Global*,atom*,resid*,gridpoint*,int,double*),
                           char file[], long int at, int popoffset, int print,
                           std::function<int32_t()> & dice,
-                          std::map<std::string, int> & duplicates){
+                          std::unordered_map<size_t, int> & duplicates){
 
 	int i,j;
 
@@ -1922,7 +1945,7 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 		//printf("num_chrom=%d num_genes=%d\n",GB->num_chrom,GB->num_genes);
 
 		int gener=0;
-		std::string sig;
+		size_t sig = 0;
 
 		i=popoffset;
 		while(i<GB->num_chrom){
@@ -1952,7 +1975,7 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 					                                       static_cast<double>(grid_idx));
 				}
 
-				sig = generate_sig(chrom[i].genes,GB->num_genes);
+				sig = hash_genes(chrom[i].genes,GB->num_genes);
 				if(GB->duplicates || duplicates.find(sig) == duplicates.end()){
 					break;
 				}
@@ -2022,8 +2045,8 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 		const int nctb  = FA->ntypes * FA->ntypes;
 		const int range = GB->num_chrom - popoffset;
 
-		std::vector<std::vector<atom>>   p_atoms(n_thr, std::vector<atom>(atoms, atoms + natm));
-		std::vector<std::vector<resid>>  p_res(n_thr, std::vector<resid>(residue, residue + nres));
+		std::vector<std::vector<atom>>   p_atoms(n_thr, std::vector<atom>(atoms, atoms + natm + 1));
+		std::vector<std::vector<resid>>  p_res(n_thr, std::vector<resid>(residue, residue + nres + 1));
 		std::vector<FA_Global>           p_fa(n_thr, *FA);
 		std::vector<std::vector<int>>    p_contacts(n_thr, std::vector<int>(MAX_ATOM_NUMBER, 0));
 		std::vector<std::vector<float>>  p_contrib(n_thr, std::vector<float>(nctb, 0.0f));
@@ -2036,7 +2059,7 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 		std::vector<std::vector<ca_struct>>  p_carec(n_thr,
 		    std::vector<ca_struct>(VC->ca_recsize));
 		std::vector<std::vector<int>>        p_seed(n_thr, std::vector<int>(3 * natmr));
-		std::vector<std::vector<contactlist>> p_contlist(n_thr, std::vector<contactlist>(10000));
+		std::vector<std::vector<contactlist>> p_contlist(n_thr, std::vector<contactlist>(GA_CONTLIST_SIZE));
 		std::vector<std::vector<ptindex>>    p_ptorder(n_thr, std::vector<ptindex>(MAX_PT));
 		std::vector<std::vector<vertex>>     p_centerpt(n_thr, std::vector<vertex>(MAX_PT));
 		std::vector<std::vector<vertex>>     p_poly(n_thr, std::vector<vertex>(MAX_POLY));
@@ -2125,8 +2148,16 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 					p_res[tid][ri] = residue[ri];
 				}
 			} else {
-				std::copy(atoms,   atoms + natm,   p_atoms[tid].begin());
-				std::copy(residue, residue + nres, p_res[tid].begin());
+				std::copy(atoms,   atoms + natm + 1,   p_atoms[tid].begin());
+				std::copy(residue, residue + nres + 1, p_res[tid].begin());
+			}
+			// Redirect per-thread atom optres pointers to per-thread optres array.
+			for (int ai = 1; ai <= natm; ++ai) {
+				atom& a = p_atoms[tid][ai];
+				if (a.optres) {
+					ptrdiff_t oidx = a.optres - FA->optres;
+					a.optres = &p_optres[tid][oidx];
+				}
 			}
 			for (int o = 0; o < nopt; ++o) {
 				p_optres[tid][o].cf.com    = 0.0;
@@ -2167,7 +2198,7 @@ void populate_chromosomes(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* 
 int cmp_chrom2rotlist(psFlexDEE_Node psFlexDEE_INI_Node, const chromosome* chrom, const genlim* gene_lim,
                       int gene_offset, int num_genes, int tot, int num_nodes){
 
-	int   par[100];
+	int   par[GA_MAX_FLEXDEE_PARAMS];
 	//int* genes = NULL;
 	sFlexDEE_Node sFlexDEENode;
 
@@ -2202,7 +2233,7 @@ int cmp_chrom2pop(const chromosome* chrom,const gene* genes, int num_genes,int s
 		for(j=0;j<num_genes;j++){
 			//printf("individuals[%d][%d].gene[%d]=%.3f\t%.3f\n", start-1, i, j,
 			//       genes[j].to_ic, chrom[i].genes[j].to_ic);
-			flag += abs(genes[j].to_ic - chrom[i].genes[j].to_ic) < 0.1;
+			flag += abs(genes[j].to_ic - chrom[i].genes[j].to_ic) < GA_GENE_MATCH_TOLERANCE;
 		}
 
 		//printf("flag=%d\n",flag);
@@ -2496,20 +2527,16 @@ void crossover(gene *john,gene *mary,int num_genes, int intragenes){
 	/* john and mary are two chromosomes to be crossover at points a and b
 	 */
 
-	/*
-	printf("john before:\n");
-	print_chrom(john,num_genes,0);
-	printf("mary before:\n");
-	print_chrom(mary,num_genes,0);
-	*/
-
 	int i,j;
-	int optr,temp;
+	unsigned int optr;
+	int temp;
 	int gen_a,gen_b,aux_gen;
 	int pnt_a,pnt_b,aux_pnt;
 
 	gen_a=(int)(RandomDouble()*(double)num_genes);
 	gen_b=(int)(RandomDouble()*(double)num_genes);
+	if (gen_a >= num_genes) gen_a = num_genes - 1;
+	if (gen_b >= num_genes) gen_b = num_genes - 1;
 	//printf("gen_a=%d\tgen_b=%d\n",gen_a,gen_b);
 
 
@@ -2565,20 +2592,22 @@ void crossover(gene *john,gene *mary,int num_genes, int intragenes){
 	//printf("gen_a=%d\tpnt_a=%d\tgen_b=%d\tpnt_b=%d\n",gen_a,pnt_a,gen_b,pnt_b);
 
 	for(j=gen_a;j<=gen_b;j++){
-		optr=1;
+		optr=1u;
 		aux_pnt = (j==gen_a)?pnt_a:(MAX_GEN_LENGTH);
 		for(i=0;i<aux_pnt;i++) optr |= (optr << 1);
-		temp = (john[j].to_int32 & ~optr) | (mary[j].to_int32 &  optr);
-		mary[j].to_int32 = (john[j].to_int32 &  optr) | (mary[j].to_int32 & ~optr);
-		john[j].to_int32 = temp;
+		unsigned int uj = static_cast<unsigned int>(john[j].to_int32);
+		unsigned int um = static_cast<unsigned int>(mary[j].to_int32);
+		john[j].to_int32 = static_cast<int32_t>((uj & ~optr) | (um &  optr));
+		mary[j].to_int32 = static_cast<int32_t>((uj &  optr) | (um & ~optr));
 	}
 
 	if(pnt_b > 0){
-		optr=1;
+		optr=1u;
 		for(i=0;i<pnt_b-1;i++) optr |= (optr << 1);
-		temp = (john[gen_b].to_int32 & ~optr) | (mary[gen_b].to_int32 &  optr);
-		mary[gen_b].to_int32 = (john[gen_b].to_int32 &  optr) | (mary[gen_b].to_int32 & ~optr);
-		john[gen_b].to_int32 = temp;
+		unsigned int uj = static_cast<unsigned int>(john[gen_b].to_int32);
+		unsigned int um = static_cast<unsigned int>(mary[gen_b].to_int32);
+		john[gen_b].to_int32 = static_cast<int32_t>((uj & ~optr) | (um &  optr));
+		mary[gen_b].to_int32 = static_cast<int32_t>((uj &  optr) | (um & ~optr));
 	}
 
 	/*
@@ -2601,19 +2630,19 @@ void mutate(gene *john,int num_genes,double mut_rate){
 	   uses it to mutate john.
 	*/
 	int i,j;
-	int optr;
-	int test;
+	unsigned int optr;
+	unsigned int test;
 
 	for(j=0;j<num_genes;j++){
-		optr=0;
-		test=1;
+		optr=0u;
+		test=1u;
 		for(i=0;i<32;i++){
 			if(RandomDouble() < mut_rate){
 				optr |= test;
 			}
 			test <<= 1;
 		}
-		john[j].to_int32 ^= optr;
+		john[j].to_int32 ^= static_cast<int32_t>(optr);
 	}
 
 	return;
@@ -2851,7 +2880,6 @@ void print_chrom(const gene* genes, int num_genes, int real_flag){
  ********************************************************************************/
 
 double calc_rmsp(int npar, const gene* g1, const gene* g2, const optmap* map_par, gridpoint* cleftgrid){
-#ifdef FLEXAIDS_HAS_EIGEN
 	// Vectorised RMSP using Eigen strided Map over the to_ic field.
 	// gene_struct lays out {int32_t to_int32; double to_ic}, so stride = sizeof(gene).
 	using EMap = Eigen::Map<const Eigen::VectorXd,
@@ -2862,12 +2890,6 @@ double calc_rmsp(int npar, const gene* g1, const gene* g2, const optmap* map_par
 	Eigen::VectorXd diff(npar);
 	for (int ii = 0; ii < npar; ++ii) diff[ii] = g1[ii].to_ic - g2[ii].to_ic;
 	return std::sqrt(diff.squaredNorm() / (double)npar);
-#else
-	double rmsp = 0.0;
-	for(int i = 0; i < npar; ++i)
-		rmsp += (g1[i].to_ic - g2[i].to_ic) * (g1[i].to_ic - g2[i].to_ic);
-	return sqrt(rmsp / (double)npar);
-#endif
 }
 
 double genetoic(const genlim* gene_lim, int32_t gene){
@@ -2915,7 +2937,10 @@ int ictogene(const genlim* gene_lim, double ic){
 
 
 int RandomInt(double frac){
-	return (int)(frac*((double)RAND_MAX+1.0));
+	double raw = frac * ((double)RAND_MAX + 1.0);
+	if (raw >= (double)RAND_MAX + 1.0) return RAND_MAX;
+	if (raw < 0.0) return 0;
+	return (int)raw;
 }
 
 double RandomDouble(int32_t gene){

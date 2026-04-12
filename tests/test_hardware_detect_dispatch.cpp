@@ -72,12 +72,10 @@ TEST(HardwareDetect, DetectsOpenMP) {
 }
 #endif
 
-#ifdef FLEXAIDS_HAS_EIGEN
 TEST(HardwareDetect, DetectsEigen) {
     const auto& hw = detect_hardware();
     EXPECT_TRUE(hw.has_eigen);
 }
-#endif
 
 // ===========================================================================
 // BACKEND SELECTION
@@ -86,17 +84,18 @@ TEST(HardwareDetect, DetectsEigen) {
 TEST(BackendSelection, SelectsValidBackend) {
     HardwareBackend b = select_backend();
     EXPECT_GE(static_cast<int>(b), 0);
-    EXPECT_LE(static_cast<int>(b), 5);
+    EXPECT_LE(static_cast<int>(b), 6);
 }
 
 TEST(BackendSelection, CPUBackendIsNotGPU) {
     HardwareBackend b = select_cpu_backend();
     EXPECT_NE(b, HardwareBackend::CUDA);
+    EXPECT_NE(b, HardwareBackend::ROCM);
     EXPECT_NE(b, HardwareBackend::METAL);
 }
 
 TEST(BackendSelection, BackendNameValid) {
-    for (int i = 0; i <= 5; ++i) {
+    for (int i = 0; i <= 6; ++i) {
         const char* name = backend_name(static_cast<HardwareBackend>(i));
         EXPECT_NE(name, nullptr);
         EXPECT_GT(std::strlen(name), 0u);
@@ -105,6 +104,7 @@ TEST(BackendSelection, BackendNameValid) {
 
 TEST(BackendSelection, BackendNameCoversAll) {
     EXPECT_STREQ(backend_name(HardwareBackend::CUDA), "CUDA");
+    EXPECT_STREQ(backend_name(HardwareBackend::ROCM), "ROCm");
     EXPECT_STREQ(backend_name(HardwareBackend::METAL), "Metal");
     EXPECT_STREQ(backend_name(HardwareBackend::AVX512), "AVX-512");
     EXPECT_STREQ(backend_name(HardwareBackend::AVX2), "AVX2");

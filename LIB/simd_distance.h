@@ -17,13 +17,21 @@
 #  include <immintrin.h>
 #  define FLEXAIDS_HAS_AVX512 1
 #  define FLEXAIDS_HAS_AVX2   1       // AVX-512 implies AVX2
+#  define FLEXAIDS_HAS_SSE42  1
 #elif defined(__AVX2__)
 #  include <immintrin.h>
 #  define FLEXAIDS_HAS_AVX512 0
 #  define FLEXAIDS_HAS_AVX2   1
+#  define FLEXAIDS_HAS_SSE42  1
+#elif defined(__SSE4_2__)
+#  include <nmmintrin.h>
+#  define FLEXAIDS_HAS_AVX512 0
+#  define FLEXAIDS_HAS_AVX2   0
+#  define FLEXAIDS_HAS_SSE42  1
 #else
 #  define FLEXAIDS_HAS_AVX512 0
 #  define FLEXAIDS_HAS_AVX2   0
+#  define FLEXAIDS_HAS_SSE42  0
 #endif
 
 namespace simd {
@@ -248,9 +256,6 @@ inline void distance2_1x8(const float* FLEXAIDS_RESTRICT ax,
 inline float sum_sq_distances(const float* FLEXAIDS_RESTRICT a_xyz,
                                const float* FLEXAIDS_RESTRICT b_xyz,
                                int N) noexcept {
-#if FLEXAIDS_HAS_AVX512
-    return sum_sq_distances_avx512(a_xyz, b_xyz, N);
-#else
     __m256 acc = _mm256_setzero_ps();
     int i = 0;
     for (; i <= N - 8; i += 8) {
@@ -270,7 +275,6 @@ inline float sum_sq_distances(const float* FLEXAIDS_RESTRICT a_xyz,
             sum += sq(a_xyz[i*3+c] - b_xyz[i*3+c]);
     }
     return sum;
-#endif
 }
 
 // Lennard-Jones r^-12 wall energy for 8 distances simultaneously.
@@ -303,9 +307,6 @@ inline void lj_wall_8x(const float* FLEXAIDS_RESTRICT r2,
 inline void dot3_batch(const float* FLEXAIDS_RESTRICT a,
                        const float* FLEXAIDS_RESTRICT b,
                        float* FLEXAIDS_RESTRICT out, int N) noexcept {
-#if FLEXAIDS_HAS_AVX512
-    dot3_batch_avx512(a, b, out, N);
-#else
     int i = 0;
     for (; i <= N - 8; i += 8) {
         __m256 s = _mm256_setzero_ps();
@@ -322,7 +323,6 @@ inline void dot3_batch(const float* FLEXAIDS_RESTRICT a,
     }
     for (; i < N; ++i)
         out[i] = a[i*3]*b[i*3] + a[i*3+1]*b[i*3+1] + a[i*3+2]*b[i*3+2];
-#endif
 }
 
 // ─── AVX-512 implementations (16-wide float, 8-wide double) ─────────────────
@@ -475,7 +475,145 @@ inline void boltzmann_batch_8d(const double* FLEXAIDS_RESTRICT energies,
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-#else  // ─── scalar fallback versions ─────────────────────────────────────────
+// ─── SSE4.2 implementations (4-wide float) ─────────────────────────────────
+// Active when SSE4.2 is available but AVX2 is not (e.g. older Xeon, Atom).
+// Slot between AVX2 and scalar in the dispatch chain.
+
+#elif FLEXAIDS_HAS_SSE42
+
+// Horizontal sum of a __m128 register (4 floats → 1 float)
+inline float hsum128_ps(__m128 v) noexcept {
+    __m128 hi = _mm_movehl_ps(v, v);        // [2,3,2,3]
+    __m128 s  = _mm_add_ps(v, hi);          // [0+2,1+3,...]
+    __m128 s2 = _mm_movehdup_ps(s);         // [1+3,1+3,...]
+    return _mm_cvtss_f32(_mm_add_ss(s, s2));
+}
+
+// Squared distances between one point B and 4 points A (SOA layout).
+//   ax[4], ay[4], az[4] – x/y/z of 4 A atoms
+//   bx, by, bz          – coordinates of atom B
+//   out[4]              – results
+inline void distance2_1x4(const float* FLEXAIDS_RESTRICT ax,
+                           const float* FLEXAIDS_RESTRICT ay,
+                           const float* FLEXAIDS_RESTRICT az,
+                           float bx, float by, float bz,
+                           float* FLEXAIDS_RESTRICT out) noexcept {
+    __m128 vbx = _mm_set1_ps(bx);
+    __m128 vby = _mm_set1_ps(by);
+    __m128 vbz = _mm_set1_ps(bz);
+    __m128 dx  = _mm_sub_ps(_mm_loadu_ps(ax), vbx);
+    __m128 dy  = _mm_sub_ps(_mm_loadu_ps(ay), vby);
+    __m128 dz  = _mm_sub_ps(_mm_loadu_ps(az), vbz);
+    __m128 r2  = _mm_add_ps(_mm_mul_ps(dx, dx),
+                 _mm_add_ps(_mm_mul_ps(dy, dy),
+                            _mm_mul_ps(dz, dz)));
+    _mm_storeu_ps(out, r2);
+}
+
+// 16-wide and 8-wide wrappers use 4-wide in a loop
+inline void distance2_1x16(const float* FLEXAIDS_RESTRICT ax,
+                            const float* FLEXAIDS_RESTRICT ay,
+                            const float* FLEXAIDS_RESTRICT az,
+                            float bx, float by, float bz,
+                            float* FLEXAIDS_RESTRICT out) noexcept {
+    for (int i = 0; i < 16; i += 4)
+        distance2_1x4(ax + i, ay + i, az + i, bx, by, bz, out + i);
+}
+
+inline void distance2_1x8(const float* FLEXAIDS_RESTRICT ax,
+                           const float* FLEXAIDS_RESTRICT ay,
+                           const float* FLEXAIDS_RESTRICT az,
+                           float bx, float by, float bz,
+                           float* FLEXAIDS_RESTRICT out) noexcept {
+    distance2_1x4(ax,     ay,     az,     bx, by, bz, out);
+    distance2_1x4(ax + 4, ay + 4, az + 4, bx, by, bz, out + 4);
+}
+
+// Sum of squared distances over N atoms (AOS interleaved xyz), 4-wide.
+inline float sum_sq_distances(const float* FLEXAIDS_RESTRICT a_xyz,
+                               const float* FLEXAIDS_RESTRICT b_xyz,
+                               int N) noexcept {
+    __m128 acc = _mm_setzero_ps();
+    int i = 0;
+    for (; i <= N - 4; i += 4) {
+        for (int c = 0; c < 3; ++c) {
+            float a4[4], b4[4];
+            for (int k = 0; k < 4; ++k) {
+                a4[k] = a_xyz[(i+k)*3 + c];
+                b4[k] = b_xyz[(i+k)*3 + c];
+            }
+            __m128 da = _mm_sub_ps(_mm_loadu_ps(a4), _mm_loadu_ps(b4));
+            acc = _mm_add_ps(acc, _mm_mul_ps(da, da));
+        }
+    }
+    float sum = hsum128_ps(acc);
+    for (; i < N; ++i)
+        for (int c = 0; c < 3; ++c)
+            sum += sq(a_xyz[i*3+c] - b_xyz[i*3+c]);
+    return sum;
+}
+
+// Lennard-Jones r^-12 wall energy for 4 distances (SSE4.2).
+inline void lj_wall_4x(const float* FLEXAIDS_RESTRICT r2,
+                        float inv_rAB12,
+                        float k_wall,
+                        float* FLEXAIDS_RESTRICT Ewall) noexcept {
+    __m128 vr2    = _mm_loadu_ps(r2);
+    __m128 inv_r2 = _mm_rcp_ps(vr2);
+    // Newton-Raphson refinement
+    inv_r2 = _mm_mul_ps(inv_r2,
+              _mm_sub_ps(_mm_set1_ps(2.0f),
+              _mm_mul_ps(vr2, inv_r2)));
+    __m128 inv_r4  = _mm_mul_ps(inv_r2, inv_r2);
+    __m128 inv_r6  = _mm_mul_ps(inv_r4, inv_r2);
+    __m128 inv_r12 = _mm_mul_ps(inv_r6, inv_r6);
+    __m128 e = _mm_mul_ps(_mm_set1_ps(k_wall),
+               _mm_sub_ps(inv_r12, _mm_set1_ps(inv_rAB12)));
+    _mm_storeu_ps(Ewall, e);
+}
+
+// 16-wide and 8-wide LJ wall wrappers
+inline void lj_wall_16x(const float* FLEXAIDS_RESTRICT r2,
+                         float inv_rAB12,
+                         float k_wall,
+                         float* FLEXAIDS_RESTRICT Ewall) noexcept {
+    for (int i = 0; i < 16; i += 4)
+        lj_wall_4x(r2 + i, inv_rAB12, k_wall, Ewall + i);
+}
+
+inline void lj_wall_8x(const float* FLEXAIDS_RESTRICT r2,
+                        float inv_rAB12,
+                        float k_wall,
+                        float* FLEXAIDS_RESTRICT Ewall) noexcept {
+    lj_wall_4x(r2,     inv_rAB12, k_wall, Ewall);
+    lj_wall_4x(r2 + 4, inv_rAB12, k_wall, Ewall + 4);
+}
+
+// Batched dot products: result[i] = dot(a[i], b[i]), 4-wide
+inline void dot3_batch(const float* FLEXAIDS_RESTRICT a,
+                       const float* FLEXAIDS_RESTRICT b,
+                       float* FLEXAIDS_RESTRICT out, int N) noexcept {
+    int i = 0;
+    for (; i <= N - 4; i += 4) {
+        __m128 s = _mm_setzero_ps();
+        for (int c = 0; c < 3; ++c) {
+            float a4[4], b4[4];
+            for (int k = 0; k < 4; ++k) {
+                a4[k] = a[(i+k)*3+c];
+                b4[k] = b[(i+k)*3+c];
+            }
+            s = _mm_add_ps(s, _mm_mul_ps(_mm_loadu_ps(a4),
+                                          _mm_loadu_ps(b4)));
+        }
+        _mm_storeu_ps(out + i, s);
+    }
+    for (; i < N; ++i)
+        out[i] = a[i*3]*b[i*3] + a[i*3+1]*b[i*3+1] + a[i*3+2]*b[i*3+2];
+}
+
+// ─── scalar fallback versions (no SIMD at all) ──────────────────────────────
+
+#else
 
 inline void distance2_1x16(const float* ax, const float* ay, const float* az,
                             float bx, float by, float bz,
@@ -522,7 +660,7 @@ inline void dot3_batch(const float* a, const float* b, float* out, int N) noexce
         out[i] = a[i*3]*b[i*3] + a[i*3+1]*b[i*3+1] + a[i*3+2]*b[i*3+2];
 }
 
-#endif  // FLEXAIDS_HAS_AVX512 / FLEXAIDS_HAS_AVX2
+#endif  // FLEXAIDS_HAS_AVX512 / FLEXAIDS_HAS_AVX2 / FLEXAIDS_HAS_SSE42
 
 // ─── dispatch helper: compile-time dispatch to best available ────────────────
 
@@ -532,3 +670,49 @@ inline float rmsd(const float* a, const float* b, int N) noexcept {
 }
 
 }  // namespace simd
+
+// ─── flat namespace wrappers for use from C-style code ──────────────────────
+namespace flexaids {
+
+// Sum of squared element-wise differences over n_floats contiguous floats.
+// Dispatches to AVX-512 / AVX2 / scalar automatically.
+// Use this for RMSD on interleaved xyz where you pass nAtoms*3 as n_floats.
+inline float sum_sq_distances_f(const float* a, const float* b, int n_floats) noexcept {
+#if FLEXAIDS_HAS_AVX512
+    __m512 acc = _mm512_setzero_ps();
+    int i = 0;
+    for (; i + 15 < n_floats; i += 16) {
+        __m512 va = _mm512_loadu_ps(a + i);
+        __m512 vb = _mm512_loadu_ps(b + i);
+        __m512 d  = _mm512_sub_ps(va, vb);
+        acc = _mm512_fmadd_ps(d, d, acc);
+    }
+    float sum = _mm512_reduce_add_ps(acc);
+    for (; i < n_floats; ++i) { float d = a[i] - b[i]; sum += d * d; }
+    return sum;
+#elif FLEXAIDS_HAS_AVX2
+    __m256 acc = _mm256_setzero_ps();
+    int i = 0;
+    for (; i + 7 < n_floats; i += 8) {
+        __m256 va = _mm256_loadu_ps(a + i);
+        __m256 vb = _mm256_loadu_ps(b + i);
+        __m256 d  = _mm256_sub_ps(va, vb);
+        acc = _mm256_fmadd_ps(d, d, acc);
+    }
+    // Horizontal sum of 8 floats
+    __m128 hi  = _mm256_extractf128_ps(acc, 1);
+    __m128 lo  = _mm256_castps256_ps128(acc);
+    __m128 s4  = _mm_add_ps(lo, hi);
+    __m128 s2  = _mm_add_ps(s4, _mm_movehl_ps(s4, s4));
+    __m128 s1  = _mm_add_ss(s2, _mm_shuffle_ps(s2, s2, 1));
+    float sum  = _mm_cvtss_f32(s1);
+    for (; i < n_floats; ++i) { float d = a[i] - b[i]; sum += d * d; }
+    return sum;
+#else
+    float sum = 0.0f;
+    for (int i = 0; i < n_floats; ++i) { float d = a[i] - b[i]; sum += d * d; }
+    return sum;
+#endif
+}
+
+}  // namespace flexaids

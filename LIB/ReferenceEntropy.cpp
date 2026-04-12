@@ -10,9 +10,7 @@
 #include <cstdio>
 #include <span>
 
-#ifdef FLEXAIDS_HAS_EIGEN
 #include <Eigen/Dense>
-#endif
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -39,7 +37,6 @@ ReceptorEntropyResult compute_receptor_entropy(
     // Eigen-accelerated path: vectorized exp/log operations
     const double beta = 1.0 / (kB_kcal * temperature_K);
 
-#ifdef FLEXAIDS_HAS_EIGEN
     // Eigen vectorized: all exp/log/sum operations auto-vectorize to AVX/SSE
     Eigen::Map<const Eigen::ArrayXd> E(model_energies.data(), r.n_models);
     const double e_min = E.minCoeff();
@@ -58,33 +55,6 @@ ReceptorEntropyResult compute_receptor_entropy(
     Eigen::ArrayXd safe_log = (pi > 1e-15).select(log_pi, Eigen::ArrayXd::Zero(r.n_models));
     Eigen::ArrayXd safe_pi  = (pi > 1e-15).select(pi, Eigen::ArrayXd::Zero(r.n_models));
     double H = -(safe_pi * safe_log).sum();
-
-#else
-    // Scalar fallback with manual log-sum-exp
-    double e_min = *std::min_element(model_energies.begin(), model_energies.end());
-    double e_max = *std::max_element(model_energies.begin(), model_energies.end());
-    r.energy_spread = e_max - e_min;
-
-    double log_Z = 0.0;
-    {
-        std::vector<double> shifted(r.n_models);
-        for (int i = 0; i < r.n_models; i++)
-            shifted[i] = -beta * (model_energies[i] - e_min);
-        double max_s = *std::max_element(shifted.begin(), shifted.end());
-        double sum = 0.0;
-        for (double s : shifted)
-            sum += std::exp(s - max_s);
-        log_Z = max_s + std::log(sum);
-    }
-
-    double H = 0.0;
-    for (int i = 0; i < r.n_models; i++) {
-        double log_pi = -beta * (model_energies[i] - e_min) - log_Z;
-        double pi = std::exp(log_pi);
-        if (pi > 1e-15)
-            H -= pi * log_pi;
-    }
-#endif
 
     // Convert from nats to kcal/mol·K via: S = kB * H
     r.S_conf = kB_kcal * H;

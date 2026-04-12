@@ -9,22 +9,15 @@
 
 #include "GAContext.h"
 
-#ifdef FLEXAIDS_HAS_EIGEN
 #include "TurboQuant.h"  // provides full definition of QuantizedContactMatrix
-#endif
 
 GAContext::~GAContext() {
-#ifdef FLEXAIDS_HAS_EIGEN
     delete tqcm;
-#endif
-    // Without Eigen, tqcm is always nullptr — no action needed
 }
 
 GAContext& GAContext::operator=(GAContext&& o) noexcept {
     if (this != &o) {
-#ifdef FLEXAIDS_HAS_EIGEN
         delete tqcm;
-#endif
         gen_id = o.gen_id;
         nrejected = o.nrejected;
         dispatch_logged = o.dispatch_logged;

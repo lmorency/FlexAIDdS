@@ -1,0 +1,78 @@
+# lsd.docking.org 11-Target Subset
+#
+# Eleven prospective ultra-large library docking targets from the Shoichet lab
+# (UCSF) lsd.docking.org campaigns.  Each campaign includes:
+#   - Receptor structure (holo co-crystal)
+#   - ~1 billion ZINC22 compounds screened computationally
+#   - Experimental hit validation for top-ranked compounds
+#
+# FlexAIDdS uses these as a challenging test of entropy-discriminated VS:
+# the entropy rescue rate measures how often ΔS rescues compounds that were
+# missed by enthalpy-only docking but later confirmed as hits.
+#
+# References:
+#   Lyu et al. (2019) Nature 566:224-229  (D4R campaign)
+#   Lippert et al. (2021) Nature 600:735-759  (σ2 campaign)
+#   Schuller et al. (2021) Science 371:eabf9845  (Mac1 campaign)
+#   Irwin et al. (2022) J. Chem. Inf. Model. 62:4291-4300  (AmpC campaign)
+#
+# Dataset DOI/access: https://lsd.docking.org/ (requires academic registration)
+
+slug: lsd_docking
+name: "lsd.docking.org 11-Target Subset"
+description: >
+  Eleven ultra-large library docking targets from published Shoichet-lab
+  prospective campaigns.  Provides stringent experimental validation of VS
+  enrichment and entropy-correction rescue for novel chemotypes.
+
+zenodo_doi: ""
+download_url: "https://lsd.docking.org/"
+data_format: mol2
+tier: 2
+tier1_subset_size: 3
+
+structural_states:
+  - holo
+
+targets:
+  - D4R      # Dopamine D4 receptor — first GPCR ULVS campaign; 153M compounds
+             # PDB: 5WIU (eticlopride-bound); experimental hits confirmed by radioligand
+  - SIGMA2   # Sigma-2 receptor (TMEM97) — lipid-binding pocket; 1.28B compounds
+             # PDB: 6DKZ; hits confirmed by [3H]DTG displacement
+  - AMPC     # AmpC β-lactamase — largest published ULVS; 99B compounds (2022)
+             # PDB: 1L2S; hits confirmed by IC50 / crystallography
+  - MAC1     # SARS-CoV-2 Mac1 macrodomain — pandemic target; 1.2B compounds
+             # PDB: 6YHU; ADP-ribose hydrolase activity assay validation
+  - D2R      # Dopamine D2 receptor — cryo-EM structure docking
+             # PDB: 6CM4; validated by functional cAMP assay
+  - EPHA3    # EphA3 kinase — receptor tyrosine kinase; 235M compounds
+             # PDB: 2QO9; validated by TR-FRET kinase assay
+  - CB2R     # Cannabinoid receptor 2 — CNS/immune target
+             # PDB: 5ZTY; validated by [35S]GTPγS binding
+  - SEH      # Soluble epoxide hydrolase — inflammation/hypertension target
+             # PDB: 1ZD3; validated by fluorescence displacement
+  - USP7     # Ubiquitin-specific protease 7 — deubiquitylase
+             # PDB: 1YY6; validated by Ub-AMC activity assay
+  - RORGT    # ROR-γt nuclear receptor — Th17 differentiation; autoimmune
+             # PDB: 4YNA; validated by AlphaScreen coactivator displacement
+  - MRGPRX2 # Mas-related G protein-coupled receptor X2 — mast cell degranulation
+             # PDB: 7S8L; validated by intracellular Ca2+ mobilisation
+
+metrics:
+  - ef_1pct
+  - log_auc
+  - docking_power_top1
+  - entropy_rescue_rate
+  - hit_rate_top10
+  - target_specificity_zscore
+
+expected_baselines:
+  ef_1pct: 18.5
+  log_auc: 0.72
+  docking_power_top1: 0.73
+  entropy_rescue_rate: 0.55
+  hit_rate_top10: 0.42
+
+baseline_tolerance: 0.08
+
+active_label_field: is_active

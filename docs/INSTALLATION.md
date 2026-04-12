@@ -112,7 +112,7 @@ All CMake options with defaults:
 |:-------|:--------|:------------|
 | `BUILD_FLEXAIDDS_FAST` | **ON** | LTO-optimized FlexAIDdS binary |
 | `ENABLE_TENCOM_TOOL` | **ON** | tENCoM vibrational entropy tool |
-| `FLEXAIDS_USE_CUDA` | OFF | NVIDIA GPU acceleration (Volta → Hopper) |
+| `FLEXAIDS_USE_CUDA` | OFF | NVIDIA GPU acceleration (Volta → Blackwell) |
 | `FLEXAIDS_USE_ROCM` | OFF | AMD GPU acceleration (MI100/MI200/MI300) |
 | `FLEXAIDS_USE_METAL` | OFF | Apple GPU acceleration (macOS only) |
 | `FLEXAIDS_USE_AVX2` | **ON** | AVX2 SIMD (auto-disabled on ARM) |
@@ -157,7 +157,7 @@ cmake .. -DCMAKE_BUILD_TYPE=Release -DFLEXAIDS_USE_CUDA=ON
 cmake --build . -j $(nproc)
 ```
 
-Requires: CUDA Toolkit installed, NVIDIA GPU with compute capability ≥ 7.0 (Volta through Hopper).
+Requires: CUDA Toolkit installed, NVIDIA GPU with compute capability ≥ 7.0 (Volta through Blackwell; Blackwell requires CUDA ≥ 12.6).
 
 ### Metal GPU Acceleration (macOS)
 

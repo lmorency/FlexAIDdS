@@ -1,5 +1,10 @@
 #include "gaboom.h"
 #include "fileio.h"
+#include "simd_distance.h"
+#include <vector>
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, genlim* gene_lim, atom* atoms, resid* residue, gridpoint* cleftgrid, int num_chrom, char* end_strfile, char* tmp_end_strfile, char* dockinp, char* gainp)
 {
@@ -86,7 +91,29 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 		Terminate(2);
 	}
 	
-	// Clustering part
+	// ── Pre-compute Cartesian coordinates for all chromosomes ──────────
+	// Eliminates redundant buildcc() calls in the O(N²) clustering loop.
+	// DensityPeak_Cluster already uses this pattern (Chrom[i].Coord).
+	const int nAtoms_clus = residue[atoms[FA->map_par[0].atm].ofres].latm[0]
+	                      - residue[atoms[FA->map_par[0].atm].ofres].fatm[0] + 1;
+	const int coord_stride = nAtoms_clus * 3;
+	std::vector<float> coord_cache((size_t)num_chrom * coord_stride);
+
+	for(int c = 0; c < num_chrom; ++c)
+	{
+		if(c + 1 < num_chrom) {
+			calc_rmsd_chrom(FA,GB,chrom,gene_lim,atoms,residue,cleftgrid,
+			                GB->num_genes, c, c+1,
+			                &coord_cache[c * coord_stride],
+			                &coord_cache[(c+1) * coord_stride], false);
+		} else {
+			calc_rmsd_chrom(FA,GB,chrom,gene_lim,atoms,residue,cleftgrid,
+			                GB->num_genes, c, c,
+			                &coord_cache[c * coord_stride], NULL, false);
+		}
+	}
+
+	// Clustering part — uses cached coordinates + SIMD distance
 	while(n_unclus > 0)
 	{
 		for(j=0;j<num_chrom;++j){if(Clus_GAPOP[j]==-1){break;}}
@@ -95,8 +122,6 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
         Clus_GAPOP[j]=j;
 		Clus_RMSDT[j]=0.0;
 		n_unclus--;
-		// Clus_TCF[num_of_clusters]=chrom[j].app_evalue;
-		// Clus_TCF[num_of_clusters]=chrom[j].app_evalue;
 		if(FA->temperature > 0)
 		{
 			double Pj = exp((-1.0) * FA->beta * chrom[j].app_evalue) / partition_function;
@@ -111,33 +136,44 @@ void cluster(FA_Global* FA, GB_Global* GB, VC_Global* VC, chromosome* chrom, gen
 		Clus_TOP[num_of_clusters]=j;
 		Clus_FRE[num_of_clusters]++;
 
-		// printf("n_unclus=%d j=%d\n",n_unclus,j);
-		//PAUSE;
+		const float* coor_j = &coord_cache[j * coord_stride];
+
+		// OpenMP parallelised inner RMSD loop over unclustered chromosomes.
+		// Each thread computes RMSD from cached coordinates using SIMD.
+		// Cluster assignments use a critical section (rare — only on match).
+		#ifdef _OPENMP
+		#pragma omp parallel for schedule(dynamic)
+		#endif
 		for(i=j+1;i<num_chrom;++i)
 		{
 			if(Clus_GAPOP[i]==-1)
 			{
-				rmsd = calc_rmsd_chrom(FA,GB,chrom,gene_lim,atoms,residue,cleftgrid,GB->num_genes,i,j, NULL, NULL, true);
-				//printf("rmsd(%d,%d)=%f\n",i,j,rmsd);
-				//PAUSE;
-				if(rmsd <= FA->cluster_rmsd)
+				const float* coor_i = &coord_cache[i * coord_stride];
+				float d = flexaids::sum_sq_distances_f(coor_i, coor_j, coord_stride);
+				float loc_rmsd = sqrtf(d / (float)nAtoms_clus);
+
+				if(loc_rmsd <= FA->cluster_rmsd)
 				{
-					Clus_GAPOP[i]=j;
-					Clus_RMSDT[i]=rmsd;
-					// printf("i=%d belongs to cluster of j=%d because rmsd=%.3f\n", i, j, rmsd);
-					n_unclus--;
-					if(FA->temperature){
-						double Pi = exp((-1.0) * FA->beta * chrom[i].app_evalue) / partition_function;
-						Clus_ACF[num_of_clusters] += (double)( (Pi * chrom[i].app_evalue) + (FA->temperature * Pi * log(Pi)) );
-					}else{
-						Clus_ACF[num_of_clusters] += chrom[i].app_evalue;
+					#ifdef _OPENMP
+					#pragma omp critical
+					#endif
+					{
+						Clus_GAPOP[i]=j;
+						Clus_RMSDT[i]=loc_rmsd;
+						n_unclus--;
+						if(FA->temperature){
+							double Pi = exp((-1.0) * FA->beta * chrom[i].app_evalue) / partition_function;
+							Clus_ACF[num_of_clusters] += (double)( (Pi * chrom[i].app_evalue) + (FA->temperature * Pi * log(Pi)) );
+						}else{
+							Clus_ACF[num_of_clusters] += chrom[i].app_evalue;
+						}
+						Clus_FRE[num_of_clusters]++;
 					}
-					Clus_FRE[num_of_clusters]++;
 				}
 			}
 		}
 		num_of_clusters++;
-        
+
 		// quit storing clusters up to N max results
 		if(num_of_clusters == num_of_results){break;}
 	}

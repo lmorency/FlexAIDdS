@@ -1,0 +1,379 @@
+name: Benchmark Tier 2 (Nightly Comprehensive)
+
+# Full benchmark suite: all datasets, all metrics, bootstrap CIs, regression
+# tracking, and a Markdown report committed as a commit comment.
+#
+# Triggers:
+#   - After every merge to master (post-merge validation)
+#   - Weekly cron (Sunday 02:00 UTC) for baseline drift detection
+#   - Manual dispatch for on-demand full runs
+#
+# Self-hosted runner / HPC support:
+#   Set runs-on to your self-hosted label (e.g. 'self-hosted,hpc,gpu').
+#   For MPI multi-node runs, use the 'mpirun' step pattern below.
+#
+# Dataset caching: datasets are downloaded from Zenodo/object storage and
+# cached by dataset slug + version hash to avoid redundant downloads.
+
+on:
+  push:
+    branches:
+      - master
+  schedule:
+    - cron: "0 2 * * 0"   # Weekly: Sunday 02:00 UTC
+  workflow_dispatch:
+    inputs:
+      datasets:
+        description: "Comma-separated dataset slugs (empty = all)"
+        required: false
+        default: ""
+      n_workers:
+        description: "Local worker processes per node"
+        required: false
+        default: "4"
+      bootstrap:
+        description: "Compute bootstrap CIs (true/false)"
+        required: false
+        default: "true"
+      dry_run:
+        description: "Dry run (no actual docking)"
+        required: false
+        default: "false"
+
+concurrency:
+  group: bench-tier2-${{ github.ref }}
+  cancel-in-progress: false   # never cancel a running comprehensive run
+
+jobs:
+  # -----------------------------------------------------------------------
+  # Build matrix: build FlexAID once, cache for all benchmark jobs
+  # -----------------------------------------------------------------------
+  build:
+    name: Build FlexAIDdS
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build libeigen3-dev libomp-dev libopenmpi-dev openmpi-bin
+
+      - name: Cache build artifacts
+        id: cache-build
+        uses: actions/cache@v5
+        with:
+          path: build
+          key: tier2-build-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'LIB/**/*.cpp', 'LIB/**/*.h') }}
+          restore-keys: |
+            tier2-build-${{ runner.os }}-
+
+      - name: Build FlexAIDdS (Release + AVX2 + OpenMP)
+        if: steps.cache-build.outputs.cache-hit != 'true'
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DFLEXAIDS_USE_CUDA=OFF \
+            -DFLEXAIDS_USE_METAL=OFF \
+            -DFLEXAIDS_USE_AVX2=ON \
+            -DFLEXAIDS_USE_OPENMP=ON \
+            -DFLEXAIDS_USE_MPI=ON \
+            -DBUILD_TESTING=OFF \
+            -DBUILD_PYTHON_BINDINGS=OFF
+          cmake --build build --parallel --target FlexAID
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: flexaid-binary-${{ github.sha }}
+          path: build/FlexAID
+          retention-days: 1
+
+  # -----------------------------------------------------------------------
+  # Benchmark runner
+  # -----------------------------------------------------------------------
+  benchmark:
+    name: Tier-2 Benchmark
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 360   # 6-hour cap for full comprehensive run
+
+    env:
+      RESULTS_DIR: results/tier2
+      N_WORKERS: ${{ inputs.n_workers || '4' }}
+      DO_BOOTSTRAP: ${{ inputs.bootstrap || 'true' }}
+      DRY_RUN_FLAG: ${{ (inputs.dry_run == 'true') && '--dry-run' || '' }}
+      DATASET_FILTER: ${{ inputs.datasets || '' }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install numpy scipy pyyaml mpi4py
+
+      - name: Install runtime dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends \
+            libopenmpi-dev openmpi-bin
+
+      - name: Download FlexAID binary
+        uses: actions/download-artifact@v8
+        with:
+          name: flexaid-binary-${{ github.sha }}
+          path: build/
+
+      - name: Make binary executable
+        run: chmod +x build/FlexAID
+
+      # -- Dataset cache / download --
+      - name: Cache CASF-2016 dataset
+        uses: actions/cache@v5
+        with:
+          path: benchmark_data/casf2016
+          key: bench-data-casf2016-v1
+          restore-keys: bench-data-casf2016-
+
+      - name: Cache ITC-187 dataset
+        uses: actions/cache@v5
+        with:
+          path: benchmark_data/itc187
+          key: bench-data-itc187-v1
+          restore-keys: bench-data-itc187-
+
+      - name: Cache DUD-E 37 dataset
+        uses: actions/cache@v5
+        with:
+          path: benchmark_data/dude37
+          key: bench-data-dude37-v1
+          restore-keys: bench-data-dude37-
+
+      - name: Cache MUV dataset
+        uses: actions/cache@v5
+        with:
+          path: benchmark_data/muv
+          key: bench-data-muv-v1
+          restore-keys: bench-data-muv-
+
+      - name: Download missing datasets
+        env:
+          ZENODO_TOKEN: ${{ secrets.ZENODO_TOKEN }}
+        run: |
+          python - <<'EOF'
+          import os
+          import urllib.request
+          from pathlib import Path
+
+          # Map slug → Zenodo record ID (update when DOIs are registered)
+          ZENODO_RECORDS = {
+              # "casf2016": "XXXXXXX",  # Update with real record ID
+              # "itc187":   "XXXXXXX",
+              # "dude37":   "XXXXXXX",
+              # "muv":      "XXXXXXX",
+          }
+
+          data_root = Path("benchmark_data")
+          token = os.environ.get("ZENODO_TOKEN", "")
+
+          for slug, record_id in ZENODO_RECORDS.items():
+              dest = data_root / slug
+              marker = dest / ".downloaded"
+              if marker.exists():
+                  print(f"[{slug}] Already cached, skipping.")
+                  continue
+              print(f"[{slug}] Downloading from Zenodo record {record_id}...")
+              dest.mkdir(parents=True, exist_ok=True)
+              headers = {"Authorization": f"Bearer {token}"} if token else {}
+              api_url = f"https://zenodo.org/api/records/{record_id}"
+              # NOTE: Implement download logic here once DOIs are registered.
+              # For now, warn and continue — DatasetRunner handles missing data.
+              print(f"[{slug}] WARNING: Zenodo download not yet configured. "
+                    "Set real record IDs in benchmark-tier2.yml.")
+          EOF
+
+      - name: Build dataset filter argument
+        id: dataset-args
+        run: |
+          if [ -n "$DATASET_FILTER" ]; then
+            # Convert comma-separated to space-separated --dataset flags
+            ARGS=$(echo "$DATASET_FILTER" | tr ',' ' ' | \
+                   xargs -I{} echo "--dataset {}" | tr '\n' ' ')
+            echo "FILTER_ARGS=--all" >> "$GITHUB_OUTPUT"
+            echo "DATASET_LIST=$DATASET_FILTER" >> "$GITHUB_OUTPUT"
+          else
+            echo "FILTER_ARGS=--all" >> "$GITHUB_OUTPUT"
+            echo "DATASET_LIST=all" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run tier-2 comprehensive benchmark
+        env:
+          FLEXAIDDS_BINARY: ${{ github.workspace }}/build/FlexAID
+          FLEXAIDDS_BENCHMARK_DATA: ${{ github.workspace }}/benchmark_data
+          PYTHONPATH: ${{ github.workspace }}/python
+        run: |
+          BOOTSTRAP_FLAG=""
+          if [ "$DO_BOOTSTRAP" = "true" ]; then
+            BOOTSTRAP_FLAG="--bootstrap --n-bootstrap 5000"
+          fi
+
+          python -m benchmarks.run \
+            ${{ steps.dataset-args.outputs.FILTER_ARGS }} \
+            --tier 2 \
+            --workers "$N_WORKERS" \
+            --results-dir "$RESULTS_DIR" \
+            --datasets-dir benchmarks/datasets \
+            --report-prefix "$RESULTS_DIR/tier2_report_${{ github.sha }}" \
+            --verbose \
+            $BOOTSTRAP_FLAG \
+            $DRY_RUN_FLAG
+
+      - name: Upload full benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tier2-results-${{ github.sha }}-${{ github.run_id }}
+          path: |
+            ${{ env.RESULTS_DIR }}/
+          retention-days: 90
+
+      - name: Check for regressions
+        id: regression-check
+        if: always()
+        run: |
+          # Look for any per-dataset JSON with regression_flags set to true
+          python - <<'EOF'
+          import json
+          import sys
+          from pathlib import Path
+
+          results_dir = Path("${{ env.RESULTS_DIR }}")
+          regressions = []
+          for jf in results_dir.glob("*.json"):
+              try:
+                  data = json.loads(jf.read_text())
+                  # Handle top-level report and per-dataset files
+                  datasets = data.get("datasets", [data])
+                  for ds in datasets:
+                      flags = ds.get("regression_flags", {})
+                      bad = [k for k, v in flags.items() if v]
+                      if bad:
+                          regressions.append(
+                              f"{ds.get('dataset', jf.stem)}: {', '.join(bad)}"
+                          )
+              except Exception as e:
+                  print(f"Warning: could not parse {jf}: {e}")
+
+          if regressions:
+              print("REGRESSIONS DETECTED:")
+              for r in regressions:
+                  print(f"  - {r}")
+              sys.exit(1)
+          else:
+              print("No regressions detected.")
+          EOF
+
+      - name: Post Markdown report as commit comment
+        if: always() && github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          REPORT=$(find "$RESULTS_DIR" -name "*.md" | sort -r | head -1)
+          if [ -z "$REPORT" ] || [ ! -f "$REPORT" ]; then
+            echo "No report found to post."
+            exit 0
+          fi
+          # Truncate to 65535 chars
+          python - <<PYEOF
+          content = open("$REPORT").read()
+          if len(content) > 65000:
+              content = content[:65000] + "\n\n_[truncated — download artifact for full report]_"
+          header = f"## Benchmark Tier 2 Report\n\n"
+          footer = f"\n\n> _Run [{{'${{ github.run_id }}'}}]({{'${{ github.server_url }}'}}/{{'${{ github.repository }}'}}/actions/runs/{{'${{ github.run_id }}'}})_"
+          print(header + content + footer, end="")
+          PYEOF > /tmp/comment_body.md
+          gh api repos/${{ github.repository }}/commits/${{ github.sha }}/comments \
+            --method POST \
+            --field body="$(cat /tmp/comment_body.md)" || true
+
+      - name: Write job summary
+        if: always()
+        run: |
+          REPORT=$(find "$RESULTS_DIR" -name "*.md" | sort -r | head -1)
+          echo "## Benchmark Tier 2 Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Commit**: \`${{ github.sha }}\`  " >> "$GITHUB_STEP_SUMMARY"
+          echo "**Datasets**: ${{ steps.dataset-args.outputs.DATASET_LIST }}  " >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$REPORT" ] && [ -f "$REPORT" ]; then
+            cat "$REPORT" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No report generated (dry-run or all targets failed)." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  # -----------------------------------------------------------------------
+  # Optional: MPI multi-node job (requires self-hosted runner with MPI)
+  # -----------------------------------------------------------------------
+  benchmark-mpi:
+    name: Tier-2 MPI Distributed (${{ matrix.nodes }} nodes)
+    needs: build
+    runs-on: ubuntu-latest   # placeholder; switch to [self-hosted, hpc, mpi] when available
+    if: false   # Disabled until self-hosted HPC runner is configured
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        nodes: [4, 8]
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Download FlexAID binary
+        uses: actions/download-artifact@v8
+        with:
+          name: flexaid-binary-${{ github.sha }}
+          path: build/
+
+      - name: Make binary executable
+        run: chmod +x build/FlexAID
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install numpy scipy pyyaml mpi4py
+
+      - name: Run distributed benchmark (${{ matrix.nodes }} nodes)
+        env:
+          FLEXAIDDS_BINARY: ${{ github.workspace }}/build/FlexAID
+          FLEXAIDDS_BENCHMARK_DATA: ${{ github.workspace }}/benchmark_data
+          PYTHONPATH: ${{ github.workspace }}/python
+        run: |
+          mpirun -n ${{ matrix.nodes }} \
+            python -m benchmarks.run \
+              --all \
+              --tier 2 \
+              --distributed \
+              --nodes ${{ matrix.nodes }} \
+              --results-dir results/tier2-mpi-${{ matrix.nodes }} \
+              --datasets-dir benchmarks/datasets \
+              --bootstrap
+
+      - name: Upload MPI results
+        uses: actions/upload-artifact@v4
+        with:
+          name: tier2-mpi-${{ matrix.nodes }}-${{ github.sha }}
+          path: results/tier2-mpi-${{ matrix.nodes }}/
+          retention-days: 30

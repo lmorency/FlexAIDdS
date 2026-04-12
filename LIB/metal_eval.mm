@@ -25,11 +25,13 @@
 #import <MetalKit/MetalKit.h>
 
 #include "metal_eval.h"
+#include "flexaid_exception.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <vector>
 #include <cmath>
+#include <string>
 
 // ─── MSL kernel source (embedded) ────────────────────────────────────────────
 static const char* kMSLSource = R"MSL(
@@ -298,14 +300,14 @@ void metal_eval_batch(MetalEvalCtx* ctx,
                       double*       h_wal_out,
                       double*       h_sas_out)
 {
-    // Validate against allocated buffer sizes.
+    // Validate against allocated buffer sizes — throw on overflow.
     if (pop_size > ctx->max_pop) {
-        fprintf(stderr, "metal_eval: pop_size %d exceeds max_pop %d\n", pop_size, ctx->max_pop);
-        return;
+        throw FlexAIDException("metal_eval: pop_size " + std::to_string(pop_size) +
+            " exceeds max_pop " + std::to_string(ctx->max_pop));
     }
     if (n_genes > ctx->max_genes) {
-        fprintf(stderr, "metal_eval: n_genes %d exceeds max_genes %d\n", n_genes, ctx->max_genes);
-        return;
+        throw FlexAIDException("metal_eval: n_genes " + std::to_string(n_genes) +
+            " exceeds max_genes " + std::to_string(ctx->max_genes));
     }
 
     // Convert double genes to float for the GPU.
@@ -354,6 +356,12 @@ void metal_eval_batch(MetalEvalCtx* ctx,
 
     [cb commit];
     [cb waitUntilCompleted];
+
+    if (cb.status == MTLCommandBufferStatusError) {
+        NSString* desc = cb.error ? cb.error.localizedDescription : @"unknown";
+        throw FlexAIDException("metal_eval: GPU command buffer error: " +
+            std::string([desc UTF8String]));
+    }
 
     // Copy results back (float → double).
     const float* com_f = (const float*)[ctx->buf_com_out contents];

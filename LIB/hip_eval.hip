@@ -622,11 +622,13 @@ void batch_evaluate(const double* h_genes,
     std::size_t gene_count = static_cast<std::size_t>(pop_size) * num_genes;
     std::size_t pop_count  = static_cast<std::size_t>(pop_size);
 
-    // ── 2. Copy genes host → device (double) ────────────────────────────────
-    HIP_CHECK(hipMemcpy(g_state.d_genes_f64,
-                        h_genes,
-                        gene_count * sizeof(double),
-                        hipMemcpyHostToDevice));
+    // ── 2. Copy genes host → device (double, async) ───────────────────────────
+    // Using hipStreamDefault with async transfers on pinned memory allows
+    // overlap between DMA and kernel execution on separate hardware engines.
+    HIP_CHECK(hipMemcpyAsync(g_state.d_genes_f64,
+                             h_genes,
+                             gene_count * sizeof(double),
+                             hipMemcpyHostToDevice, hipStreamDefault));
 
     // ── 3. Pack: double → float on device ───────────────────────────────────
     launch_pack_genes_kernel(g_state.d_genes_f64, g_state.d_genes_f32,
@@ -654,16 +656,19 @@ void batch_evaluate(const double* h_genes,
         HIP_CHECK(hipGetLastError());
     }
 
-    // ── 5. Copy results device → pinned host (float) ─────────────────────────
-    HIP_CHECK(hipMemcpy(g_state.h_com_pinned, g_state.d_com,
-                        pop_count * sizeof(float), hipMemcpyDeviceToHost));
-    HIP_CHECK(hipMemcpy(g_state.h_wal_pinned, g_state.d_wal,
-                        pop_count * sizeof(float), hipMemcpyDeviceToHost));
-    HIP_CHECK(hipMemcpy(g_state.h_sas_pinned, g_state.d_sas,
-                        pop_count * sizeof(float), hipMemcpyDeviceToHost));
+    // ── 5. Copy results device → pinned host (float, async) ──────────────────
+    HIP_CHECK(hipMemcpyAsync(g_state.h_com_pinned, g_state.d_com,
+                             pop_count * sizeof(float), hipMemcpyDeviceToHost,
+                             hipStreamDefault));
+    HIP_CHECK(hipMemcpyAsync(g_state.h_wal_pinned, g_state.d_wal,
+                             pop_count * sizeof(float), hipMemcpyDeviceToHost,
+                             hipStreamDefault));
+    HIP_CHECK(hipMemcpyAsync(g_state.h_sas_pinned, g_state.d_sas,
+                             pop_count * sizeof(float), hipMemcpyDeviceToHost,
+                             hipStreamDefault));
 
-    // Synchronise before reading pinned memory.
-    HIP_CHECK(hipDeviceSynchronize());
+    // Synchronise stream before reading pinned memory.
+    HIP_CHECK(hipStreamSynchronize(hipStreamDefault));
 
     // ── 6. Widen float → double and write to caller's buffers ───────────────
     for (int i = 0; i < pop_size; ++i) {

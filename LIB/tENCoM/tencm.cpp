@@ -43,10 +43,8 @@
 #include <numbers>
 #include <random>
 
-#ifdef FLEXAIDS_HAS_EIGEN
-#  include <Eigen/Dense>
-#  include <Eigen/Eigenvalues>
-#endif
+#include <Eigen/Dense>
+#include <Eigen/Eigenvalues>
 
 #ifdef __AVX512F__
 #  include <immintrin.h>
@@ -533,7 +531,6 @@ void TorsionalENM::assemble_hessian()
         for (int i = 0; i < N; ++i)
             J[static_cast<std::size_t>(k * N + i)] = jac(k, i);
 
-#ifdef FLEXAIDS_HAS_EIGEN
     // ── Eigen path: accumulate into Eigen matrix, leverage BLAS ──
 
     Eigen::MatrixXd H = Eigen::MatrixXd::Zero(M, M);
@@ -606,78 +603,6 @@ void TorsionalENM::assemble_hessian()
     H_.resize(static_cast<std::size_t>(M * M));
     Eigen::Map<Eigen::MatrixXd>(H_.data(), M, M) = H;
 
-#else
-    // ── Non-Eigen path (J already pre-computed above) ──
-
-    H_.assign(static_cast<std::size_t>(M * M), 0.0);
-
-    #if defined(_OPENMP) && !defined(TENCM_NO_OMP)
-    // Thread-local Hessians
-    const int n_threads = omp_get_max_threads();
-    std::vector<std::vector<double>> thread_H(n_threads,
-        std::vector<double>(static_cast<std::size_t>(M * M), 0.0));
-
-    #pragma omp parallel
-    {
-        const int tid = omp_get_thread_num();
-        auto& Ht = thread_H[tid];
-        const int C = static_cast<int>(contacts_.size());
-
-        #pragma omp for schedule(dynamic, 8)
-        for (int ci = 0; ci < C; ++ci) {
-            const auto& c = contacts_[ci];
-            const float kij = c.k;
-
-            for (int k = 0; k < M; ++k) {
-                const auto& jki = J[k * N + c.i];
-                const auto& jkj = J[k * N + c.j];
-                float djk[3] = { jki[0]-jkj[0], jki[1]-jkj[1], jki[2]-jkj[2] };
-
-                for (int l = k; l < M; ++l) {
-                    const auto& jli = J[l * N + c.i];
-                    const auto& jlj = J[l * N + c.j];
-                    float djl[3] = { jli[0]-jlj[0], jli[1]-jlj[1], jli[2]-jlj[2] };
-
-                    double contrib = kij * static_cast<double>(
-                        djk[0]*djl[0] + djk[1]*djl[1] + djk[2]*djl[2]);
-
-                    Ht[static_cast<std::size_t>(k * M + l)] += contrib;
-                    if (l != k) Ht[static_cast<std::size_t>(l * M + k)] += contrib;
-                }
-            }
-        }
-    }
-
-    // Reduce
-    for (const auto& Ht : thread_H)
-        for (std::size_t idx = 0; idx < H_.size(); ++idx)
-            H_[idx] += Ht[idx];
-
-    #else
-    // Scalar serial path
-    for (const auto& c : contacts_) {
-        const float kij = c.k;
-        for (int k = 0; k < M; ++k) {
-            const auto& jki = J[static_cast<std::size_t>(k * N + c.i)];
-            const auto& jkj = J[static_cast<std::size_t>(k * N + c.j)];
-            float djk[3] = { jki[0]-jkj[0], jki[1]-jkj[1], jki[2]-jkj[2] };
-
-            for (int l = k; l < M; ++l) {
-                const auto& jli = J[static_cast<std::size_t>(l * N + c.i)];
-                const auto& jlj = J[static_cast<std::size_t>(l * N + c.j)];
-                float djl[3] = { jli[0]-jlj[0], jli[1]-jlj[1], jli[2]-jlj[2] };
-
-                double contrib = kij * static_cast<double>(
-                    djk[0]*djl[0] + djk[1]*djl[1] + djk[2]*djl[2]);
-
-                H_[static_cast<std::size_t>(k * M + l)] += contrib;
-                if (l != k) H_[static_cast<std::size_t>(l * M + k)] += contrib;
-            }
-        }
-    }
-    #endif
-#endif // FLEXAIDS_HAS_EIGEN
-
     // Cache the Jacobian for reuse by bfactors() and sample()
     J_cached_ = std::move(J);
     jac_cached_ = true;
@@ -735,7 +660,6 @@ void TorsionalENM::diagonalize()
     const int M = static_cast<int>(bonds_.size());
     if (M == 0) return;
 
-#ifdef FLEXAIDS_HAS_EIGEN
     // ── Eigen path: highly optimised divide-and-conquer eigendecomposition ──
     Eigen::Map<const Eigen::MatrixXd> H_map(H_.data(), M, M);
     Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> solver(H_map);
@@ -765,7 +689,6 @@ void TorsionalENM::diagonalize()
     }
 
     jacobi_fallback:
-#endif
     {
         // ── Jacobi fallback ──
         std::vector<double> A = H_;
@@ -823,7 +746,6 @@ Conformer TorsionalENM::sample(float temperature, std::mt19937& rng) const
     const int SKIP = std::min(6, M);
     const double kBT = static_cast<double>(kB_kcal) * temperature;
 
-#ifdef FLEXAIDS_HAS_EIGEN
     // Eigen path: accumulate Σ σ_m * z_m * v_m as vector operation
     Eigen::VectorXd dtheta = Eigen::VectorXd::Zero(M);
 
@@ -840,21 +762,6 @@ Conformer TorsionalENM::sample(float temperature, std::mt19937& rng) const
 
     for (int k = 0; k < M; ++k)
         conf.delta_theta[static_cast<std::size_t>(k)] = static_cast<float>(dtheta(k));
-
-#else
-    // Scalar path
-    for (int m = SKIP; m < M && m < SKIP + N_MODES; ++m) {
-        double lam = modes_[static_cast<std::size_t>(m)].eigenvalue;
-        if (lam < 1e-8) continue;
-        double sigma = std::sqrt(kBT / lam);
-        float  z     = gauss(rng);
-
-        for (int k = 0; k < M; ++k)
-            conf.delta_theta[static_cast<std::size_t>(k)] +=
-                static_cast<float>(sigma * z *
-                modes_[static_cast<std::size_t>(m)].eigenvector[static_cast<std::size_t>(k)]);
-    }
-#endif
 
     // Build perturbed Cα coordinates:  r_i' = r_i + Σ_k J_k(i) δθ_k
     conf.ca.resize(static_cast<std::size_t>(N));
@@ -881,22 +788,10 @@ Conformer TorsionalENM::sample(float temperature, std::mt19937& rng) const
     }
 
     // Elastic strain energy: ½ δθᵀ H δθ
-#ifdef FLEXAIDS_HAS_EIGEN
     {
         Eigen::Map<const Eigen::MatrixXd> Hmat(H_.data(), M, M);
         conf.strain_energy = static_cast<float>(0.5 * dtheta.dot(Hmat * dtheta));
     }
-#else
-    conf.strain_energy = 0.0f;
-    for (int k = 0; k < M; ++k) {
-        double row = 0.0;
-        for (int l = 0; l < M; ++l)
-            row += H_[static_cast<std::size_t>(k*M+l)] *
-                   static_cast<double>(conf.delta_theta[static_cast<std::size_t>(l)]);
-        conf.strain_energy += static_cast<float>(
-            0.5 * static_cast<double>(conf.delta_theta[static_cast<std::size_t>(k)]) * row);
-    }
-#endif
 
     return conf;
 }

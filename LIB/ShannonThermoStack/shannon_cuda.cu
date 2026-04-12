@@ -19,14 +19,17 @@
 #include <cstdio>
 #include <cstring>
 
-#define CUDA_CHECK(call)                                                        \
-    do {                                                                        \
-        cudaError_t _e = (call);                                                \
-        if (_e != cudaSuccess) {                                                \
-            fprintf(stderr, "[CUDA] %s:%d — %s\n",                             \
-                    __FILE__, __LINE__, cudaGetErrorString(_e));                \
-        }                                                                       \
-    } while (0)
+#include "flexaid_exception.h"
+#include <string>
+
+#define CUDA_CHECK(call) do {                                                   \
+    cudaError_t _e = (call);                                                    \
+    if (_e != cudaSuccess) {                                                    \
+        throw FlexAIDException(std::string("[shannon_cuda] CUDA error at ") +  \
+            __FILE__ + ":" + std::to_string(__LINE__) + " — " +                \
+            cudaGetErrorString(_e));                                            \
+    }                                                                           \
+} while (0)
 
 static constexpr int BLOCK_SIZE = 256;
 
@@ -85,10 +88,15 @@ void shannon_cuda_histogram(ShannonCudaCtx& ctx,
                              double          bin_width,
                              int*            bins_out)
 {
-    if (n <= 0 || !ctx.d_energies || !ctx.d_bins) return;
+    if (n <= 0 || !ctx.d_energies || !ctx.d_bins) {
+        throw FlexAIDException("[shannon_cuda] invalid state: n=" +
+            std::to_string(n) + ", d_energies=" +
+            (ctx.d_energies ? "valid" : "null") + ", d_bins=" +
+            (ctx.d_bins ? "valid" : "null"));
+    }
     if (n > ctx.capacity) {
-        fprintf(stderr, "[shannon_cuda] n=%d exceeds capacity=%d\n", n, ctx.capacity);
-        return;
+        throw FlexAIDException("[shannon_cuda] n=" + std::to_string(n) +
+            " exceeds capacity=" + std::to_string(ctx.capacity));
     }
 
     double inv_bw = 1.0 / (bin_width + 1e-15);
