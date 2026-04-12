@@ -1,5 +1,5 @@
 /* ==========================================================================
-   FlexAID∆S — App Logic (Enhanced)
+   FlexAID∆S — App Logic
    ========================================================================== */
 
 (function() {
@@ -38,31 +38,11 @@
     });
   }
 
-  /* --- Header Scroll + Scroll Progress --- */
+  /* --- Header Scroll --- */
   const header = document.getElementById('site-header');
-  const scrollProgress = document.querySelector('.scroll-progress');
-
   window.addEventListener('scroll', () => {
     header.classList.toggle('scrolled', window.scrollY > 60);
-
-    // Update scroll progress bar
-    if (scrollProgress) {
-      const docHeight = document.documentElement.scrollHeight - window.innerHeight;
-      const progress = docHeight > 0 ? Math.min(window.scrollY / docHeight, 1) : 0;
-      scrollProgress.style.transform = 'scaleX(' + progress + ')';
-    }
   }, { passive: true });
-
-  /* --- Back to Top --- */
-  const backToTop = document.querySelector('.back-to-top');
-  if (backToTop) {
-    window.addEventListener('scroll', () => {
-      backToTop.classList.toggle('visible', window.scrollY > 400);
-    }, { passive: true });
-    backToTop.addEventListener('click', () => {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    });
-  }
 
   /* --- Tabs --- */
   const tabs = document.querySelectorAll('.tab-btn');
@@ -120,44 +100,6 @@
     requestAnimationFrame(step);
   }
 
-  /* --- Hero Stat Counter Animation --- */
-  function animateHeroStats() {
-    const heroStats = document.querySelectorAll('.hero-stat-value');
-    heroStats.forEach(el => {
-      const text = el.textContent.trim();
-      const hasPercent = text.endsWith('%');
-      const num = parseFloat(text);
-      if (isNaN(num)) return;
-
-      const decimals = text.includes('.') ? (text.replace('%', '').split('.')[1] || '').length : 0;
-      const startTime = performance.now();
-      const duration = 1200;
-
-      function step(currentTime) {
-        const elapsed = currentTime - startTime;
-        const progress = Math.min(elapsed / duration, 1);
-        const eased = 1 - Math.pow(1 - progress, 3);
-        const current = eased * num;
-        el.textContent = current.toFixed(decimals) + (hasPercent ? '%' : '');
-        if (progress < 1) requestAnimationFrame(step);
-      }
-      el.textContent = (0).toFixed(decimals) + (hasPercent ? '%' : '');
-      requestAnimationFrame(step);
-    });
-  }
-
-  // Trigger hero stat animation when hero is visible
-  const heroSection = document.querySelector('.hero');
-  if (heroSection) {
-    const heroObserver = new IntersectionObserver((entries) => {
-      if (entries[0].isIntersecting) {
-        animateHeroStats();
-        heroObserver.disconnect();
-      }
-    }, { threshold: 0.3 });
-    heroObserver.observe(heroSection);
-  }
-
   /* --- Hero Background: Mol* "Drug of the Day" --- */
 
   // Curated set of iconic drug–target complexes
@@ -202,56 +144,6 @@
     return drugOfTheDay[dayOfYear % drugOfTheDay.length];
   }
 
-  /* --- Mol* BindingMode Representations --- */
-  function applyBindingModeRepresentations(viewer) {
-    try {
-      const plugin = viewer.plugin;
-      const structures = plugin.managers.structure.hierarchy.current.structures;
-      if (!structures.length) return;
-
-      const struct = structures[0];
-      const components = struct.components;
-
-      // Remove all default representations
-      components.forEach(function(comp) {
-        comp.representations.forEach(function(repr) {
-          plugin.managers.structure.representation.remove(repr);
-        });
-      });
-
-      // Add cartoon for polymer (protein/nucleic)
-      var polymerSel = { name: 'static', params: 'polymer' };
-      plugin.managers.structure.component.add(
-        { key: 'polymer-cartoon', ref: struct.cell.transform.ref },
-        polymerSel
-      ).then(function(polyComp) {
-        if (polyComp) {
-          plugin.managers.structure.representation.addRepresentation(polyComp, {
-            type: 'cartoon',
-            color: 'chain-id'
-          });
-        }
-      });
-
-      // Add ball-and-stick for ligand
-      var ligandSel = { name: 'static', params: 'ligand' };
-      plugin.managers.structure.component.add(
-        { key: 'ligand-sticks', ref: struct.cell.transform.ref },
-        ligandSel
-      ).then(function(ligComp) {
-        if (ligComp) {
-          plugin.managers.structure.representation.addRepresentation(ligComp, {
-            type: 'ball-and-stick',
-            color: 'element-symbol',
-            size: 'physical'
-          });
-        }
-      });
-    } catch(e) {
-      // Mol* API may differ across versions — fall back to defaults silently
-    }
-  }
-
   function initMolstar() {
     if (typeof molstar === 'undefined') return;
 
@@ -277,10 +169,7 @@
         renderer: { backgroundColor: 0x000000, backgroundAlpha: 0 },
       },
     }).then(viewer => {
-      viewer.loadPdb(drug.pdb).then(() => {
-        // Apply BindingMode representations (cartoon + sticks)
-        setTimeout(() => applyBindingModeRepresentations(viewer), 1500);
-      });
+      viewer.loadPdb(drug.pdb);
 
       // Enable auto-rotate once structure settles
       setTimeout(() => {
@@ -291,7 +180,7 @@
             });
           }
         } catch(e) { /* WebGL may not be available in headless environments */ }
-      }, 3500);
+      }, 2500);
     }).catch(() => { /* Mol* init failed silently — hero stays clean */ });
 
     // Show drug of the day label
@@ -320,29 +209,20 @@
     });
   });
 
-  /* --- GitHub Stats (enhanced) --- */
-  function fetchGitHubStats() {
-    const starEl = document.getElementById('stat-stars');
-    const commitEl = document.querySelector('[data-count]');
-
-    fetch('https://api.github.com/repos/lmorency/FlexAIDdS')
+  /* --- GitHub Stars --- */
+  const starEl = document.getElementById('stat-stars');
+  if (starEl) {
+    fetch('https://api.github.com/repos/LeBonhommePharma/FlexAIDdS')
       .then(r => r.json())
       .then(data => {
-        if (starEl && data.stargazers_count !== undefined) {
+        if (data.stargazers_count !== undefined) {
           starEl.textContent = data.stargazers_count;
         }
-        // Update commit count if available via size heuristic
-        if (commitEl && data.size) {
-          // Keep the hardcoded count — GitHub API doesn't expose commit count directly
-        }
       })
-      .catch(() => {
-        if (starEl) starEl.textContent = '—';
-      });
+      .catch(() => { starEl.textContent = '—'; });
   }
-  fetchGitHubStats();
 
-  /* --- Reveal on Scroll (sections) --- */
+  /* --- Reveal on Scroll --- */
   const revealSections = document.querySelectorAll('main > section');
   if (revealSections.length && 'IntersectionObserver' in window) {
     const io = new IntersectionObserver((entries) => {
@@ -357,32 +237,6 @@
       s.classList.add('reveal');
       io.observe(s);
     });
-  }
-
-  /* --- Staggered Card Animations --- */
-  const cardSelectors = '.feature-card, .stat-card, .pub-card, .module-card, .cns-stat-card, .install-card, .pymol-install-card, .pymol-commands-card, .license-card, .arch-step, .arch-sub-card';
-  const cardContainers = document.querySelectorAll('.features-grid, .stats-grid, .publications-grid, .modules-grid, .cns-stats-grid, .install-grid, .pymol-grid, .contributing-grid, .arch-pipeline, .arch-sub-row');
-
-  if (cardContainers.length && 'IntersectionObserver' in window) {
-    const cardIO = new IntersectionObserver((entries) => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          const cards = entry.target.querySelectorAll(cardSelectors);
-          cards.forEach((card, i) => {
-            card.style.setProperty('--card-delay', (i * 80) + 'ms');
-            card.classList.add('reveal-card');
-            // Trigger reflow then add revealed state
-            requestAnimationFrame(() => {
-              requestAnimationFrame(() => {
-                card.classList.add('revealed-card');
-              });
-            });
-          });
-          cardIO.unobserve(entry.target);
-        }
-      });
-    }, { threshold: 0.1 });
-    cardContainers.forEach(c => cardIO.observe(c));
   }
 
 })();
