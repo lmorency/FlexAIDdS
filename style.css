@@ -125,6 +125,7 @@ a, button, [role="button"], [role="link"], input, textarea, select {
   --lang-cuda:   #7B2D6E;
   --lang-html:   #E34C26;
   --lang-c:      #555555;
+  --lang-css:    #563d7c;
   --lang-other:  #9a8caa;
 
   /* Font */
