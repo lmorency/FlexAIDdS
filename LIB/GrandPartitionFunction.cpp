@@ -8,7 +8,6 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
-#include <numeric>
 
 namespace target {
 
@@ -22,41 +21,62 @@ GrandPartitionFunction::GrandPartitionFunction(double temperature_K)
 
 // ── Ligand registration ────────────────────────────────────────────────
 
-void GrandPartitionFunction::add_ligand(const std::string& name, double log_Z)
+void GrandPartitionFunction::add_ligand(const std::string& name, double log_Z,
+                                         double concentration_M)
 {
+    if (concentration_M <= 0.0)
+        throw std::invalid_argument("Concentration must be positive");
+    double log_zZ = std::log(concentration_M) + log_Z;
+
     std::lock_guard<std::mutex> lock(mtx_);
-    if (log_Z_.count(name))
+    if (ligands_.count(name))
         throw std::invalid_argument("Ligand '" + name + "' already registered");
-    log_Z_[name] = log_Z;
+    ligands_[name] = {log_Z, log_zZ};
 }
 
 void GrandPartitionFunction::add_ligand(const std::string& name,
-                                         const statmech::StatMechEngine& engine)
+                                         const statmech::StatMechEngine& engine,
+                                         double concentration_M)
 {
     if (engine.size() == 0)
         throw std::invalid_argument("Cannot add ligand with empty ensemble");
     auto thermo = engine.compute();
-    add_ligand(name, thermo.log_Z);
+    add_ligand(name, thermo.log_Z, concentration_M);
 }
 
-void GrandPartitionFunction::update_ligand(const std::string& name, double new_log_Z)
+void GrandPartitionFunction::overwrite_ligand(const std::string& name, double new_log_Z)
 {
     std::lock_guard<std::mutex> lock(mtx_);
-    auto it = log_Z_.find(name);
-    if (it == log_Z_.end())
+    auto it = ligands_.find(name);
+    if (it == ligands_.end())
+        throw std::invalid_argument("Ligand '" + name + "' not found");
+    // Preserve concentration; update both log_Z and log_zZ
+    double log_c = it->second.log_zZ - it->second.log_Z;  // ln(c/c°)
+    it->second.log_Z = new_log_Z;
+    it->second.log_zZ = log_c + new_log_Z;
+}
+
+void GrandPartitionFunction::merge_ligand(const std::string& name, double new_log_Z)
+{
+    std::lock_guard<std::mutex> lock(mtx_);
+    auto it = ligands_.find(name);
+    if (it == ligands_.end())
         throw std::invalid_argument("Ligand '" + name + "' not found");
 
-    // Merge: Z_merged = Z_old + Z_new  →  ln Z_merged = log_sum_exp(ln Z_old, ln Z_new)
-    double a = it->second;
-    double b = new_log_Z;
+    // Merge log_zZ (which is what participates in Ξ)
+    double a = it->second.log_zZ;
+    double log_c = a - it->second.log_Z;
+    double b = log_c + new_log_Z;  // same concentration for the new ensemble
     double max_val = std::max(a, b);
-    it->second = max_val + std::log(std::exp(a - max_val) + std::exp(b - max_val));
+    it->second.log_zZ = max_val + std::log(std::exp(a - max_val) + std::exp(b - max_val));
+    // Update intrinsic log_Z to the merged value too
+    it->second.log_Z = it->second.log_zZ - log_c;
 }
 
 void GrandPartitionFunction::remove_ligand(const std::string& name)
 {
     std::lock_guard<std::mutex> lock(mtx_);
-    if (!log_Z_.erase(name))
+    if (!ligands_.erase(name))
         throw std::invalid_argument("Ligand '" + name + "' not found");
 }
 
@@ -64,25 +84,19 @@ void GrandPartitionFunction::remove_ligand(const std::string& name)
 
 double GrandPartitionFunction::compute_log_Xi_unlocked() const
 {
-    // Ξ = 1 + Σ_i Z_i = 1 + Σ_i exp(ln Z_i)
-    // ln Ξ = log_sum_exp(0, ln Z_1, ln Z_2, ...)
-    //   where 0 = ln(1) represents the empty site
+    // Ξ = 1 + Σ_i z_i·Z_i = 1 + Σ_i exp(ln(z_i·Z_i))
+    // ln Ξ = log_sum_exp(0, ln(z_1·Z_1), ln(z_2·Z_2), ...)
 
-    if (log_Z_.empty()) return 0.0;  // ln(1) = 0, only empty site
+    if (ligands_.empty()) return 0.0;
 
-    // Collect all log(Z) values plus 0.0 (empty site)
-    std::vector<double> values;
-    values.reserve(log_Z_.size() + 1);
-    values.push_back(0.0);  // empty site: ln(1) = 0
-    for (const auto& [name, lz] : log_Z_) {
-        values.push_back(lz);
+    double max_val = 0.0;
+    for (const auto& [name, entry] : ligands_) {
+        if (entry.log_zZ > max_val) max_val = entry.log_zZ;
     }
 
-    // Numerically stable log-sum-exp
-    double max_val = *std::max_element(values.begin(), values.end());
-    double sum = 0.0;
-    for (double v : values) {
-        sum += std::exp(v - max_val);
+    double sum = std::exp(0.0 - max_val);  // empty site: ln(1) = 0
+    for (const auto& [name, entry] : ligands_) {
+        sum += std::exp(entry.log_zZ - max_val);
     }
     return max_val + std::log(sum);
 }
@@ -96,42 +110,56 @@ double GrandPartitionFunction::log_Xi() const
 double GrandPartitionFunction::binding_probability(const std::string& name) const
 {
     std::lock_guard<std::mutex> lock(mtx_);
-    auto it = log_Z_.find(name);
-    if (it == log_Z_.end())
+    auto it = ligands_.find(name);
+    if (it == ligands_.end())
         throw std::invalid_argument("Ligand '" + name + "' not found");
     double log_xi = compute_log_Xi_unlocked();
-    return std::exp(it->second - log_xi);
+    return std::exp(it->second.log_zZ - log_xi);
 }
 
 double GrandPartitionFunction::empty_probability() const
 {
     std::lock_guard<std::mutex> lock(mtx_);
     double log_xi = compute_log_Xi_unlocked();
-    return std::exp(-log_xi);  // exp(ln(1) - ln(Ξ)) = 1/Ξ
+    return std::exp(-log_xi);
 }
 
-double GrandPartitionFunction::delta_G(const std::string& name) const
+double GrandPartitionFunction::free_energy(const std::string& name) const
 {
     std::lock_guard<std::mutex> lock(mtx_);
-    auto it = log_Z_.find(name);
-    if (it == log_Z_.end())
+    auto it = ligands_.find(name);
+    if (it == ligands_.end())
         throw std::invalid_argument("Ligand '" + name + "' not found");
-    // ΔG = −kT · ln Z_i
-    return -(1.0 / beta_) * it->second;
+    // F = −kT · ln Z_i  (concentration-independent intrinsic free energy)
+    return -(1.0 / beta_) * it->second.log_Z;
+}
+
+double GrandPartitionFunction::delta_G_bind(const std::string& name, double F_ref) const
+{
+    return free_energy(name) - F_ref;
 }
 
 double GrandPartitionFunction::selectivity(const std::string& a,
                                             const std::string& b) const
 {
+    double diff = log_selectivity(a, b);
+    if (diff > 700.0)  return std::numeric_limits<double>::infinity();
+    if (diff < -700.0) return 0.0;
+    return std::exp(diff);
+}
+
+double GrandPartitionFunction::log_selectivity(const std::string& a,
+                                                const std::string& b) const
+{
     std::lock_guard<std::mutex> lock(mtx_);
-    auto it_a = log_Z_.find(a);
-    auto it_b = log_Z_.find(b);
-    if (it_a == log_Z_.end())
+    auto it_a = ligands_.find(a);
+    auto it_b = ligands_.find(b);
+    if (it_a == ligands_.end())
         throw std::invalid_argument("Ligand '" + a + "' not found");
-    if (it_b == log_Z_.end())
+    if (it_b == ligands_.end())
         throw std::invalid_argument("Ligand '" + b + "' not found");
-    // Z_a / Z_b = exp(ln Z_a - ln Z_b)
-    return std::exp(it_a->second - it_b->second);
+    // (z_A·Z_A) / (z_B·Z_B)
+    return it_a->second.log_zZ - it_b->second.log_zZ;
 }
 
 // ── Ranking ────────────────────────────────────────────────────────────
@@ -143,17 +171,16 @@ std::vector<GrandPartitionFunction::LigandRank> GrandPartitionFunction::rank() c
     double kT = 1.0 / beta_;
 
     std::vector<LigandRank> ranks;
-    ranks.reserve(log_Z_.size());
-    for (const auto& [name, lz] : log_Z_) {
+    ranks.reserve(ligands_.size());
+    for (const auto& [name, entry] : ligands_) {
         ranks.push_back({
             name,
-            lz,
-            -kT * lz,                         // ΔG
-            std::exp(lz - log_xi)              // p_bound
+            entry.log_Z,
+            -kT * entry.log_Z,                          // ΔG (intrinsic)
+            std::exp(entry.log_zZ - log_xi)             // p_bound
         });
     }
 
-    // Sort by ΔG ascending (most favorable first)
     std::sort(ranks.begin(), ranks.end(),
               [](const LigandRank& a, const LigandRank& b) {
                   return a.dG < b.dG;
@@ -167,22 +194,22 @@ std::vector<GrandPartitionFunction::LigandRank> GrandPartitionFunction::rank() c
 int GrandPartitionFunction::num_ligands() const
 {
     std::lock_guard<std::mutex> lock(mtx_);
-    return static_cast<int>(log_Z_.size());
+    return static_cast<int>(ligands_.size());
 }
 
 bool GrandPartitionFunction::has_ligand(const std::string& name) const
 {
     std::lock_guard<std::mutex> lock(mtx_);
-    return log_Z_.count(name) > 0;
+    return ligands_.count(name) > 0;
 }
 
 std::vector<std::pair<std::string, double>> GrandPartitionFunction::all_log_Z() const
 {
     std::lock_guard<std::mutex> lock(mtx_);
     std::vector<std::pair<std::string, double>> result;
-    result.reserve(log_Z_.size());
-    for (const auto& [name, lz] : log_Z_) {
-        result.emplace_back(name, lz);
+    result.reserve(ligands_.size());
+    for (const auto& [name, entry] : ligands_) {
+        result.emplace_back(name, entry.log_Z);
     }
     return result;
 }

@@ -190,7 +190,7 @@ TEST(TargetServer, CompetitiveBinding) {
 // Re-docking (update existing ligand)
 // ════════════════════════════════════════════════════════════════════════
 
-TEST(TargetServer, RedockingMerge) {
+TEST(TargetServer, RedockingOverwrite) {
     TargetServer server;
 
     // First docking
@@ -199,17 +199,25 @@ TEST(TargetServer, RedockingMerge) {
     s1.log_Z = 5.0;
     server.register_result(s1);
 
-    double dG_first = server.grand_partition().delta_G("aspirin");
+    double dG_first = server.grand_partition().free_energy("aspirin");
 
-    // Re-dock with more samples
+    // Re-dock with a better estimate (overwrite, not merge)
     auto s2 = server.create_session("aspirin");
     s2.completed = true;
-    s2.log_Z = 5.0;  // same quality
+    s2.log_Z = 8.0;  // improved estimate
     server.register_result(s2);
 
-    // ΔG should improve (more negative) due to merged Z
-    double dG_merged = server.grand_partition().delta_G("aspirin");
-    EXPECT_LT(dG_merged, dG_first);
+    // ΔG should reflect the overwrite value, not a merge
+    double dG_after = server.grand_partition().free_energy("aspirin");
+    EXPECT_NEAR(dG_after, -statmech::kB_kcal * 300.0 * 8.0, 1e-10);
+
+    // Re-docking with worse estimate should give less favorable ΔG
+    auto s3 = server.create_session("aspirin");
+    s3.completed = true;
+    s3.log_Z = 3.0;
+    server.register_result(s3);
+    double dG_worse = server.grand_partition().free_energy("aspirin");
+    EXPECT_GT(dG_worse, dG_after);  // less favorable
 }
 
 // ════════════════════════════════════════════════════════════════════════

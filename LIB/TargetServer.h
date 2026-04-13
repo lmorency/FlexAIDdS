@@ -23,7 +23,6 @@
 #include <string>
 #include <vector>
 #include <memory>
-#include <shared_mutex>
 #include <atomic>
 #include <optional>
 
@@ -116,7 +115,7 @@ private:
     TargetConfig config_;
     GrandPartitionFunction grand_xi_;
     TargetKnowledgeBase knowledge_;
-    mutable std::shared_mutex results_mutex_;
+    mutable std::mutex knowledge_mtx_;    // protects knowledge_ reads/writes
     std::atomic<int> next_session_id_{0};
     std::atomic<int> completed_count_{0};
 };

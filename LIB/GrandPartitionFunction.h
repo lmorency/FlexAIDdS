@@ -2,16 +2,20 @@
 //
 // For a binding site that can be empty or occupied by one of N ligands:
 //
-//   Ξ = 1 + Z_A + Z_B + Z_C + ...
+//   Ξ = 1 + z_A·Z_A + z_B·Z_B + z_C·Z_C + ...
 //
-// where Z_i is ligand i's canonical partition function (from StatMechEngine).
-// The "1" represents the empty (apo) site.
+// where Z_i is ligand i's canonical partition function (from StatMechEngine),
+// z_i = c_i / c° is the fugacity (activity at concentration c_i, standard
+// state c° = 1 M), and the "1" represents the empty (apo) site.
+//
+// Internally stores ln(z_i · Z_i) = ln(c_i/c°) + ln Z_i for each ligand,
+// so all existing log-space arithmetic is preserved.
 //
 // From Ξ we compute:
 //   p(empty)     = 1 / Ξ
-//   p(ligand_i)  = Z_i / Ξ
-//   ΔG(ligand_i) = −kT ln Z_i
-//   selectivity(A/B) = Z_A / Z_B = exp(β(ΔG_B − ΔG_A))
+//   p(ligand_i)  = z_i·Z_i / Ξ
+//   ΔG(ligand_i) = −kT ln Z_i          (concentration-independent)
+//   selectivity(A/B) = (z_A·Z_A) / (z_B·Z_B)
 //
 // All arithmetic uses log-space (stores ln Z_i) for numerical stability
 // since partition functions can span hundreds of orders of magnitude.
@@ -29,6 +33,7 @@
 #include <unordered_map>
 #include <mutex>
 #include <cmath>
+#include <algorithm>
 #include <stdexcept>
 
 namespace target {
@@ -39,16 +44,21 @@ public:
 
     // ── Ligand registration ────────────────────────────────────────────
 
-    /// Register a ligand's partition function from its completed StatMechEngine.
-    /// Extracts log(Z) from engine.compute().log_Z.
-    void add_ligand(const std::string& name, double log_Z);
+    /// Register a ligand with its partition function and optional concentration.
+    /// @param name       Ligand identifier
+    /// @param log_Z      ln(Z_i) from StatMechEngine
+    /// @param concentration_M  Ligand concentration in molar (default 1.0 M = standard state)
+    void add_ligand(const std::string& name, double log_Z, double concentration_M = 1.0);
 
     /// Convenience: extract log_Z from a StatMechEngine
-    void add_ligand(const std::string& name, const statmech::StatMechEngine& engine);
+    void add_ligand(const std::string& name, const statmech::StatMechEngine& engine,
+                    double concentration_M = 1.0);
 
-    /// Update an existing ligand's Z (e.g., after re-docking with more samples).
-    /// Uses log-sum-exp to merge old + new Z values.
-    void update_ligand(const std::string& name, double new_log_Z);
+    /// Overwrite an existing ligand's Z (e.g., after re-docking with a better estimate).
+    void overwrite_ligand(const std::string& name, double new_log_Z);
+
+    /// Merge an independent ensemble into an existing ligand's Z (log-sum-exp).
+    void merge_ligand(const std::string& name, double new_log_Z);
 
     /// Remove a ligand from the ensemble.
     void remove_ligand(const std::string& name);
@@ -64,11 +74,24 @@ public:
     /// p(empty) = 1/Ξ = exp(−ln Ξ)
     double empty_probability() const;
 
-    /// ΔG(ligand_i) = −kT · ln Z_i
-    double delta_G(const std::string& name) const;
+    /// Intrinsic free energy: F = −kT · ln Z_i  (kcal/mol).
+    /// This is the Helmholtz free energy of the bound ensemble,
+    /// NOT the binding free energy (which requires an unbound reference).
+    double free_energy(const std::string& name) const;
 
-    /// Selectivity ratio: Z_a / Z_b = exp(ln Z_a − ln Z_b)
+    /// Binding free energy: ΔG_bind = F_bound − F_ref.
+    /// @param name    Ligand name
+    /// @param F_ref   Reference-state free energy (unbound ligand in solution).
+    ///                Typically obtained from a separate StatMechEngine on the
+    ///                unbound ensemble. If 0.0, returns −kT ln Z_i directly.
+    double delta_G_bind(const std::string& name, double F_ref = 0.0) const;
+
+    /// Selectivity ratio: Z_a / Z_b = exp(ln Z_a − ln Z_b).
+    /// Returns +Inf or 0.0 for extreme ratios (|ΔΔG| > ~700 kT).
     double selectivity(const std::string& a, const std::string& b) const;
+
+    /// ln(Z_a / Z_b) = ln Z_a − ln Z_b.  Overflow-safe.
+    double log_selectivity(const std::string& a, const std::string& b) const;
 
     // ── Ranking ────────────────────────────────────────────────────────
 
@@ -94,7 +117,12 @@ public:
 private:
     double T_;
     double beta_;    // 1/(kT)
-    std::unordered_map<std::string, double> log_Z_;
+
+    struct LigandEntry {
+        double log_Z;          // intrinsic ln(Z_i)
+        double log_zZ;         // ln(z_i · Z_i) = ln(c_i/c°) + ln(Z_i)
+    };
+    std::unordered_map<std::string, LigandEntry> ligands_;
     mutable std::mutex mtx_;
 
     // Compute ln(Ξ) without holding lock (caller must hold lock)

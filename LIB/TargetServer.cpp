@@ -51,48 +51,44 @@ void TargetServer::register_result(const DockingSession& session)
 {
     if (!session.completed) return;
 
-    std::unique_lock<std::shared_mutex> lock(results_mutex_);
-
-    // Register into grand partition function
+    // Register into grand partition function (overwrite on re-docking)
     if (grand_xi_.has_ligand(session.ligand_name)) {
-        grand_xi_.update_ligand(session.ligand_name, session.log_Z);
+        grand_xi_.overwrite_ligand(session.ligand_name, session.log_Z);
     } else {
         grand_xi_.add_ligand(session.ligand_name, session.log_Z);
     }
 
-    // Accumulate conformer knowledge (CCBM)
-    if (!session.conformer_populations.empty()) {
-        knowledge_.accumulate_conformer_weights(session.conformer_populations);
+    // Accumulate conformer knowledge (CCBM) and binding center
+    {
+        std::lock_guard<std::mutex> lock(knowledge_mtx_);
+        if (!session.conformer_populations.empty()) {
+            knowledge_.accumulate_conformer_weights(session.conformer_populations);
+        }
+        knowledge_.accumulate_binding_center(
+            session.best_center[0], session.best_center[1], session.best_center[2],
+            session.best_energy, session.ligand_name);
     }
-
-    // Accumulate binding center
-    knowledge_.accumulate_binding_center(
-        session.best_center[0], session.best_center[1], session.best_center[2],
-        session.best_energy, session.ligand_name);
 
     completed_count_.fetch_add(1, std::memory_order_relaxed);
 }
 
 // ────────────────────────────────────────────────────────────────────────
-// Grand partition function queries
+// Grand partition function queries (GPF handles its own locking)
 // ────────────────────────────────────────────────────────────────────────
 
 double TargetServer::binding_probability(const std::string& ligand_name) const
 {
-    std::shared_lock<std::shared_mutex> lock(results_mutex_);
     return grand_xi_.binding_probability(ligand_name);
 }
 
 double TargetServer::selectivity_ratio(const std::string& a,
                                         const std::string& b) const
 {
-    std::shared_lock<std::shared_mutex> lock(results_mutex_);
     return grand_xi_.selectivity(a, b);
 }
 
 std::vector<GrandPartitionFunction::LigandRank> TargetServer::rank_ligands() const
 {
-    std::shared_lock<std::shared_mutex> lock(results_mutex_);
     return grand_xi_.rank();
 }
 
@@ -107,13 +103,13 @@ int TargetServer::completed_sessions() const
 
 std::vector<double> TargetServer::conformer_priors() const
 {
-    std::shared_lock<std::shared_mutex> lock(results_mutex_);
+    std::lock_guard<std::mutex> lock(knowledge_mtx_);
     return knowledge_.conformer_posterior();
 }
 
 std::vector<float> TargetServer::grid_hotspot_energies() const
 {
-    std::shared_lock<std::shared_mutex> lock(results_mutex_);
+    std::lock_guard<std::mutex> lock(knowledge_mtx_);
     return knowledge_.grid_mean_energies();
 }
 

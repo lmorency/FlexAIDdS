@@ -61,7 +61,7 @@ TEST(GrandPartition, SingleLigand) {
     EXPECT_NEAR(gpf.empty_probability(), 1.0 - expected_pA, 1e-8);
 
     // ΔG = -kT * ln(Z_A) = -kT * 10
-    EXPECT_NEAR(gpf.delta_G("ligandA"), -kT_300 * 10.0, 1e-10);
+    EXPECT_NEAR(gpf.free_energy("ligandA"), -kT_300 * 10.0, 1e-10);
 }
 
 // ════════════════════════════════════════════════════════════════════════
@@ -113,7 +113,7 @@ TEST(GrandPartition, EqualLigands) {
     EXPECT_NEAR(gpf.selectivity("X", "Y"), 1.0, 1e-12);
 
     // All ΔG should be equal
-    EXPECT_NEAR(gpf.delta_G("X"), gpf.delta_G("Y"), 1e-12);
+    EXPECT_NEAR(gpf.free_energy("X"), gpf.free_energy("Y"), 1e-12);
 }
 
 // ════════════════════════════════════════════════════════════════════════
@@ -151,22 +151,39 @@ TEST(GrandPartition, Ranking) {
 // Update (re-docking merge)
 // ════════════════════════════════════════════════════════════════════════
 
-TEST(GrandPartition, UpdateMerge) {
+TEST(GrandPartition, OverwriteLigand) {
     GrandPartitionFunction gpf(300.0);
 
     // Initial: Z_A = e^5
     gpf.add_ligand("A", 5.0);
-    double dG_before = gpf.delta_G("A");
+    double dG_before = gpf.free_energy("A");
 
-    // Re-dock: additional Z_new = e^5 → Z_merged = 2·e^5
-    gpf.update_ligand("A", 5.0);
+    // Re-dock with a better estimate: overwrite replaces the value
+    gpf.overwrite_ligand("A", 8.0);
+
+    // Z should now be e^8 (not e^5 + e^8)
+    EXPECT_NEAR(gpf.free_energy("A"), -kT_300 * 8.0, 1e-10);
+
+    // ΔG should be more negative after overwrite with larger Z
+    EXPECT_LT(gpf.free_energy("A"), dG_before);
+}
+
+TEST(GrandPartition, MergeLigand) {
+    GrandPartitionFunction gpf(300.0);
+
+    // Initial: Z_A = e^5
+    gpf.add_ligand("A", 5.0);
+    double dG_before = gpf.free_energy("A");
+
+    // Merge independent ensemble: Z_merged = 2·e^5
+    gpf.merge_ligand("A", 5.0);
 
     // ln(Z_merged) = ln(2·e^5) = 5 + ln(2)
     double expected_dG = -kT_300 * (5.0 + std::log(2.0));
-    EXPECT_NEAR(gpf.delta_G("A"), expected_dG, 1e-10);
+    EXPECT_NEAR(gpf.free_energy("A"), expected_dG, 1e-10);
 
     // ΔG should be more negative (more favorable) after merging
-    EXPECT_LT(gpf.delta_G("A"), dG_before);
+    EXPECT_LT(gpf.free_energy("A"), dG_before);
 }
 
 // ════════════════════════════════════════════════════════════════════════
@@ -198,8 +215,9 @@ TEST(GrandPartition, DuplicateAddThrows) {
 TEST(GrandPartition, QueryMissingThrows) {
     GrandPartitionFunction gpf(300.0);
     EXPECT_THROW(gpf.binding_probability("X"), std::invalid_argument);
-    EXPECT_THROW(gpf.delta_G("X"), std::invalid_argument);
-    EXPECT_THROW(gpf.update_ligand("X", 5.0), std::invalid_argument);
+    EXPECT_THROW(gpf.free_energy("X"), std::invalid_argument);
+    EXPECT_THROW(gpf.overwrite_ligand("X", 5.0), std::invalid_argument);
+    EXPECT_THROW(gpf.merge_ligand("X", 5.0), std::invalid_argument);
     EXPECT_THROW(gpf.remove_ligand("X"), std::invalid_argument);
 }
 
@@ -246,5 +264,80 @@ TEST(GrandPartition, FromStatMechEngine) {
     EXPECT_TRUE(gpf.has_ligand("from_engine"));
 
     auto thermo = engine.compute();
-    EXPECT_NEAR(gpf.delta_G("from_engine"), thermo.free_energy, 1e-10);
+    EXPECT_NEAR(gpf.free_energy("from_engine"), thermo.free_energy, 1e-10);
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// Concentration-dependent binding
+// ════════════════════════════════════════════════════════════════════════
+
+TEST(GrandPartition, ConcentrationAffectsProbability) {
+    GrandPartitionFunction gpf(300.0);
+
+    // Same partition function, different concentrations
+    // A at 1 M, B at 0.01 M (10 mM)
+    gpf.add_ligand("A", 10.0, 1.0);      // ln(z·Z) = ln(1) + 10 = 10
+    gpf.add_ligand("B", 10.0, 0.01);     // ln(z·Z) = ln(0.01) + 10 = 10 - ln(100)
+
+    // A should have higher binding probability (higher concentration)
+    EXPECT_GT(gpf.binding_probability("A"), gpf.binding_probability("B"));
+
+    // Selectivity A/B should reflect concentration ratio
+    // z_A·Z_A / (z_B·Z_B) = (1.0 / 0.01) = 100
+    EXPECT_NEAR(gpf.selectivity("A", "B"), 100.0, 0.1);
+}
+
+TEST(GrandPartition, DefaultConcentrationIsMolar) {
+    GrandPartitionFunction gpf(300.0);
+
+    // Both at default 1 M → should have equal probability
+    gpf.add_ligand("X", 5.0);   // default c = 1 M
+    gpf.add_ligand("Y", 5.0, 1.0);  // explicit 1 M
+
+    EXPECT_NEAR(gpf.binding_probability("X"), gpf.binding_probability("Y"), 1e-12);
+    EXPECT_NEAR(gpf.selectivity("X", "Y"), 1.0, 1e-12);
+}
+
+TEST(GrandPartition, InvalidConcentrationThrows) {
+    GrandPartitionFunction gpf(300.0);
+    EXPECT_THROW(gpf.add_ligand("bad", 5.0, 0.0), std::invalid_argument);
+    EXPECT_THROW(gpf.add_ligand("bad2", 5.0, -1.0), std::invalid_argument);
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// Log-selectivity (overflow-safe)
+// ════════════════════════════════════════════════════════════════════════
+
+TEST(GrandPartition, LogSelectivity) {
+    GrandPartitionFunction gpf(300.0);
+    gpf.add_ligand("A", 500.0);
+    gpf.add_ligand("B", 3.0);
+
+    // ln(Z_A/Z_B) = 500 - 3 = 497
+    EXPECT_NEAR(gpf.log_selectivity("A", "B"), 497.0, 1e-10);
+    EXPECT_NEAR(gpf.log_selectivity("B", "A"), -497.0, 1e-10);
+
+    // selectivity() should return +Inf for extreme ratio
+    EXPECT_TRUE(std::isinf(gpf.selectivity("A", "B")));
+    EXPECT_EQ(gpf.selectivity("B", "A"), 0.0);
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// free_energy vs delta_G_bind
+// ════════════════════════════════════════════════════════════════════════
+
+TEST(GrandPartition, FreeEnergyVsDeltaGBind) {
+    GrandPartitionFunction gpf(300.0);
+    gpf.add_ligand("A", 10.0);
+
+    // free_energy = −kT ln Z
+    double F = gpf.free_energy("A");
+    EXPECT_NEAR(F, -kT_300 * 10.0, 1e-10);
+
+    // delta_G_bind with F_ref = 0 → same as free_energy
+    EXPECT_NEAR(gpf.delta_G_bind("A", 0.0), F, 1e-10);
+
+    // delta_G_bind with a realistic reference state
+    double F_ref = 2.0;  // unbound ligand free energy
+    EXPECT_NEAR(gpf.delta_G_bind("A", F_ref), F - F_ref, 1e-10);
 }
