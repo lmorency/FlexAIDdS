@@ -86,7 +86,7 @@ jobs:
           cmake --build build --parallel --target FlexAID
 
       - name: Upload binary artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: flexaid-binary-${{ github.sha }}
           path: build/FlexAID
@@ -239,7 +239,7 @@ jobs:
 
       - name: Upload full benchmark results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tier2-results-${{ github.sha }}-${{ github.run_id }}
           path: |
@@ -372,7 +372,7 @@ jobs:
               --bootstrap
 
       - name: Upload MPI results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tier2-mpi-${{ matrix.nodes }}-${{ github.sha }}
           path: results/tier2-mpi-${{ matrix.nodes }}/
