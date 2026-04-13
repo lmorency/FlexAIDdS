@@ -627,6 +627,165 @@ TEST_F(StatMechEngineTest, HeatCapacityZeroForSingleState) {
 }
 
 // ===========================================================================
+// NUMERICAL STABILITY — EXTREME TEMPERATURES
+// ===========================================================================
+
+TEST_F(StatMechEngineTest, ExtremelyLowTemperatureFinite) {
+    // At T → 0, weight collapses to ground state. No NaN/inf should occur.
+    StatMechEngine cold(1.0);  // 1 K
+    cold.add_sample(-10.0);
+    cold.add_sample(-9.0);
+    cold.add_sample(-8.0);
+
+    auto th = cold.compute();
+    EXPECT_TRUE(std::isfinite(th.free_energy));
+    EXPECT_TRUE(std::isfinite(th.entropy));
+    EXPECT_TRUE(std::isfinite(th.heat_capacity));
+    // At 1 K, F ≈ ground state energy
+    EXPECT_NEAR(th.free_energy, -10.0, 0.1);
+}
+
+TEST_F(StatMechEngineTest, VeryHighTemperatureFinite) {
+    // At T → ∞, F → mean energy, S → k_B ln(N)
+    StatMechEngine hot(1e8);  // 10^8 K
+    int N = 5;
+    for (int i = 0; i < N; ++i)
+        hot.add_sample(-10.0 - i * 5.0);
+
+    auto th = hot.compute();
+    EXPECT_TRUE(std::isfinite(th.free_energy));
+    EXPECT_TRUE(std::isfinite(th.entropy));
+    EXPECT_TRUE(std::isfinite(th.heat_capacity));
+    // Entropy should approach k_B ln(N)
+    double S_max = kB_kcal * std::log(static_cast<double>(N));
+    EXPECT_NEAR(th.entropy, S_max, S_max * 0.01); // within 1%
+}
+
+TEST_F(StatMechEngineTest, LowTempGroundStateWeightDominates) {
+    StatMechEngine cold(1.0);
+    cold.add_sample(-100.0);
+    for (int i = 0; i < 99; ++i) cold.add_sample(0.0);
+
+    auto w = cold.boltzmann_weights();
+    EXPECT_GT(w[0], 0.999); // ground state captures essentially all weight
+}
+
+TEST_F(StatMechEngineTest, ExtremeEnergySpreadLogsumexpStable) {
+    // If naive exponentiation is used, exp(-β×(-500)) would overflow at T=300.
+    // log-sum-exp implementation must avoid this.
+    StatMechEngine eng(300.0);
+    eng.add_sample(-500.0);
+    eng.add_sample(-499.0);
+    eng.add_sample(-1.0);
+    eng.add_sample(500.0);
+
+    auto th = eng.compute();
+    EXPECT_TRUE(std::isfinite(th.free_energy));
+    EXPECT_TRUE(std::isfinite(th.entropy));
+    EXPECT_TRUE(std::isfinite(th.heat_capacity));
+
+    // With the extreme spread at T=300, essentially all weight is on -500
+    auto w = eng.boltzmann_weights();
+    EXPECT_GT(w[0], 0.99);
+}
+
+TEST_F(StatMechEngineTest, AllIdenticalEnergiesNoNan) {
+    // N states at same energy: F = E - kT ln N, S = k ln N, Cv = 0
+    int N = 1000;
+    double E = -7.77;
+    StatMechEngine eng(300.0);
+    for (int i = 0; i < N; ++i) eng.add_sample(E);
+
+    auto th = eng.compute();
+    EXPECT_TRUE(std::isfinite(th.free_energy));
+    EXPECT_TRUE(std::isfinite(th.entropy));
+    EXPECT_NEAR(th.heat_capacity, 0.0, 1e-9);
+    EXPECT_NEAR(th.entropy, kB_kcal * std::log(static_cast<double>(N)), 1e-9);
+}
+
+TEST_F(StatMechEngineTest, LargeEnsembleNumericallyStable) {
+    // 10,000 samples spanning a wide energy range
+    StatMechEngine eng(300.0);
+    std::mt19937 rng(999);
+    std::normal_distribution<double> dist(-10.0, 3.0);
+    for (int i = 0; i < 10000; ++i) eng.add_sample(dist(rng));
+
+    auto th = eng.compute();
+    EXPECT_TRUE(std::isfinite(th.free_energy));
+    EXPECT_TRUE(std::isfinite(th.entropy));
+    EXPECT_GE(th.entropy, 0.0);
+    EXPECT_GE(th.heat_capacity, 0.0);
+}
+
+TEST_F(StatMechEngineTest, SingleSampleHighMultiplicity) {
+    // Multiplicity M: S = k_B ln(M), F = E - kT ln(M)
+    int M = 10000;
+    double E = -5.0;
+    StatMechEngine eng(300.0);
+    eng.add_sample(E, M);
+
+    auto th = eng.compute();
+    EXPECT_NEAR(th.entropy, kB_kcal * std::log(static_cast<double>(M)), 1e-9);
+    double expected_F = E - kB_kcal * 300.0 * std::log(static_cast<double>(M));
+    EXPECT_NEAR(th.free_energy, expected_F, 1e-9);
+}
+
+// ===========================================================================
+// NUMERICAL STABILITY — PARTITION FUNCTION EDGE CASES
+// ===========================================================================
+
+TEST_F(StatMechEngineTest, DeltaGWithSingleStateIsAnalytic) {
+    // ΔG(A→B) = F_A − F_B; for single states this is just E_A − E_B
+    StatMechEngine eng_a(300.0), eng_b(300.0);
+    eng_a.add_sample(-12.0);
+    eng_b.add_sample(-8.0);
+
+    double dG = eng_a.delta_G(eng_b);
+    EXPECT_NEAR(dG, -12.0 - (-8.0), EPSILON);
+}
+
+TEST_F(StatMechEngineTest, HeatCapacityPeakNearTransition) {
+    // C_v = Var(E) / kT² peaks at the temperature where the two-state
+    // system is half-occupied. At T=300 with ΔE=6.0 kcal/mol:
+    //   β·ΔE ≈ 10 → cold side dominates → C_v is near-zero at 300 K.
+    // Try ΔE=0.6 kcal/mol (β·ΔE ≈ 1): two-state populations are comparable.
+    StatMechEngine eng(300.0);
+    eng.add_sample(-10.0);
+    eng.add_sample(-9.4);  // ΔE = 0.6 kcal/mol
+
+    auto th = eng.compute();
+    EXPECT_GT(th.heat_capacity, 0.0);
+}
+
+TEST_F(StatMechEngineTest, EntropyZeroForSingleStateMultiplicity1) {
+    StatMechEngine eng(300.0);
+    eng.add_sample(-10.0, 1);
+    auto th = eng.compute();
+    EXPECT_NEAR(th.entropy, 0.0, EPSILON);
+}
+
+TEST_F(StatMechEngineTest, FreeEnergyAlwaysLEMeanEnergy) {
+    // F = <E> - T*S ≤ <E> because S ≥ 0
+    std::vector<double> energies = {-20.0, -15.0, -10.0, -5.0, 0.0, 5.0};
+    for (double e : energies) engine.add_sample(e);
+
+    auto th = engine.compute();
+    EXPECT_LE(th.free_energy, th.mean_energy + EPSILON);
+}
+
+TEST_F(StatMechEngineTest, ComputeTwiceReturnsSameResult) {
+    engine.add_sample(-10.0);
+    engine.add_sample(-8.0);
+    engine.add_sample(-6.0);
+
+    auto th1 = engine.compute();
+    auto th2 = engine.compute();
+    EXPECT_DOUBLE_EQ(th1.free_energy, th2.free_energy);
+    EXPECT_DOUBLE_EQ(th1.entropy, th2.entropy);
+    EXPECT_DOUBLE_EQ(th1.heat_capacity, th2.heat_capacity);
+}
+
+// ===========================================================================
 // MAIN
 // ===========================================================================
 

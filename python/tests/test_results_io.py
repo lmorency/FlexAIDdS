@@ -176,3 +176,158 @@ def test_from_json_empty_modes() -> None:
     restored = DockingResult.from_json(payload)
     assert restored.n_modes == 0
     assert restored.temperature == 300.0
+
+
+# ---------------------------------------------------------------------------
+# Backward compatibility: old REMARK formats
+# ---------------------------------------------------------------------------
+
+def test_old_uppercase_remark_keys(tmp_path: Path) -> None:
+    """Upper-case REMARK keys (older engine versions) are parsed correctly."""
+    _write_pdb(
+        tmp_path / "binding_mode_1_pose_1.pdb",
+        [
+            "BINDING_MODE = 1",
+            "POSE_RANK = 1",
+            "CF = -30.0",
+            "FREE_ENERGY = -29.5",
+            "TEMPERATURE = 300.0",
+        ],
+    )
+    result = load_results(tmp_path)
+    assert result.n_modes == 1
+    mode = result.binding_modes[0]
+    assert mode.best_cf == -30.0
+
+
+def test_missing_temperature_remark_falls_back(tmp_path: Path) -> None:
+    """When the REMARK Temperature line is absent, temperature is None or falls back."""
+    _write_pdb(
+        tmp_path / "binding_mode_1_pose_1.pdb",
+        [
+            "binding_mode = 1",
+            "pose_rank = 1",
+            "CF = -22.0",
+            # NO temperature line
+        ],
+    )
+    result = load_results(tmp_path)
+    # Should not raise; temperature may be None when not provided
+    assert result.n_modes == 1
+    mode = result.binding_modes[0]
+    assert mode.best_cf == -22.0
+
+
+def test_mixed_remark_versions_same_directory(tmp_path: Path) -> None:
+    """Directory mixing old-style and new-style REMARK formats loads all modes."""
+    _write_pdb(
+        tmp_path / "binding_mode_1_pose_1.pdb",
+        [
+            "binding_mode = 1",
+            "pose_rank = 1",
+            "CF = -20.0",
+            "temperature = 300.0",
+        ],
+    )
+    _write_pdb(
+        tmp_path / "binding_mode_2_pose_1.pdb",
+        [
+            "BINDING_MODE = 2",  # old-style upper-case
+            "POSE_RANK = 1",
+            "CF = -18.0",
+            "TEMPERATURE = 300.0",
+        ],
+    )
+    result = load_results(tmp_path)
+    assert result.n_modes == 2
+    cf_values = {m.best_cf for m in result.binding_modes}
+    assert -20.0 in cf_values
+    assert -18.0 in cf_values
+
+
+def test_no_pdb_files_returns_empty_result(tmp_path: Path) -> None:
+    """A directory with no PDB files returns an empty DockingResult gracefully."""
+    result = load_results(tmp_path)
+    assert result.n_modes == 0
+
+
+def test_partial_remarks_only_cf(tmp_path: Path) -> None:
+    """Files with only CF REMARK (no thermodynamics) still load correctly."""
+    _write_pdb(
+        tmp_path / "binding_mode_1_pose_1.pdb",
+        [
+            "binding_mode = 1",
+            "pose_rank = 1",
+            "CF = -11.0",
+            "temperature = 298.15",
+        ],
+    )
+    result = load_results(tmp_path)
+    assert result.n_modes == 1
+    mode = result.binding_modes[0]
+    assert mode.free_energy is None   # not provided
+    assert mode.best_cf == -11.0
+
+
+def test_multiple_poses_per_mode_aggregated(tmp_path: Path) -> None:
+    """Multiple poses from one mode return the best CF as best_cf."""
+    for rank, cf in [(1, -25.0), (2, -18.0), (3, -12.0)]:
+        _write_pdb(
+            tmp_path / f"binding_mode_1_pose_{rank}.pdb",
+            [
+                "binding_mode = 1",
+                f"pose_rank = {rank}",
+                f"CF = {cf}",
+                "temperature = 300.0",
+            ],
+        )
+    result = load_results(tmp_path)
+    assert result.n_modes == 1
+    assert result.binding_modes[0].best_cf == -25.0
+    assert result.binding_modes[0].n_poses == 3
+
+
+def test_to_csv_round_trip(tmp_path: Path) -> None:
+    """to_csv() produces valid CSV that round-trips mode IDs and CF values."""
+    for mode_id, cf in [(1, -30.0), (2, -25.5)]:
+        _write_pdb(
+            tmp_path / f"binding_mode_{mode_id}_pose_1.pdb",
+            [
+                f"binding_mode = {mode_id}",
+                "pose_rank = 1",
+                f"CF = {cf}",
+                "temperature = 300.0",
+            ],
+        )
+    result = load_results(tmp_path)
+    csv_text = result.to_csv()
+
+    assert csv_text.strip()
+    lines = [l for l in csv_text.splitlines() if l.strip()]
+    # Header + 2 data rows
+    assert len(lines) == 3
+
+    reader = csv.DictReader(csv_text.splitlines())
+    rows = list(reader)
+    assert len(rows) == 2
+    cfs = {float(r["best_cf"]) for r in rows}
+    assert -30.0 in cfs
+    assert -25.5 in cfs
+
+
+def test_subdirectory_pdb_files_loaded(tmp_path: Path) -> None:
+    """PDB files in sub-directories are discovered recursively."""
+    subdir = tmp_path / "run1"
+    subdir.mkdir()
+    _write_pdb(
+        subdir / "binding_mode_1_pose_1.pdb",
+        [
+            "binding_mode = 1",
+            "pose_rank = 1",
+            "CF = -17.0",
+            "temperature = 300.0",
+        ],
+    )
+    result = load_results(tmp_path)
+    assert result.n_modes == 1
+    assert result.binding_modes[0].best_cf == -17.0

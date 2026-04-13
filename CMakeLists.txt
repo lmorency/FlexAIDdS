@@ -2074,4 +2074,150 @@ if(BUILD_SWIFT_BRIDGE)
     endif()
     flexaids_configure_msvc_test(test_coarse_screen)
     add_test(NAME CoarseScreenTests COMMAND test_coarse_screen)
+
+    # test_process_ligand — ProcessLigand pipeline: SmilesParser, RingPerception,
+    # Aromaticity, RotatableBonds, ValenceChecker, SybylTyper
+    add_executable(test_process_ligand
+        tests/test_process_ligand.cpp
+        LIB/ProcessLigand/SmilesParser.cpp
+        LIB/ProcessLigand/RingPerception.cpp
+        LIB/ProcessLigand/Aromaticity.cpp
+        LIB/ProcessLigand/RotatableBonds.cpp
+        LIB/ProcessLigand/ValenceChecker.cpp
+        LIB/ProcessLigand/SybylTyper.cpp
+        LIB/ProcessLigand/CoordBuilder.cpp
+        LIB/ProcessLigand/FlexAIDWriter.cpp
+        LIB/ProcessLigand/ProcessLigand.cpp
+    )
+    target_include_directories(test_process_ligand PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ProcessLigand
+    )
+    target_link_libraries(test_process_ligand PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_process_ligand PRIVATE /O2)
+        target_compile_definitions(test_process_ligand PRIVATE
+            _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES NOMINMAX)
+    else()
+        target_compile_options(test_process_ligand PRIVATE -O2)
+    endif()
+    target_link_libraries(test_process_ligand PRIVATE Eigen3::Eigen)
+    target_compile_definitions(test_process_ligand PRIVATE FLEXAIDS_HAS_EIGEN)
+    flexaids_configure_msvc_test(test_process_ligand)
+    add_test(NAME ProcessLigandTests COMMAND test_process_ligand)
+
+    # test_ligand_ring_flex — LigandRingFlex unified ring flexibility interface
+    add_executable(test_ligand_ring_flex
+        tests/test_ligand_ring_flex.cpp
+        LIB/LigandRingFlex/LigandRingFlex.cpp
+        LIB/LigandRingFlex/RingConformerLibrary.cpp
+        LIB/LigandRingFlex/SugarPucker.cpp
+    )
+    target_include_directories(test_ligand_ring_flex PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/LigandRingFlex
+    )
+    target_link_libraries(test_ligand_ring_flex PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_ligand_ring_flex PRIVATE /O2)
+    else()
+        target_compile_options(test_ligand_ring_flex PRIVATE -O2)
+    endif()
+    target_link_libraries(test_ligand_ring_flex PRIVATE Eigen3::Eigen)
+    target_compile_definitions(test_ligand_ring_flex PRIVATE FLEXAIDS_HAS_EIGEN)
+    flexaids_configure_msvc_test(test_ligand_ring_flex)
+    add_test(NAME LigandRingFlexTests COMMAND test_ligand_ring_flex)
+
+    # test_natural — RibosomeElongation, TransloconInsertion, NucleationSeedDetector
+    add_executable(test_natural
+        tests/test_natural.cpp
+        LIB/NATURaL/RibosomeElongation.cpp
+        LIB/NATURaL/TransloconInsertion.cpp
+        LIB/NATURaL/NucleationDetector.cpp
+        LIB/NATURaL/NATURaLDualAssembly.cpp
+        LIB/statmech.cpp
+        LIB/TurboQuant.cpp
+        LIB/UnifiedHardwareDispatch.cpp
+        LIB/hardware_detect.cpp
+        LIB/Vcontacts.cpp
+        LIB/geometry.cpp
+    )
+    target_include_directories(test_natural PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
+    )
+    target_link_libraries(test_natural PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_natural PRIVATE /O2)
+        target_compile_definitions(test_natural PRIVATE
+            _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES NOMINMAX)
+    else()
+        target_compile_options(test_natural PRIVATE -O2)
+    endif()
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(test_natural PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    target_link_libraries(test_natural PRIVATE Eigen3::Eigen)
+    target_compile_definitions(test_natural PRIVATE FLEXAIDS_HAS_EIGEN)
+    flexaids_configure_simd(test_natural)
+    flexaids_configure_msvc_test(test_natural)
+    add_test(NAME NATURaLTests COMMAND test_natural)
+
+    # test_docking_pipeline — end-to-end integration: ProcessLigand → StatMech → BindingMode
+    add_executable(test_docking_pipeline
+        tests/test_docking_pipeline.cpp
+        tests/stubs.cpp
+        LIB/ProcessLigand/SmilesParser.cpp
+        LIB/ProcessLigand/RingPerception.cpp
+        LIB/ProcessLigand/Aromaticity.cpp
+        LIB/ProcessLigand/RotatableBonds.cpp
+        LIB/ProcessLigand/ValenceChecker.cpp
+        LIB/ProcessLigand/SybylTyper.cpp
+        LIB/ProcessLigand/CoordBuilder.cpp
+        LIB/ProcessLigand/FlexAIDWriter.cpp
+        LIB/ProcessLigand/ProcessLigand.cpp
+        LIB/statmech.cpp
+        LIB/TurboQuant.cpp
+        LIB/gaboom.cpp
+        LIB/GAContext.cpp
+        LIB/Vcontacts.cpp
+        LIB/BindingMode.cpp
+        LIB/encom.cpp
+        LIB/geometry.cpp
+        LIB/fast_optics.cpp
+        LIB/tENCoM/tencm.cpp
+        LIB/ShannonThermoStack/ShannonThermoStack.cpp
+        LIB/CleftDetector.cpp
+        LIB/NATURaL/NATURaLDualAssembly.cpp
+        LIB/NATURaL/RibosomeElongation.cpp
+        LIB/NATURaL/TransloconInsertion.cpp
+        LIB/NATURaL/NucleationDetector.cpp
+        LIB/UnifiedHardwareDispatch.cpp
+        LIB/hardware_detect.cpp
+    )
+    target_include_directories(test_docking_pipeline PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ProcessLigand
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/tENCoM
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/ShannonThermoStack
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/NATURaL
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB/CavityDetect
+    )
+    target_link_libraries(test_docking_pipeline PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_docking_pipeline PRIVATE /O2)
+        target_compile_definitions(test_docking_pipeline PRIVATE
+            _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES NOMINMAX)
+    else()
+        target_compile_options(test_docking_pipeline PRIVATE -O2)
+    endif()
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(test_docking_pipeline PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    target_link_libraries(test_docking_pipeline PRIVATE Eigen3::Eigen)
+    target_compile_definitions(test_docking_pipeline PRIVATE FLEXAIDS_HAS_EIGEN)
+    flexaids_configure_simd(test_docking_pipeline)
+    flexaids_configure_msvc_test(test_docking_pipeline)
+    add_test(NAME DockingPipelineTests COMMAND test_docking_pipeline)
+
 endif()
