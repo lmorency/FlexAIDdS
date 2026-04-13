@@ -42,7 +42,7 @@ jobs:
           fi
 
       - name: Upload benchmark results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: benchmark-results
           path: build/*_bench.txt
