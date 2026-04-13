@@ -22,7 +22,7 @@ classifiers = [
 [project.optional-dependencies]
 dev = ["pytest", "pytest-cov"]
 benchmarks = ["numpy>=2.0.2", "pyyaml>=6.0.3"]
-benchmarks-mpi = ["numpy>=2.0.2", "pyyaml>=6.0.3", "mpi4py>=3.0"]
+benchmarks-mpi = ["numpy>=2.0.2", "pyyaml>=6.0.3", "mpi4py>=4.1.1"]
 
 [project.scripts]
 flexaidds-benchmark = "flexaidds.dataset_runner.cli:main"
