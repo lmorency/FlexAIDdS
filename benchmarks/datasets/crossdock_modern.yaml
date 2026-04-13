@@ -1,0 +1,29 @@
+slug: crossdock
+name: CrossDock
+description: Cross-docking benchmark dataset for unified modern runner.
+data_format: pdb
+tier: 2
+tier1_subset_size: 5
+structural_states:
+  - holo
+targets:
+  - xdock1
+  - xdock2
+  - xdock3
+  - xdock4
+  - xdock5
+metrics:
+  - crossdock_success_rate_2A
+  - crossdock_success_rate_3A
+  - crossdock_mean_rmsd
+  - crossdock_median_rmsd
+  - docking_power_top1
+  - entropy_rescue_rate
+expected_baselines:
+  crossdock_success_rate_2A: 0.35
+  crossdock_success_rate_3A: 0.55
+  crossdock_mean_rmsd: 3.20
+  crossdock_median_rmsd: 2.80
+  docking_power_top1: 0.40
+  entropy_rescue_rate: 0.15
+baseline_tolerance: 0.05
