@@ -12,6 +12,14 @@
 
 First stable release of FlexAID∆S, the entropy-driven molecular docking engine. This is a ground-up rewrite of FlexAID combining genetic algorithms with statistical mechanics thermodynamics for accurate binding free energy prediction. 655 commits ahead of the v1.5 legacy tag. All development phases complete.
 
+### Post-release fixes (2026-04-14)
+
+- **GrandPartitionFunction audit** — 17 code quality fixes: `free_energy()` renamed to `F_bound()`, `[[nodiscard]]` on all queries, `=delete` on copy/move, explicit `log_c` storage, `scoped_lock` for thread safety, concentration guard (> 1000 M rejected), `log_intrinsic_selectivity()` and `all_log_zZ()` API additions
+- **Build fixes** — resolved merge conflict in `gaboom.cpp`, restored 8 missing GA constants in `ga_constants.h`, renamed `OVERFLOW` → `ERR_OVERFLOW` (macOS `math.h` conflict), fixed `Backend`/`HardwareBackend` type mismatch, added Eigen3 linkage for `test_encom` and `test_ion_handling`
+- **Test fixes** — corrected `ExtremeEnergySpreadLogsumexpStable` threshold, fixed `VeryLargeEigenvaluesStiff` physics assumption, corrected `DeltaGRelativeToAnotherModeConsistent` sign convention, rewrote `hash_genes` tests
+- **CI hardening** — all 11 workflow files pinned to commit SHAs with version comments
+- **Test suite**: 48 C++ tests, all passing (was 46 with 3 pre-existing failures)
+
 ### Highlights
 
 - **Shannon entropy (∆S) scoring** — the core innovation: configurational entropy as a first-class scoring term via StatMechEngine
@@ -22,7 +30,7 @@ First stable release of FlexAID∆S, the entropy-driven molecular docking engine
 - **GIST water-displacement scoring** — grid-based explicit solvation via `GISTEvaluator`
 - **Directional H-bond scoring** — geometry-aware hydrogen bond potential via `HBondEvaluator`
 - **DatasetRunner benchmarking** — automated distributed benchmarking system for docking campaigns
-- **78 test targets** — 46 C++ (GoogleTest) + 32 Python (pytest)
+- **78 test targets** — 48 C++ (GoogleTest) + 32 Python (pytest)
 - **4 CI workflows** — build matrix, license scanning, performance regression, sanitizers
 
 ### Core Thermodynamics
@@ -119,7 +127,7 @@ First stable release of FlexAID∆S, the entropy-driven molecular docking engine
 
 - 655 commits since v1.5 tag
 - 40K+ lines C++, 19K+ lines Python, 10K lines Swift, 4K lines TypeScript, 12K+ lines tests
-- 46 C++ test files (GoogleTest), 32 Python test files (pytest) — 78 total
+- 48 C++ test files (GoogleTest), 32 Python test files (pytest) — 80 total
 - CI: Linux GCC, Linux Clang, macOS Clang, Windows MSVC
 - 4 CI workflows: `ci.yml`, `license-scan.yml`, `perf.yml`, `sanitizers.yml`
 

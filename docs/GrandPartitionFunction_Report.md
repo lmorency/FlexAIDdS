@@ -1,10 +1,10 @@
 # Grand Partition Function for Competitive Drug Binding
 
-## Technical Report — FlexAIDdS v1.76
+## Technical Report — FlexAIDdS v2.0
 
 **Author**: Louis-Philippe Morency, PhD Candidate
 **Affiliation**: Université de Montréal, NRGlab
-**Date**: 2026-04-13
+**Date**: 2026-04-14
 **Document scope**: Analysis of features, novelties, and drug discovery applications of the `GrandPartitionFunction` module
 
 ---
@@ -86,11 +86,19 @@ F_i = −kT · ln Zᵢ    [kcal/mol]
 S(A/B) = (z_A·Z_A) / (z_B·Z_B) = exp(ln Z_A − ln Z_B + ln(c_A/c_B))
 ```
 
-**Log-selectivity** (always finite):
+**Log-selectivity** (apparent, concentration-weighted):
 
 ```
 ln S(A/B) = ln Z_A − ln Z_B + ln(c_A/c_B)
 ```
+
+**Intrinsic log-selectivity** (concentration-independent):
+
+```
+ln S_int(A/B) = ln Z_A − ln Z_B
+```
+
+This quantity is useful for SAR/potency comparisons where concentration effects are irrelevant.
 
 ### 2.3 Log-Space Arithmetic
 
@@ -125,12 +133,14 @@ Each ligand is stored as a `LigandEntry`:
 ```cpp
 struct LigandEntry {
     double log_Z;    // intrinsic ln(Z_i)
-    double log_zZ;   // ln(z_i · Z_i) = ln(c_i/c°) + ln(Z_i)
+    double log_c;    // ln(c_i/c°) — stored directly to avoid subtraction drift
+    double log_zZ;   // ln(z_i · Z_i) = log_c + log_Z (cached for performance)
 };
 ```
 
-The dual-field design separates:
+The triple-field design separates:
 - **Intrinsic quantities** (`log_Z`): used for free energy, ranking — concentration-independent
+- **Concentration** (`log_c`): stored directly to prevent floating-point drift during repeated `overwrite_ligand` calls
 - **Grand canonical quantities** (`log_zZ`): used for probabilities, selectivity, Ξ — concentration-dependent
 
 ### 3.3 Ligand Update Semantics
@@ -153,6 +163,31 @@ The dual-field design separates:
 | Empty ensemble | Returns ln Ξ = 0, p(empty) = 1.0 |
 | Extreme concentration ratios | Absorbed into log_zZ, no overflow |
 | No heap allocation for Ξ | Single-pass, no std::vector |
+| Physically impossible concentrations | Values > 1000 M rejected with `std::invalid_argument` |
+
+### 3.5 Public API Summary
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `add_ligand(name, log_Z, c_M)` | void | Register ligand with partition function and concentration |
+| `add_ligand(name, engine, c_M)` | void | Register ligand from StatMechEngine |
+| `add_or_overwrite(name, log_Z, c_M)` | void | Atomic insert-or-replace (TOCTOU-safe) |
+| `overwrite_ligand(name, new_log_Z)` | void | Replace Z, preserve concentration |
+| `merge_ligand(name, new_log_Z)` | void | Combine ensembles via log-sum-exp |
+| `remove_ligand(name)` | void | Remove ligand from ensemble |
+| `log_Xi()` | `double` | ln(Ξ) — grand partition function |
+| `binding_probability(name)` | `double` | p(ligand bound), concentration-weighted |
+| `empty_probability()` | `double` | p(apo site) = 1/Ξ |
+| `F_bound(name)` | `double` | Helmholtz free energy of bound ensemble (kcal/mol) |
+| `delta_G_bind(name, F_ref)` | `double` | ΔG_bind = F_bound − F_ref |
+| `selectivity(a, b)` | `double` | Apparent selectivity ratio (concentration-weighted) |
+| `log_selectivity(a, b)` | `double` | ln S_apparent(a/b), overflow-safe |
+| `log_intrinsic_selectivity(a, b)` | `double` | ln(Z_A/Z_B), concentration-independent |
+| `rank()` | `vector<LigandRank>` | Ligands sorted by ΔG ascending |
+| `all_log_Z()` | `vector<pair>` | All ligand names with intrinsic ln Z |
+| `all_log_zZ()` | `vector<pair>` | All ligand names with concentration-weighted ln(z·Z) |
+
+All query methods are `[[nodiscard]]`. Copy and move constructors are `= delete` (mutex ownership).
 
 ---
 
@@ -267,8 +302,8 @@ The thread-safe `create_session()` / `register_result()` pattern supports parall
 
 | Test file | Tests | Coverage |
 |-----------|-------|----------|
-| `test_grand_partition.cpp` | 15 | Construction, single/multi ligand, competitive binding, equal ligands, ranking, overwrite/merge, remove, error handling, extreme values, StatMech integration, concentration, log-selectivity, ΔG_bind |
-| `test_target_server.cpp` | 10 | Construction, validation, session management, GPF integration, re-docking, knowledge base, concurrent registration |
+| `test_grand_partition.cpp` | 29 | Construction, single/multi ligand, competitive binding, equal ligands, ranking, overwrite/merge, remove, error handling, extreme values, StatMech integration, concentration, log-selectivity, intrinsic selectivity, all_log_zZ, impossible concentration guard, ΔG_bind |
+| `test_target_server.cpp` | 12 | Construction, validation, session management, GPF integration, re-docking, knowledge base, concurrent registration |
 
 ---
 
@@ -286,4 +321,4 @@ The implementation maintains numerical stability across 1000+ orders of magnitud
 
 ---
 
-*Generated for FlexAIDdS v1.76 — Le Bonhomme Pharma*
+*Generated for FlexAIDdS v2.0 — Le Bonhomme Pharma*

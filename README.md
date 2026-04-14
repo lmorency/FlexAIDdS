@@ -26,6 +26,7 @@ FlexAID∆S extends the [FlexAID](https://doi.org/10.1021/acs.jcim.5b00078) dock
 **Key capabilities:**
 - Genetic algorithm docking with Voronoi contact function scoring
 - Canonical ensemble partition function, free energy, entropy, and heat capacity
+- Grand canonical ensemble for competitive ligand binding, selectivity, and concentration-dependent occupancy
 - Torsional elastic network model (tENCoM) for backbone vibrational entropy
 - Full ligand flexibility: torsions, ring conformers, chiral center discrimination
 - Unified hardware dispatch (CUDA, Metal, AVX-512, AVX2, OpenMP)
@@ -158,6 +159,7 @@ Hardware: CUDA > Metal > AVX-512 > AVX2 > OpenMP > scalar
 
 #### Thermodynamics
 - **Canonical ensemble** -- partition function *Z*, Helmholtz free energy *F*, entropy *S*, heat capacity *C_v*
+- **Grand canonical ensemble** -- competitive ligand binding with concentration-dependent occupancy, pairwise selectivity, and intrinsic free energy ranking
 - **Shannon entropy** -- S = -k_B sum(p_i ln p_i) with log-sum-exp numerical stability
 - **Torsional ENCoM** (tENCoM) -- backbone vibrational entropy without full rotamer rebuilds
 - **ShannonThermoStack** -- combined configurational + vibrational entropy pipeline
@@ -209,7 +211,7 @@ Hardware: CUDA > Metal > AVX-512 > AVX2 > OpenMP > scalar
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
 
-# With tests (46 C++ test files via GoogleTest)
+# With tests (48 C++ tests via GoogleTest)
 cmake -S . -B build -DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel && ctest --test-dir build --output-on-failure
 
@@ -235,7 +237,7 @@ MPI_PROCS=4 CTEST_JOBS=8 ./scripts/run_distributed_validation.sh
 | Option | Default | Description |
 |:-------|:--------|:------------|
 | `BUILD_FLEXAIDDS_FAST` | **ON** | LTO-optimized FlexAIDdS binary |
-| `BUILD_TESTING` | OFF | GoogleTest unit tests (46 test files) |
+| `BUILD_TESTING` | OFF | GoogleTest unit tests (48 test files) |
 | `BUILD_PYTHON_BINDINGS` | OFF | pybind11 Python extension (`_core`) |
 | `BUILD_SWIFT_BRIDGE` | OFF | Swift bridge (macOS only, experimental) |
 | `ENABLE_TENCOM_TOOL` | **ON** | tENCoM vibrational entropy tool |
@@ -362,7 +364,7 @@ cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
 
-46 test files covering: StatMechEngine, BindingMode, GA operators, tENCoM, Voronoi contacts, FastOPTICS clustering, hardware dispatch, cavity detection, ion handling, ring conformers, chiral centers, file readers, grid decomposition, MIF scoring, GIST/HBond scoring, GA diversity, distributed backend, and more.
+48 test files covering: StatMechEngine, BindingMode, GA operators, GrandPartitionFunction, competitive binding, tENCoM, Voronoi contacts, FastOPTICS clustering, hardware dispatch, cavity detection, ion handling, ring conformers, chiral centers, file readers, grid decomposition, MIF scoring, GIST/HBond scoring, GA diversity, distributed backend, and more.
 
 ### Python (pytest)
 
@@ -418,6 +420,7 @@ FlexAIDdS/
 |   +-- statmech.cpp/h       # StatMechEngine
 |   +-- BindingMode.cpp/h    # Pose clustering + thermodynamics
 |   +-- encom.cpp/h          # ENCoM vibrational entropy
+|   +-- GrandPartitionFunction.* | Grand canonical ensemble for competitive binding |
 |   +-- config_defaults.h    # Default parameter schema
 |   +-- config_parser.cpp/h  # JSON config system
 |   +-- hardware_dispatch.*  # Unified HW backend selection
@@ -432,7 +435,7 @@ FlexAIDdS/
 |   +-- CleftDetector.cpp/h  # Binding-site detection
 |   +-- VoronoiCFBatch.h     # Batch Voronoi CF (header-only)
 +-- src/                    # Entry points
-+-- tests/                  # GoogleTest suite (46 test files)
++-- tests/                  # GoogleTest suite (48 test files)
 +-- python/                 # Python package + pybind11 bindings
 |   +-- flexaidds/           # Python package (22+ modules)
 |   +-- bindings/            # C++ bridge
