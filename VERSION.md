@@ -30,7 +30,7 @@ First stable release of FlexAID∆S, the entropy-driven molecular docking engine
 - **GIST water-displacement scoring** — grid-based explicit solvation via `GISTEvaluator`
 - **Directional H-bond scoring** — geometry-aware hydrogen bond potential via `HBondEvaluator`
 - **DatasetRunner benchmarking** — automated distributed benchmarking system for docking campaigns
-- **78 test targets** — 48 C++ (GoogleTest) + 32 Python (pytest)
+- **80 test targets** — 48 C++ (GoogleTest) + 32 Python (pytest)
 - **4 CI workflows** — build matrix, license scanning, performance regression, sanitizers
 
 ### Core Thermodynamics

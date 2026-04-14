@@ -237,7 +237,7 @@ MPI_PROCS=4 CTEST_JOBS=8 ./scripts/run_distributed_validation.sh
 | Option | Default | Description |
 |:-------|:--------|:------------|
 | `BUILD_FLEXAIDDS_FAST` | **ON** | LTO-optimized FlexAIDdS binary |
-| `BUILD_TESTING` | OFF | GoogleTest unit tests (48 test files) |
+| `BUILD_TESTING` | OFF | GoogleTest unit tests (48 test targets) |
 | `BUILD_PYTHON_BINDINGS` | OFF | pybind11 Python extension (`_core`) |
 | `BUILD_SWIFT_BRIDGE` | OFF | Swift bridge (macOS only, experimental) |
 | `ENABLE_TENCOM_TOOL` | **ON** | tENCoM vibrational entropy tool |
@@ -364,7 +364,7 @@ cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
 
-48 test files covering: StatMechEngine, BindingMode, GA operators, GrandPartitionFunction, competitive binding, tENCoM, Voronoi contacts, FastOPTICS clustering, hardware dispatch, cavity detection, ion handling, ring conformers, chiral centers, file readers, grid decomposition, MIF scoring, GIST/HBond scoring, GA diversity, distributed backend, and more.
+48 test targets covering: StatMechEngine, BindingMode, GA operators, GrandPartitionFunction, competitive binding, tENCoM, Voronoi contacts, FastOPTICS clustering, hardware dispatch, cavity detection, ion handling, ring conformers, chiral centers, file readers, grid decomposition, MIF scoring, GIST/HBond scoring, GA diversity, distributed backend, and more.
 
 ### Python (pytest)
 
@@ -435,7 +435,7 @@ FlexAIDdS/
 |   +-- CleftDetector.cpp/h  # Binding-site detection
 |   +-- VoronoiCFBatch.h     # Batch Voronoi CF (header-only)
 +-- src/                    # Entry points
-+-- tests/                  # GoogleTest suite (48 test files)
++-- tests/                  # GoogleTest suite (48 test targets)
 +-- python/                 # Python package + pybind11 bindings
 |   +-- flexaidds/           # Python package (22+ modules)
 |   +-- bindings/            # C++ bridge
