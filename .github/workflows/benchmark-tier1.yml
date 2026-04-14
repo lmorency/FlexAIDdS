@@ -38,9 +38,9 @@ jobs:
       FLEXAIDDS_BINARY: ${{ github.workspace }}/build/FlexAID
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
         with:
           python-version: "3.11"
           cache: pip
@@ -58,7 +58,7 @@ jobs:
 
       - name: Cache build
         id: cache-build
-        uses: actions/cache@v5
+        uses: actions/cache@27dce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: build
           key: tier1-build-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'LIB/**/*.cpp', 'LIB/**/*.h') }}
@@ -86,7 +86,7 @@ jobs:
           fi
 
       - name: Cache benchmark datasets
-        uses: actions/cache@v5
+        uses: actions/cache@27dce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: benchmark_data/${{ env.DATASET }}
           key: bench-data-${{ env.DATASET }}-v1
@@ -108,7 +108,7 @@ jobs:
 
       - name: Upload benchmark results
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: tier1-results-${{ env.DATASET }}-${{ github.run_id }}
           path: |
@@ -139,7 +139,7 @@ jobs:
 
       - name: Comment benchmark results on PR
         if: github.event_name == 'pull_request'
-        uses: marocchino/sticky-pull-request-comment@v3
+        uses: marocchino/sticky-pull-request-comment@0ea0beb66eb9baf113663a64ec522f60e49231c0 # v3.0.4
         with:
           header: benchmark-tier1
           message: |

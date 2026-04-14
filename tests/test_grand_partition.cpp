@@ -11,7 +11,6 @@
 #include "statmech.h"
 
 #include <cmath>
-#include <numbers>
 
 using namespace target;
 
@@ -60,8 +59,8 @@ TEST(GrandPartition, SingleLigand) {
     // p(empty) = 1/Ξ ≈ 0.000045
     EXPECT_NEAR(gpf.empty_probability(), 1.0 - expected_pA, 1e-8);
 
-    // ΔG = -kT * ln(Z_A) = -kT * 10
-    EXPECT_NEAR(gpf.free_energy("ligandA"), -kT_300 * 10.0, 1e-10);
+    // F_bound = -kT * ln(Z_A) = -kT * 10
+    EXPECT_NEAR(gpf.F_bound("ligandA"), -kT_300 * 10.0, 1e-10);
 }
 
 // ════════════════════════════════════════════════════════════════════════
@@ -112,8 +111,8 @@ TEST(GrandPartition, EqualLigands) {
     // Selectivity between equal ligands = 1.0
     EXPECT_NEAR(gpf.selectivity("X", "Y"), 1.0, 1e-12);
 
-    // All ΔG should be equal
-    EXPECT_NEAR(gpf.free_energy("X"), gpf.free_energy("Y"), 1e-12);
+    // All F_bound should be equal
+    EXPECT_NEAR(gpf.F_bound("X"), gpf.F_bound("Y"), 1e-12);
 }
 
 // ════════════════════════════════════════════════════════════════════════
@@ -156,16 +155,16 @@ TEST(GrandPartition, OverwriteLigand) {
 
     // Initial: Z_A = e^5
     gpf.add_ligand("A", 5.0);
-    double dG_before = gpf.free_energy("A");
+    double dG_before = gpf.F_bound("A");
 
     // Re-dock with a better estimate: overwrite replaces the value
     gpf.overwrite_ligand("A", 8.0);
 
     // Z should now be e^8 (not e^5 + e^8)
-    EXPECT_NEAR(gpf.free_energy("A"), -kT_300 * 8.0, 1e-10);
+    EXPECT_NEAR(gpf.F_bound("A"), -kT_300 * 8.0, 1e-10);
 
-    // ΔG should be more negative after overwrite with larger Z
-    EXPECT_LT(gpf.free_energy("A"), dG_before);
+    // F_bound should be more negative after overwrite with larger Z
+    EXPECT_LT(gpf.F_bound("A"), dG_before);
 }
 
 TEST(GrandPartition, MergeLigand) {
@@ -173,17 +172,17 @@ TEST(GrandPartition, MergeLigand) {
 
     // Initial: Z_A = e^5
     gpf.add_ligand("A", 5.0);
-    double dG_before = gpf.free_energy("A");
+    double dG_before = gpf.F_bound("A");
 
     // Merge independent ensemble: Z_merged = 2·e^5
     gpf.merge_ligand("A", 5.0);
 
     // ln(Z_merged) = ln(2·e^5) = 5 + ln(2)
     double expected_dG = -kT_300 * (5.0 + std::log(2.0));
-    EXPECT_NEAR(gpf.free_energy("A"), expected_dG, 1e-10);
+    EXPECT_NEAR(gpf.F_bound("A"), expected_dG, 1e-10);
 
-    // ΔG should be more negative (more favorable) after merging
-    EXPECT_LT(gpf.free_energy("A"), dG_before);
+    // F_bound should be more negative (more favorable) after merging
+    EXPECT_LT(gpf.F_bound("A"), dG_before);
 }
 
 // ════════════════════════════════════════════════════════════════════════
@@ -196,10 +195,14 @@ TEST(GrandPartition, RemoveLigand) {
     gpf.add_ligand("B",  5.0);
     EXPECT_EQ(gpf.num_ligands(), 2);
 
+    double log_xi_before = gpf.log_Xi();
     gpf.remove_ligand("A");
+    double log_xi_after = gpf.log_Xi();
+
     EXPECT_EQ(gpf.num_ligands(), 1);
     EXPECT_FALSE(gpf.has_ligand("A"));
     EXPECT_TRUE(gpf.has_ligand("B"));
+    EXPECT_LT(log_xi_after, log_xi_before);  // Ξ decreases after removal
 }
 
 // ════════════════════════════════════════════════════════════════════════
@@ -215,7 +218,7 @@ TEST(GrandPartition, DuplicateAddThrows) {
 TEST(GrandPartition, QueryMissingThrows) {
     GrandPartitionFunction gpf(300.0);
     EXPECT_THROW(gpf.binding_probability("X"), std::invalid_argument);
-    EXPECT_THROW(gpf.free_energy("X"), std::invalid_argument);
+    EXPECT_THROW(gpf.F_bound("X"), std::invalid_argument);
     EXPECT_THROW(gpf.overwrite_ligand("X", 5.0), std::invalid_argument);
     EXPECT_THROW(gpf.merge_ligand("X", 5.0), std::invalid_argument);
     EXPECT_THROW(gpf.remove_ligand("X"), std::invalid_argument);
@@ -264,7 +267,7 @@ TEST(GrandPartition, FromStatMechEngine) {
     EXPECT_TRUE(gpf.has_ligand("from_engine"));
 
     auto thermo = engine.compute();
-    EXPECT_NEAR(gpf.free_energy("from_engine"), thermo.free_energy, 1e-10);
+    EXPECT_NEAR(gpf.F_bound("from_engine"), thermo.free_energy, 1e-10);
 }
 
 // ════════════════════════════════════════════════════════════════════════
@@ -304,6 +307,11 @@ TEST(GrandPartition, InvalidConcentrationThrows) {
     EXPECT_THROW(gpf.add_ligand("bad2", 5.0, -1.0), std::invalid_argument);
 }
 
+TEST(GrandPartition, ImpossibleConcentrationThrows) {
+    GrandPartitionFunction gpf(300.0);
+    EXPECT_THROW(gpf.add_ligand("bad", 5.0, 1e6), std::invalid_argument);
+}
+
 // ════════════════════════════════════════════════════════════════════════
 // Log-selectivity (overflow-safe)
 // ════════════════════════════════════════════════════════════════════════
@@ -317,27 +325,172 @@ TEST(GrandPartition, LogSelectivity) {
     EXPECT_NEAR(gpf.log_selectivity("A", "B"), 497.0, 1e-10);
     EXPECT_NEAR(gpf.log_selectivity("B", "A"), -497.0, 1e-10);
 
-    // selectivity() should return +Inf for extreme ratio
-    EXPECT_TRUE(std::isinf(gpf.selectivity("A", "B")));
-    EXPECT_EQ(gpf.selectivity("B", "A"), 0.0);
+    // selectivity() returns a finite value (exp(497) is representable)
+    EXPECT_GT(gpf.selectivity("A", "B"), 0.0);
+    EXPECT_TRUE(std::isfinite(gpf.selectivity("A", "B")));
+    EXPECT_NEAR(gpf.selectivity("B", "A"), 0.0, 1e-200);
+
+    // Extreme values that actually overflow
+    GrandPartitionFunction gpf2(300.0);
+    gpf2.add_ligand("X", 800.0);
+    gpf2.add_ligand("Y", 0.0);
+    EXPECT_TRUE(std::isinf(gpf2.selectivity("X", "Y")));
+    EXPECT_EQ(gpf2.selectivity("Y", "X"), 0.0);
+}
+
+TEST(GrandPartition, IntrinsicVsApparentSelectivity) {
+    GrandPartitionFunction gpf(300.0);
+    gpf.add_ligand("A", 10.0, 1.0);       // 1 M
+    gpf.add_ligand("B", 10.0, 0.01);      // 10 mM
+
+    // Intrinsic selectivity (concentration-independent): Z_A/Z_B = 1
+    EXPECT_NEAR(gpf.log_intrinsic_selectivity("A", "B"), 0.0, 1e-12);
+
+    // Apparent selectivity (concentration-weighted): z_A·Z_A / (z_B·Z_B) = 100
+    EXPECT_NEAR(gpf.log_selectivity("A", "B"), std::log(100.0), 1e-10);
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// free_energy vs delta_G_bind
+// F_bound vs delta_G_bind
 // ════════════════════════════════════════════════════════════════════════
 
-TEST(GrandPartition, FreeEnergyVsDeltaGBind) {
+TEST(GrandPartition, FBoundVsDeltaGBind) {
     GrandPartitionFunction gpf(300.0);
     gpf.add_ligand("A", 10.0);
 
-    // free_energy = −kT ln Z
-    double F = gpf.free_energy("A");
+    // F_bound = −kT ln Z
+    double F = gpf.F_bound("A");
     EXPECT_NEAR(F, -kT_300 * 10.0, 1e-10);
 
-    // delta_G_bind with F_ref = 0 → same as free_energy
+    // delta_G_bind with F_ref = 0 → same as F_bound
     EXPECT_NEAR(gpf.delta_G_bind("A", 0.0), F, 1e-10);
 
     // delta_G_bind with a realistic reference state
     double F_ref = 2.0;  // unbound ligand free energy
     EXPECT_NEAR(gpf.delta_G_bind("A", F_ref), F - F_ref, 1e-10);
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// add_or_overwrite (atomic insert-or-replace)
+// ════════════════════════════════════════════════════════════════════════
+
+TEST(GrandPartition, AddOrOverwriteInsert) {
+    GrandPartitionFunction gpf(300.0);
+    gpf.add_or_overwrite("A", 5.0);
+    EXPECT_TRUE(gpf.has_ligand("A"));
+    EXPECT_NEAR(gpf.F_bound("A"), -kT_300 * 5.0, 1e-10);
+}
+
+TEST(GrandPartition, AddOrOverwriteReplace) {
+    GrandPartitionFunction gpf(300.0);
+    gpf.add_or_overwrite("A", 5.0);
+    EXPECT_NEAR(gpf.F_bound("A"), -kT_300 * 5.0, 1e-10);
+
+    // Overwrite with new value
+    gpf.add_or_overwrite("A", 10.0);
+    EXPECT_NEAR(gpf.F_bound("A"), -kT_300 * 10.0, 1e-10);
+    EXPECT_EQ(gpf.num_ligands(), 1);  // still just one ligand
+}
+
+TEST(GrandPartition, AddOrOverwriteConcentration) {
+    GrandPartitionFunction gpf(300.0);
+    gpf.add_or_overwrite("A", 10.0, 1.0);   // 1 M
+    gpf.add_or_overwrite("B", 10.0, 0.01);  // 10 mM
+
+    // A should have higher binding probability
+    EXPECT_GT(gpf.binding_probability("A"), gpf.binding_probability("B"));
+
+    // Now overwrite B with higher concentration
+    gpf.add_or_overwrite("B", 10.0, 1.0);  // upgrade to 1 M
+    EXPECT_NEAR(gpf.binding_probability("A"), gpf.binding_probability("B"), 1e-12);
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// Log-Xi caching (dirty flag)
+// ════════════════════════════════════════════════════════════════════════
+
+TEST(GrandPartition, CacheConsistencyAfterMutation) {
+    GrandPartitionFunction gpf(300.0);
+    gpf.add_ligand("A", 5.0);
+
+    double log_xi_1 = gpf.log_Xi();
+    double pA_1 = gpf.binding_probability("A");
+
+    // Mutate: add another ligand
+    gpf.add_ligand("B", 8.0);
+
+    // Cache should have been invalidated — new values must differ
+    double log_xi_2 = gpf.log_Xi();
+    EXPECT_GT(log_xi_2, log_xi_1);  // Ξ grows with more ligands
+
+    double pA_2 = gpf.binding_probability("A");
+    EXPECT_LT(pA_2, pA_1);  // A's share decreases with competition
+}
+
+TEST(GrandPartition, CacheConsistencyAfterOverwrite) {
+    GrandPartitionFunction gpf(300.0);
+    gpf.add_ligand("A", 5.0);
+    double pA_before = gpf.binding_probability("A");
+
+    gpf.overwrite_ligand("A", 20.0);  // much stronger
+    double pA_after = gpf.binding_probability("A");
+    EXPECT_GT(pA_after, pA_before);
+}
+
+TEST(GrandPartition, CacheConsistencyAfterMerge) {
+    GrandPartitionFunction gpf(300.0);
+    gpf.add_ligand("A", 5.0);
+    double dG_before = gpf.F_bound("A");
+
+    gpf.merge_ligand("A", 5.0);  // double the ensemble
+    double dG_after = gpf.F_bound("A");
+    EXPECT_LT(dG_after, dG_before);  // more favorable after merge
+}
+
+TEST(GrandPartition, CacheConsistencyAfterRemove) {
+    GrandPartitionFunction gpf(300.0);
+    gpf.add_ligand("A", 10.0);
+    gpf.add_ligand("B", 5.0);
+    double pA_with_B = gpf.binding_probability("A");
+
+    gpf.remove_ligand("B");
+    double pA_alone = gpf.binding_probability("A");
+    EXPECT_GT(pA_alone, pA_with_B);  // A's probability increases without B
+}
+
+TEST(GrandPartition, RepeatedQueriesUseCache) {
+    // Verify that repeated queries return identical results (cache doesn't drift)
+    GrandPartitionFunction gpf(300.0);
+    gpf.add_ligand("A", 10.0);
+    gpf.add_ligand("B", 5.0);
+
+    double log_xi_1 = gpf.log_Xi();
+    double log_xi_2 = gpf.log_Xi();
+    EXPECT_EQ(log_xi_1, log_xi_2);  // bitwise identical from cache
+
+    double p1 = gpf.binding_probability("A");
+    double p2 = gpf.binding_probability("A");
+    EXPECT_EQ(p1, p2);
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// all_log_zZ accessor
+// ════════════════════════════════════════════════════════════════════════
+
+TEST(GrandPartition, AllLogZzAccessor) {
+    GrandPartitionFunction gpf(300.0);
+    gpf.add_ligand("A", 10.0, 1.0);    // log_zZ = 0 + 10 = 10
+    gpf.add_ligand("B", 10.0, 0.01);   // log_zZ = ln(0.01) + 10
+
+    auto zz = gpf.all_log_zZ();
+    ASSERT_EQ(zz.size(), 2u);
+
+    // Find entries (order not guaranteed)
+    double log_zz_A = 0, log_zz_B = 0;
+    for (const auto& [name, val] : zz) {
+        if (name == "A") log_zz_A = val;
+        if (name == "B") log_zz_B = val;
+    }
+    EXPECT_NEAR(log_zz_A, 10.0, 1e-10);
+    EXPECT_NEAR(log_zz_B, std::log(0.01) + 10.0, 1e-10);
 }

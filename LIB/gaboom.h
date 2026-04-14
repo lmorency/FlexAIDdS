@@ -260,4 +260,6 @@ float 	calculate_stddev(ClusterChrom* Chrom, int num_chrom);
 float 	calculate_mean(ClusterChrom* Chrom, int num_chrom);
 int 	DistanceComparator(const void*, const void*);
 
+size_t	hash_genes(const gene* g, int n);
+
 #endif // include guard

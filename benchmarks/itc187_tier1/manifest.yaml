@@ -1,0 +1,24 @@
+# ITC-187 Tier-1 Benchmark Bundle
+# 5 entropy-diverse complexes for fast CI validation
+#
+# Selected to maximise entropy_rescue_rate signal:
+#   3 entropy-driven binders (|TΔS| > |ΔH|)
+#   2 enthalpy-driven binders (|ΔH| > |TΔS|)
+
+reproducibility_level: replayable-from-repository-artifacts
+dataset: itc187
+tier: 1
+targets:
+  - 1a4g   # Trypsin / benzamidine — entropy-driven
+  - 2rh1   # β2-AR / carazolol — entropy-driven (GPCR)
+  - 3dzy   # ERα / estradiol — entropy-driven (nuclear receptor)
+  - 2hz4   # p38α / SB203580 — enthalpy-driven (kinase)
+  - 1p62   # DHFR / methotrexate — enthalpy-driven (antibiotic target)
+
+expected_baselines:
+  scoring_power_pearson_r: 0.93
+  scoring_power_rmse: 1.40
+  docking_power_top1: 0.78
+  entropy_rescue_rate: 0.72
+
+baseline_tolerance: 0.05

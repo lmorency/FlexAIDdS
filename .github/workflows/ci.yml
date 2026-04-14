@@ -18,8 +18,8 @@ jobs:
       matrix:
         os: [ubuntu-latest]
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
         with:
           python-version: '3.11'
       - name: Install test dependencies
@@ -90,7 +90,7 @@ jobs:
               -DCMAKE_EXE_LINKER_FLAGS='-fsanitize=address,undefined'
           # windows-msvc excluded: deep MSVC C++20 incompatibilities in legacy sources
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |
@@ -150,8 +150,8 @@ jobs:
             os: windows-latest
             allow_failure: true
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
         with:
           python-version: '3.11'
       - name: Install build dependencies (Linux)

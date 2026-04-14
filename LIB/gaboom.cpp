@@ -1037,19 +1037,10 @@ int reproduce(FA_Global* FA,GB_Global* GB,VC_Global* VC, chromosome* chrom, cons
 	return nrejected;
 }
 
-<<<<<<< HEAD
-static size_t hash_genes(const gene genes[], int num_genes){
-	size_t h = 0;
-	for(int i = 0; i < num_genes; ++i){
-		auto v = static_cast<int32_t>(genes[i].to_ic + 0.5);
-		h ^= std::hash<int32_t>{}(v) + 0x9e3779b9 + (h << 6) + (h >> 2);
-	}
-=======
 size_t hash_genes(const gene* g, int n){
 	size_t h = 0;
 	for(int i = 0; i < n; ++i)
 		h ^= std::hash<int32_t>{}(static_cast<int32_t>(g[i].to_ic + 0.5)) + 0x9e3779b9 + (h << 6) + (h >> 2);
->>>>>>> ce3b671 (perf: replace string chromosome signatures with integer hashing)
 	return h;
 }
 
@@ -1358,7 +1349,8 @@ void calculate_fitness(FA_Global* FA,GB_Global* GB,VC_Global* VC,chromosome* chr
 	if (!ctx.dispatch_logged) {
 		auto report = flexaids::get_dispatch_report();
 		fprintf(stderr, "[FlexAIDdS] Hardware dispatch: %s (%s)\n",
-		        flexaids::backend_name(report.selected), report.reason.c_str());
+		        flexaids::backend_name(static_cast<flexaids::HardwareBackend>(
+		            static_cast<uint8_t>(report.selected))), report.reason.c_str());
 		ctx.dispatch_logged = true;
 	}
 

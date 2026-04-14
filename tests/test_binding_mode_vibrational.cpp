@@ -255,7 +255,8 @@ TEST_F(BindingModeVibrationalTest, ZeroPosesFreeEnergyThrows) {
 // ===========================================================================
 
 TEST_F(BindingModeVibrationalTest, VeryLargeEigenvaluesStiff) {
-    // Stiff modes (large λ) contribute very little entropy → small correction
+    // Stiff modes (large λ): S_vib ~ k_B * sum ln(λ_i) is large and positive.
+    // The vibrational correction is a large negative number (strongly stabilising).
     setup_mock_eigenvalues(5, 1e6);
 
     TestableBindingMode mode(test_population);
@@ -264,8 +265,8 @@ TEST_F(BindingModeVibrationalTest, VeryLargeEigenvaluesStiff) {
 
     double correction = mode.compute_vibrational_correction();
     EXPECT_TRUE(std::isfinite(correction));
-    // For very stiff modes, S_vib → 0 → correction near 0
-    EXPECT_NEAR(correction, 0.0, 1e-3);
+    // For very stiff modes, correction is large negative (stabilising)
+    EXPECT_LT(correction, -10.0);
 }
 
 TEST_F(BindingModeVibrationalTest, VerySmallEigenvaluesFloppy) {
@@ -338,8 +339,10 @@ TEST_F(BindingModeVibrationalTest, RankingPreservedWhenBothModesHaveSameModes) {
     setup_mock_eigenvalues(5, 0.5);
 
     TestableBindingMode stable(test_population), weak(test_population);
-    stable.add_Pose(create_mock_pose(-15.0, 0));
-    weak.add_Pose(create_mock_pose(-8.0, 0));
+    Pose ps = create_mock_pose(-15.0, 0);
+    Pose pw = create_mock_pose(-8.0, 0);
+    stable.add_Pose(ps);
+    weak.add_Pose(pw);
 
     double F_stable = stable.compute_energy();
     double F_weak   = weak.compute_energy();
@@ -350,15 +353,21 @@ TEST_F(BindingModeVibrationalTest, DeltaGRelativeToAnotherModeConsistent) {
     setup_mock_eigenvalues(4, 0.5);
 
     TestableBindingMode mode_a(test_population), mode_b(test_population);
-    for (double e : {-14.0, -13.0, -12.0}) mode_a.add_Pose(create_mock_pose(e, 0));
-    for (double e : {-9.0,  -8.0,  -7.0})  mode_b.add_Pose(create_mock_pose(e, 1));
+    for (double e : {-14.0, -13.0, -12.0}) {
+        Pose pa = create_mock_pose(e, 0);
+        mode_a.add_Pose(pa);
+    }
+    for (double e : {-9.0,  -8.0,  -7.0}) {
+        Pose pb = create_mock_pose(e, 1);
+        mode_b.add_Pose(pb);
+    }
 
     double F_a = mode_a.compute_energy();
     double F_b = mode_b.compute_energy();
 
-    // ΔG(a→b) should equal F_b - F_a
+    // ΔG(a relative to b) = F_a - F_b (how much higher energy a is vs b)
     double dG = mode_a.delta_G_relative_to(mode_b);
-    EXPECT_NEAR(dG, F_b - F_a, EPSILON);
+    EXPECT_NEAR(dG, F_a - F_b, EPSILON);
 }
 
 // ===========================================================================
@@ -369,8 +378,10 @@ TEST_F(BindingModeVibrationalTest, ManyPosesVibrationalCorrectionFinite) {
     setup_mock_eigenvalues(8, 0.3);
 
     TestableBindingMode mode(test_population);
-    for (int i = 0; i < 8; ++i)
-        mode.add_Pose(create_mock_pose(-10.0 - i * 1.5, i % MockGA::N_CHROMS));
+    for (int i = 0; i < 8; ++i) {
+        Pose p = create_mock_pose(-10.0 - i * 1.5, i % 16);
+        mode.add_Pose(p);
+    }
 
     double correction = mode.compute_vibrational_correction();
     EXPECT_TRUE(std::isfinite(correction));

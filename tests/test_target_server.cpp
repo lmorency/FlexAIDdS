@@ -199,7 +199,7 @@ TEST(TargetServer, RedockingOverwrite) {
     s1.log_Z = 5.0;
     server.register_result(s1);
 
-    double dG_first = server.grand_partition().free_energy("aspirin");
+    double dG_first = server.grand_partition().F_bound("aspirin");
 
     // Re-dock with a better estimate (overwrite, not merge)
     auto s2 = server.create_session("aspirin");
@@ -208,7 +208,7 @@ TEST(TargetServer, RedockingOverwrite) {
     server.register_result(s2);
 
     // ΔG should reflect the overwrite value, not a merge
-    double dG_after = server.grand_partition().free_energy("aspirin");
+    double dG_after = server.grand_partition().F_bound("aspirin");
     EXPECT_NEAR(dG_after, -statmech::kB_kcal * 300.0 * 8.0, 1e-10);
 
     // Re-docking with worse estimate should give less favorable ΔG
@@ -216,7 +216,7 @@ TEST(TargetServer, RedockingOverwrite) {
     s3.completed = true;
     s3.log_Z = 3.0;
     server.register_result(s3);
-    double dG_worse = server.grand_partition().free_energy("aspirin");
+    double dG_worse = server.grand_partition().F_bound("aspirin");
     EXPECT_GT(dG_worse, dG_after);  // less favorable
 }
 

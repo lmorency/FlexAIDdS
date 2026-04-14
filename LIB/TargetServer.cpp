@@ -51,12 +51,8 @@ void TargetServer::register_result(const DockingSession& session)
 {
     if (!session.completed) return;
 
-    // Register into grand partition function (overwrite on re-docking)
-    if (grand_xi_.has_ligand(session.ligand_name)) {
-        grand_xi_.overwrite_ligand(session.ligand_name, session.log_Z);
-    } else {
-        grand_xi_.add_ligand(session.ligand_name, session.log_Z);
-    }
+    // Register into grand partition function (atomic insert-or-overwrite)
+    grand_xi_.add_or_overwrite(session.ligand_name, session.log_Z);
 
     // Accumulate conformer knowledge (CCBM) and binding center
     {

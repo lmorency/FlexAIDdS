@@ -684,9 +684,12 @@ TEST_F(StatMechEngineTest, ExtremeEnergySpreadLogsumexpStable) {
     EXPECT_TRUE(std::isfinite(th.entropy));
     EXPECT_TRUE(std::isfinite(th.heat_capacity));
 
-    // With the extreme spread at T=300, essentially all weight is on -500
+    // With the extreme spread at T=300, most weight is on the lowest energy.
+    // E=-500 vs E=-499: gap is only β×1 ≈ 1.68 kT, so -499 gets ~15.7%.
     auto w = eng.boltzmann_weights();
-    EXPECT_GT(w[0], 0.99);
+    EXPECT_GT(w[0], 0.80);  // -500 gets ~84%, -499 gets ~16%
+    EXPECT_LT(w[2], 1e-50); // -1 and +500 are effectively zero
+    EXPECT_LT(w[3], 1e-50);
 }
 
 TEST_F(StatMechEngineTest, AllIdenticalEnergiesNoNan) {

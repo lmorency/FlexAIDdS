@@ -54,7 +54,7 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Install build dependencies
         run: |
@@ -64,7 +64,7 @@ jobs:
 
       - name: Cache build artifacts
         id: cache-build
-        uses: actions/cache@v5
+        uses: actions/cache@27dce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: build
           key: tier2-build-${{ runner.os }}-${{ hashFiles('CMakeLists.txt', 'LIB/**/*.cpp', 'LIB/**/*.h') }}
@@ -86,7 +86,7 @@ jobs:
           cmake --build build --parallel --target FlexAID
 
       - name: Upload binary artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: flexaid-binary-${{ github.sha }}
           path: build/FlexAID
@@ -109,9 +109,9 @@ jobs:
       DATASET_FILTER: ${{ inputs.datasets || '' }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
         with:
           python-version: "3.11"
           cache: pip
@@ -128,7 +128,7 @@ jobs:
             libopenmpi-dev openmpi-bin
 
       - name: Download FlexAID binary
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: flexaid-binary-${{ github.sha }}
           path: build/
@@ -138,28 +138,28 @@ jobs:
 
       # -- Dataset cache / download --
       - name: Cache CASF-2016 dataset
-        uses: actions/cache@v5
+        uses: actions/cache@27dce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: benchmark_data/casf2016
           key: bench-data-casf2016-v1
           restore-keys: bench-data-casf2016-
 
       - name: Cache ITC-187 dataset
-        uses: actions/cache@v5
+        uses: actions/cache@27dce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: benchmark_data/itc187
           key: bench-data-itc187-v1
           restore-keys: bench-data-itc187-
 
       - name: Cache DUD-E 37 dataset
-        uses: actions/cache@v5
+        uses: actions/cache@27dce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: benchmark_data/dude37
           key: bench-data-dude37-v1
           restore-keys: bench-data-dude37-
 
       - name: Cache MUV dataset
-        uses: actions/cache@v5
+        uses: actions/cache@27dce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: benchmark_data/muv
           key: bench-data-muv-v1
@@ -239,7 +239,7 @@ jobs:
 
       - name: Upload full benchmark results
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: tier2-results-${{ github.sha }}-${{ github.run_id }}
           path: |
@@ -335,14 +335,14 @@ jobs:
         nodes: [4, 8]
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
         with:
           python-version: "3.11"
 
       - name: Download FlexAID binary
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: flexaid-binary-${{ github.sha }}
           path: build/
@@ -372,7 +372,7 @@ jobs:
               --bootstrap
 
       - name: Upload MPI results
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: tier2-mpi-${{ matrix.nodes }}-${{ github.sha }}
           path: results/tier2-mpi-${{ matrix.nodes }}/

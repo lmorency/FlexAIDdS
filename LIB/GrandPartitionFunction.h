@@ -14,7 +14,7 @@
 // From Ξ we compute:
 //   p(empty)     = 1 / Ξ
 //   p(ligand_i)  = z_i·Z_i / Ξ
-//   ΔG(ligand_i) = −kT ln Z_i          (concentration-independent)
+//   F_bound(i)   = −kT ln Z_i          (concentration-independent)
 //   selectivity(A/B) = (z_A·Z_A) / (z_B·Z_B)
 //
 // All arithmetic uses log-space (stores ln Z_i) for numerical stability
@@ -35,6 +35,7 @@
 #include <cmath>
 #include <algorithm>
 #include <stdexcept>
+#include <optional>
 
 namespace target {
 
@@ -42,22 +43,37 @@ class GrandPartitionFunction {
 public:
     explicit GrandPartitionFunction(double temperature_K = 300.0);
 
+    GrandPartitionFunction(const GrandPartitionFunction&) = delete;
+    GrandPartitionFunction& operator=(const GrandPartitionFunction&) = delete;
+    GrandPartitionFunction(GrandPartitionFunction&&) = delete;
+    GrandPartitionFunction& operator=(GrandPartitionFunction&&) = delete;
+
     // ── Ligand registration ────────────────────────────────────────────
 
     /// Register a ligand with its partition function and optional concentration.
     /// @param name       Ligand identifier
     /// @param log_Z      ln(Z_i) from StatMechEngine
-    /// @param concentration_M  Ligand concentration in molar (default 1.0 M = standard state)
+    /// @param concentration_M  Ligand concentration in MOLAR (M). Standard state is 1 M.
+    ///                         Do NOT pass µM or nM directly — convert to M first.
+    ///                         Values > 1000 M are rejected as physically impossible.
     void add_ligand(const std::string& name, double log_Z, double concentration_M = 1.0);
 
     /// Convenience: extract log_Z from a StatMechEngine
+    /// @param concentration_M  Ligand concentration in MOLAR (M). Values > 1000 M rejected.
     void add_ligand(const std::string& name, const statmech::StatMechEngine& engine,
                     double concentration_M = 1.0);
 
+    /// Atomic insert-or-overwrite: if ligand exists, overwrite; otherwise insert.
+    /// Thread-safe — avoids the TOCTOU race between has_ligand() + add/overwrite.
+    /// @param concentration_M  Ligand concentration in MOLAR (M). Values > 1000 M rejected.
+    void add_or_overwrite(const std::string& name, double log_Z, double concentration_M = 1.0);
+
     /// Overwrite an existing ligand's Z (e.g., after re-docking with a better estimate).
+    /// Preserves the existing concentration.
     void overwrite_ligand(const std::string& name, double new_log_Z);
 
     /// Merge an independent ensemble into an existing ligand's Z (log-sum-exp).
+    /// Assumes new_log_Z is at the same concentration as the currently registered entry.
     void merge_ligand(const std::string& name, double new_log_Z);
 
     /// Remove a ligand from the ensemble.
@@ -65,68 +81,80 @@ public:
 
     // ── Thermodynamic queries ──────────────────────────────────────────
 
-    /// ln(Ξ) = ln(1 + Σ_i Z_i)  using log-sum-exp for stability
-    double log_Xi() const;
+    /// ln(Ξ) = ln(1 + Σ_i z_i·Z_i) using log-sum-exp for stability
+    [[nodiscard]] double log_Xi() const;
 
-    /// p(ligand_i bound) = Z_i / Ξ = exp(ln Z_i − ln Ξ)
-    double binding_probability(const std::string& name) const;
+    /// p(ligand_i bound) = z_i·Z_i / Ξ
+    [[nodiscard]] double binding_probability(const std::string& name) const;
 
     /// p(empty) = 1/Ξ = exp(−ln Ξ)
-    double empty_probability() const;
+    [[nodiscard]] double empty_probability() const;
 
-    /// Intrinsic free energy: F = −kT · ln Z_i  (kcal/mol).
-    /// This is the Helmholtz free energy of the bound ensemble,
-    /// NOT the binding free energy (which requires an unbound reference).
-    double free_energy(const std::string& name) const;
+    /// Helmholtz free energy of the bound ensemble: F_bound = −kT · ln Z_i  (kcal/mol).
+    /// This is NOT the binding free energy (which requires an unbound reference).
+    /// Use delta_G_bind() to get ΔG_bind = F_bound − F_ref.
+    [[nodiscard]] double F_bound(const std::string& name) const;
 
     /// Binding free energy: ΔG_bind = F_bound − F_ref.
     /// @param name    Ligand name
     /// @param F_ref   Reference-state free energy (unbound ligand in solution).
     ///                Typically obtained from a separate StatMechEngine on the
-    ///                unbound ensemble. If 0.0, returns −kT ln Z_i directly.
-    double delta_G_bind(const std::string& name, double F_ref = 0.0) const;
+    ///                unbound ensemble. If 0.0, returns F_bound directly.
+    [[nodiscard]] double delta_G_bind(const std::string& name, double F_ref = 0.0) const;
 
-    /// Selectivity ratio: Z_a / Z_b = exp(ln Z_a − ln Z_b).
+    /// Apparent selectivity ratio: (z_A·Z_A) / (z_B·Z_B) — concentration-weighted.
     /// Returns +Inf or 0.0 for extreme ratios (|ΔΔG| > ~700 kT).
-    double selectivity(const std::string& a, const std::string& b) const;
+    [[nodiscard]] double selectivity(const std::string& a, const std::string& b) const;
 
-    /// ln(Z_a / Z_b) = ln Z_a − ln Z_b.  Overflow-safe.
-    double log_selectivity(const std::string& a, const std::string& b) const;
+    /// ln[(z_A·Z_A) / (z_B·Z_B)] — apparent (concentration-weighted). Overflow-safe.
+    [[nodiscard]] double log_selectivity(const std::string& a, const std::string& b) const;
+
+    /// ln(Z_A / Z_B) — intrinsic (concentration-independent). For SAR/potency series.
+    [[nodiscard]] double log_intrinsic_selectivity(const std::string& a,
+                                                    const std::string& b) const;
 
     // ── Ranking ────────────────────────────────────────────────────────
 
     struct LigandRank {
         std::string name;
-        double log_Z;       // ln Z_i
-        double dG;           // −kT ln Z_i (kcal/mol)
-        double p_bound;      // Z_i / Ξ
+        double log_Z;   // ln Z_i
+        double dG;      // −kT ln Z_i (kcal/mol)
+        double p_bound; // z_i·Z_i / Ξ
     };
 
     /// Rank all ligands by ΔG (ascending = most favorable first).
-    std::vector<LigandRank> rank() const;
+    [[nodiscard]] std::vector<LigandRank> rank() const;
 
     // ── State queries ──────────────────────────────────────────────────
 
-    int  num_ligands() const;
-    bool has_ligand(const std::string& name) const;
-    double temperature() const noexcept { return T_; }
+    [[nodiscard]] int  num_ligands() const;
+    [[nodiscard]] bool has_ligand(const std::string& name) const;
+    [[nodiscard]] double temperature() const noexcept { return T_; }
 
-    /// Get all ligand names and their log(Z) values.
-    std::vector<std::pair<std::string, double>> all_log_Z() const;
+    /// Get all ligand names and their intrinsic log(Z) values.
+    [[nodiscard]] std::vector<std::pair<std::string, double>> all_log_Z() const;
+
+    /// Get all ligand names and their concentration-weighted log(z·Z) values.
+    [[nodiscard]] std::vector<std::pair<std::string, double>> all_log_zZ() const;
 
 private:
     double T_;
     double beta_;    // 1/(kT)
 
     struct LigandEntry {
-        double log_Z;          // intrinsic ln(Z_i)
-        double log_zZ;         // ln(z_i · Z_i) = ln(c_i/c°) + ln(Z_i)
+        double log_Z;   // intrinsic ln(Z_i)
+        double log_c;   // ln(c_i/c°) — stored directly to avoid subtraction drift
+        double log_zZ;  // ln(z_i · Z_i) = log_c + log_Z (cached for performance)
     };
     std::unordered_map<std::string, LigandEntry> ligands_;
     mutable std::mutex mtx_;
+    mutable std::optional<double> cached_log_xi_;  // nullopt = dirty
 
-    // Compute ln(Ξ) without holding lock (caller must hold lock)
-    double compute_log_Xi_unlocked() const;
+    // Compute ln(Ξ) from scratch (caller must hold lock)
+    double compute_log_Xi_fresh() const;
+
+    // Return cached ln(Ξ), recomputing if dirty (caller must hold lock)
+    double log_Xi_cached() const;
 };
 
 } // namespace target

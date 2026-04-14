@@ -1,0 +1,34 @@
+name: casf2016-tier1
+kind: scientific-validation
+status: active
+reproducibility_level: replayable-from-repository-artifacts
+purpose: Fast CI-viable validation of scoring and docking power on 5 CASF-2016 complexes
+dataset: CASF-2016 (PDBbind v2016 refined set, tier-1 subset)
+dataset_source: http://www.pdbbind.org.cn/casf.asp
+tier: 1
+tier1_targets:
+  - 1a30   # Neuraminidase
+  - 1gpk   # Carbonic anhydrase II
+  - 1hvr   # HIV-1 protease
+  - 2cgr   # CDK2
+  - 2hb1   # Thrombin
+entrypoint: bash benchmarks/casf2016_tier1/run.sh
+artifacts:
+  - PDB structures downloaded from RCSB
+  - FlexAIDdS docking output per target
+  - Aggregated metrics report
+metrics:
+  - scoring_power_pearson_r
+  - scoring_power_rmse
+  - docking_power_top1
+  - entropy_rescue_rate
+expected_baselines:
+  scoring_power_pearson_r: 0.88
+  scoring_power_rmse: 1.20
+  docking_power_top1: 0.82
+  entropy_rescue_rate: 0.35
+baseline_tolerance: 0.05
+notes:
+  - Tier-1 uses 5 representative complexes for fast CI feedback (~5 min).
+  - Full 285-complex validation is tier-2 (benchmarks/datasets/casf2016.yaml).
+  - PDB structures are fetched from RCSB; ligand files require PDBbind package.

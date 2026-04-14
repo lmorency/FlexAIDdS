@@ -67,7 +67,7 @@ enum class DispatchError : uint8_t {
     LAUNCH_FAILED,
     SYNC_FAILED,
     INVALID_ARGS,
-    OVERFLOW,
+    ERR_OVERFLOW,
     DEVICE_LOST,
 };
 
@@ -202,6 +202,8 @@ public:
 
     DispatchReport get_dispatch_report() const;
 
+    Backend select_cpu_backend() const;
+
 private:
     UnifiedHardwareDispatch() = default;
 
@@ -231,9 +233,6 @@ private:
     float rmsd_avx2(const float* a, const float* b, int n);
     float rmsd_avx512(const float* a, const float* b, int n);
     float rmsd_openmp(const float* a, const float* b, int n);
-
-    // CPU-only backend selection helper
-    Backend select_cpu_backend() const;
 };
 
 }  // namespace hw

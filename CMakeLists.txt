@@ -361,6 +361,7 @@ target_sources(FlexAID PRIVATE
         # ── TargetServer: target-centric docking architecture ──
         LIB/TargetValidation.cpp
         LIB/GrandPartitionFunction.cpp
+        LIB/MultiSiteGPF.cpp
         LIB/TargetKnowledgeBase.cpp
         LIB/TargetServer.cpp
 )
@@ -1123,6 +1124,8 @@ if(BUILD_TESTING)
         target_compile_options(test_encom PRIVATE -O2)
     endif()
     flexaids_configure_msvc_test(test_encom)
+    target_link_libraries(test_encom PRIVATE Eigen3::Eigen)
+    target_compile_definitions(test_encom PRIVATE FLEXAIDS_HAS_EIGEN)
     add_test(NAME ENCoMTests COMMAND test_encom)
 
     # test_ring_conformer_library — RingConformerLibrary + ring detection tests
@@ -1564,6 +1567,8 @@ flexaids_configure_simd(test_cavity_detect)
     else()
         target_compile_options(test_ion_handling PRIVATE -O2)
     endif()
+    target_link_libraries(test_ion_handling PRIVATE Eigen3::Eigen)
+    target_compile_definitions(test_ion_handling PRIVATE FLEXAIDS_HAS_EIGEN)
     add_test(NAME IonHandlingTests COMMAND test_ion_handling)
 
     # test_entropy_ga — SMFREE fitness model, Boltzmann blending, entropy fields
@@ -1878,6 +1883,32 @@ flexaids_configure_simd(test_cavity_detect)
     flexaids_configure_msvc_test(test_target_server)
     add_test(NAME TargetServerTests COMMAND test_target_server)
 
+    # ── MultiSiteGPF tests ──────────────────────────────────────────────
+    add_executable(test_multi_site_gpf
+        tests/test_multi_site_gpf.cpp
+        LIB/MultiSiteGPF.cpp
+        LIB/GrandPartitionFunction.cpp
+        LIB/statmech.cpp
+        LIB/UnifiedHardwareDispatch.cpp
+        LIB/hardware_detect.cpp
+    )
+    target_include_directories(test_multi_site_gpf PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/LIB)
+    target_link_libraries(test_multi_site_gpf PRIVATE GTest::gtest GTest::gtest_main)
+    if(MSVC)
+        target_compile_options(test_multi_site_gpf PRIVATE /O2)
+    else()
+        target_compile_options(test_multi_site_gpf PRIVATE -O2)
+    endif()
+    flexaids_configure_simd(test_multi_site_gpf)
+    if(FLEXAIDS_USE_OPENMP AND OpenMP_CXX_FOUND)
+        target_link_libraries(test_multi_site_gpf PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    target_link_libraries(test_multi_site_gpf PRIVATE Eigen3::Eigen)
+    target_compile_definitions(test_multi_site_gpf PRIVATE FLEXAIDS_HAS_EIGEN)
+    flexaids_configure_msvc_test(test_multi_site_gpf)
+    add_test(NAME MultiSiteGPFTests COMMAND test_multi_site_gpf)
+
     # test_gist_hbond — GIST evaluator + directional H-bond scoring
     add_executable(test_gist_hbond tests/test_gist_hbond.cpp
                    LIB/GISTEvaluator.cpp LIB/HBondEvaluator.cpp)
@@ -1891,7 +1922,7 @@ flexaids_configure_simd(test_cavity_detect)
     flexaids_configure_msvc_test(test_gist_hbond)
     add_test(NAME GISTHBondTests COMMAND test_gist_hbond)
 
-    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_tencom_diff, test_target_validation, test_grand_partition, test_target_server")
+    message(STATUS "Unit tests enabled — build targets: test_statmech, test_hardware_dispatch, test_tencom_diff, test_target_validation, test_grand_partition, test_target_server, test_multi_site_gpf")
     # test_hbond_potential — Angular-dependent H-bond potential unit tests
     add_executable(test_hbond_potential
         tests/test_hbond_potential.cpp
@@ -2095,11 +2126,11 @@ if(BUILD_SWIFT_BRIDGE)
     )
     target_link_libraries(test_process_ligand PRIVATE GTest::gtest GTest::gtest_main)
     if(MSVC)
-        target_compile_options(test_process_ligand PRIVATE /O2)
+        target_compile_options(test_process_ligand PRIVATE /Od /Zi)
         target_compile_definitions(test_process_ligand PRIVATE
             _CRT_SECURE_NO_WARNINGS _USE_MATH_DEFINES NOMINMAX)
     else()
-        target_compile_options(test_process_ligand PRIVATE -O2)
+        target_compile_options(test_process_ligand PRIVATE -O0 -g3)
     endif()
     target_link_libraries(test_process_ligand PRIVATE Eigen3::Eigen)
     target_compile_definitions(test_process_ligand PRIVATE FLEXAIDS_HAS_EIGEN)
@@ -2119,9 +2150,9 @@ if(BUILD_SWIFT_BRIDGE)
     )
     target_link_libraries(test_ligand_ring_flex PRIVATE GTest::gtest GTest::gtest_main)
     if(MSVC)
-        target_compile_options(test_ligand_ring_flex PRIVATE /O2)
+        target_compile_options(test_ligand_ring_flex PRIVATE /Od /Zi)
     else()
-        target_compile_options(test_ligand_ring_flex PRIVATE -O2)
+        target_compile_options(test_ligand_ring_flex PRIVATE -O0 -g3)
     endif()
     target_link_libraries(test_ligand_ring_flex PRIVATE Eigen3::Eigen)
     target_compile_definitions(test_ligand_ring_flex PRIVATE FLEXAIDS_HAS_EIGEN)
@@ -2219,5 +2250,6 @@ if(BUILD_SWIFT_BRIDGE)
     flexaids_configure_simd(test_docking_pipeline)
     flexaids_configure_msvc_test(test_docking_pipeline)
     add_test(NAME DockingPipelineTests COMMAND test_docking_pipeline)
+    set_tests_properties(DockingPipelineTests PROPERTIES LABELS "integration")
 
 endif()
