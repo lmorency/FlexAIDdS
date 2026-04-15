@@ -361,4 +361,87 @@ bool detect_entropy_plateau(const std::vector<double>& history,
     return true;
 }
 
+// ─── EntropyEventDetector ───────────────────────────────────────────────────
+
+EntropyEventDetector::EntropyEventDetector(
+    int window_size, double collapse_threshold,
+    double expansion_threshold, int oscillation_window)
+    : window_size_(window_size > 0 ? window_size : 8)
+    , collapse_threshold_(collapse_threshold)
+    , expansion_threshold_(expansion_threshold > 0 ? expansion_threshold : -collapse_threshold)
+    , oscillation_window_(oscillation_window > 0 ? oscillation_window : 5)
+    , event_history_(oscillation_window_, EntropyEventType::None) {}
+
+void EntropyEventDetector::reset() {
+    history_.clear();
+    event_history_.assign(oscillation_window_, EntropyEventType::None);
+}
+
+bool EntropyEventDetector::detect_oscillation() const {
+    int alternations = 0;
+    for (size_t i = 1; i < event_history_.size(); ++i) {
+        auto prev = event_history_[i - 1];
+        auto curr = event_history_[i];
+        if ((prev == EntropyEventType::Collapse && curr == EntropyEventType::Expansion) ||
+            (prev == EntropyEventType::Expansion && curr == EntropyEventType::Collapse)) {
+            ++alternations;
+        }
+    }
+    return alternations >= 2;
+}
+
+EntropyEventResult EntropyEventDetector::push(double entropy) {
+    history_.push_back(entropy);
+
+    int count = static_cast<int>(history_.size());
+    if (count > window_size_) {
+        history_.erase(history_.begin(), history_.begin() + (count - window_size_));
+        count = window_size_;
+    }
+
+    EntropyEventResult result;
+    result.entropy = entropy;
+
+    if (count < 2) {
+        event_history_.push_back(EntropyEventType::None);
+        if (static_cast<int>(event_history_.size()) > oscillation_window_)
+            event_history_.erase(event_history_.begin());
+        return result;
+    }
+
+    double mean = 0.0;
+    for (double v : history_) mean += v;
+    mean /= static_cast<double>(count);
+
+    double var = 0.0;
+    for (double v : history_) { double d = v - mean; var += d * d; }
+    var /= static_cast<double>(count);
+    double std_ = std::sqrt(std::max(0.0, var));
+
+    double delta = entropy - mean;
+    double z = (std_ > 1e-12) ? delta / std_ : 0.0;
+    result.delta = delta;
+    result.z_score = z;
+
+    bool window_ready = (count >= window_size_);
+    EntropyEventType event = EntropyEventType::None;
+
+    if (window_ready && delta < collapse_threshold_) {
+        event = EntropyEventType::Collapse;
+    } else if (window_ready && delta > expansion_threshold_) {
+        event = EntropyEventType::Expansion;
+    }
+
+    event_history_.push_back(event);
+    if (static_cast<int>(event_history_.size()) > oscillation_window_)
+        event_history_.erase(event_history_.begin());
+
+    if (window_ready && event != EntropyEventType::None && detect_oscillation()) {
+        event = EntropyEventType::Oscillation;
+    }
+
+    result.event = event;
+    return result;
+}
+
 } // namespace shannon_thermo

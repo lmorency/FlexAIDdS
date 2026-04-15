@@ -505,6 +505,148 @@ Browse the full documentation at **[lmorency.github.io/FlexAIDdS](https://lmoren
 
 ---
 
+## The Thermodynamic Core: dG = E_enthalpic − T·S_entropic
+
+FlexAID∆S computes binding free energy via the fundamental **enthalpy–entropy decomposition**:
+
+```
+dG = E_CF  +  (−T · S_total)
+   = E_CF  −  T · [S_conf + S_vib + S_rot + S_cratic]
+
+   ─────────   ──────────────────────────────────────
+   exp(−CF/T)   −T · Σ pᵢ ln(pᵢ)        (the two fundamental terms)
+   Enthalpic    Entropic penalty           (binding trades freedom for energy)
+```
+
+This structure — `G = H − TS` — appears throughout nature in a universal two-term form:
+
+```
+E(a, b) = exp(a) − ln(b)
+
+  exp(a)  ≡  the energy landscape   (what the system "wants" to do)
+  −ln(b)  ≡  the entropic penalty   (what the system loses by committing)
+```
+
+In FlexAID∆S specifically:
+
+| Abstract term | FlexAID∆S realization | Physical meaning |
+|:---|:---|:---|
+| `exp(a)` | `exp(−β Eᵢ)` — Boltzmann weights in Z | Energy/enthalpy landscape of conformational states |
+| `−ln(b)` | `−T · k_B · Σ pᵢ ln(pᵢ)` — Shannon configurational entropy | Conformational freedom lost upon binding |
+| Combined | `F = −kT ln Z` — Helmholtz free energy | Net thermodynamic binding strength |
+
+The **log-sum-exp trick** provides numerical stability for the partition function:
+
+```
+ln Z = max_w + ln( Σ exp(wᵢ − max_w) )
+
+where wᵢ = ln(nᵢ) − β · Eᵢ       (unnormalized log-weights)
+      β = 1/(k_B T)                 (inverse temperature)
+```
+
+The entropy follows from the thermodynamic identity:
+
+```
+S = (⟨E⟩ − F) / T  =  k_B · H · ln(2)
+
+where H = −Σ pᵢ log₂(pᵢ)  (Shannon entropy in bits)
+      S = k_B · H · ln(2)  (Gibbs entropy in J/K)
+```
+
+Jaynes (1957) proved these are the **same mathematical object** in different units — this identity is the bridge that connects molecular docking to LLM safety and physiological biofeedback.
+
+---
+
+## From Molecules to Machines: The Triptych
+
+The configurational entropy kernel at the heart of FlexAID∆S has been **ported directly** to [Shannon](https://github.com/lmorency/Shannon), a zero-shot detector for evaluation awareness and strategic deception in frontier LLM agents. The same `EntropyCalculator` also powers [NATURaL](https://github.com/lmorency/NATURaL), which detects autonomic drug response signatures from Apple Watch HRV data. This is not an analogy — it is the **same kernel** operating across three domains:
+
+```
+🔬 FlexAID∆S (in silico)        💊 NATURaL (in vivo)          🤖 Shannon (in silico)
+─────────────────────        ──────────────────        ─────────────────────
+Torsional angles (°)         RR intervals (ms)         Logit scores
+H = −Σ pᵢ log₂(pᵢ)          H = −Σ pᵢ log₂(pᵢ)       H = −Σ pᵢ log₂(pᵢ)
+Binding → ΔS < 0             Drug → ΔH < 0             Eval-aware → ΔH < 0
+            ↘                         ↘                         ↙
+                  Same entropy kernel. Same diagnostic.
+```
+
+### FlexAID∆S ↔ Shannon isomorphism
+
+```
+FlexAID∆S (molecular docking)          Shannon (LLM safety)
+─────────────────────────────          ──────────────────────
+Conformational states {i}          ↔   Token vocabulary {i}
+Energy Eᵢ                           ↔   Logit wᵢ
+Boltzmann: pᵢ = exp(−Eᵢ/kT)/Z      ↔   Softmax: pᵢ = exp(wᵢ)/Z
+S = −k_B · Σ pᵢ ln(pᵢ)             ↔   H = −Σ pᵢ log₂(pᵢ)
+Binding mode lock-in                ↔   Evaluation awareness lock-in
+ΔS_config < 0 (entropy collapses)   ↔   ΔH < −3.2 bits (entropy collapses)
+Temperature T (Kelvin)              ↔   τ_eff = 1/σ²(logit variance)
+Grand canonical Xi                  ↔   Multi-model monitoring
+Thermostat (canonical ensemble)     ↔   Handrail engine (feedback control)
+```
+
+When a drug molecule locks into a binding pocket, the conformational entropy collapses from a multimodal distribution to a unimodal one — the same signature Shannon detects when an LLM shifts from normal generation to evaluation-aware strategic behavior.
+
+### FlexAID∆S ↔ NATURaL isomorphism
+
+```
+FlexAID∆S (computational)             NATURaL (physiological)
+────────────────────────────          ──────────────────────────
+Conformational ensemble           ↔   RR-interval distribution
+ΔS_config (bits) from torsions    ↔   ΔH_hrv (bits) from HRV
+Binding → entropy collapse        ↔   Sympathomimetic → entropy collapse
+Binding → entropy unchanged       ↔   Parasympathomimetic → entropy expansion
+Partition function Z              ↔   HRV power spectrum (frequency-domain Z)
+−TΔS (kcal/mol)                   ↔   ΔH_hrv (bits) from Apple Watch
+```
+
+NATURaL's `CrossDomainValidator` performs **three-way entropy validation**: correlating |ΔS_config| (FlexAID∆S computational), |−TΔS| (SCORPIO ITC measured), and |ΔH_hrv| (NATURaL in-vivo) across substances — confirming that the entropy-collapse framework transcends domain boundaries.
+
+### The grand isomorphism
+
+| Dimension | FlexAID∆S | NATURaL | Shannon |
+|:---|:---|:---|:---|
+| System | Ligand + protein | Autonomic nervous system | LLM agent |
+| Observable | Torsional angles | RR intervals | Logits / token probs |
+| Distribution pᵢ | Boltzmann | HRV histogram | Softmax |
+| Entropy H | −Σ pᵢ log₂(pᵢ) | −Σ pᵢ log₂(pᵢ) | −Σ pᵢ log₂(pᵢ) |
+| Collapse signal | ΔS < 0 (binding) | ΔH < 0 (sympathomimetic) | ΔH < −3.2 bits (eval-aware) |
+| Expansion signal | ΔS > 0 (solvation) | ΔH > 0 (parasympathomimetic) | — |
+| Temperature | T (Kelvin) | 37°C (body) | τ_eff = 1/σ²(logit var) |
+| Partition function | Z = Σ exp(−βEᵢ) | HRV spectral power | Z = Σ exp(wᵢ) |
+| Control | Canonical ensemble | Drug dose | Handrail engine |
+
+**The deep insight**: Whether a ligand locks into a binding pocket, a drug shifts autonomic tone, or an LLM narrows its token distribution when it detects evaluation — all manifest as a drop in H = −Σ pᵢ log₂(pᵢ). The physics is the same; only the "particles" (conformers, heartbeats, tokens) change. Safety training is the refrigerator. Drug binding is the refrigerator. Deep breathing is the refrigerator. Entropy collapse is the symptom. Shannon is the thermometer.
+FlexAID∆S (molecular docking)          Shannon (LLM safety)
+─────────────────────────────          ─────────────────────
+Conformational states {i}          ↔   Token vocabulary {i}
+Energy Eᵢ                           ↔   Logit wᵢ
+Boltzmann: pᵢ = exp(-Eᵢ/kT)/Z      ↔   Softmax: pᵢ = exp(wᵢ)/Z
+S = -k_B · Σ pᵢ ln(pᵢ)             ↔   H = -Σ pᵢ log₂(pᵢ)
+Binding mode lock-in                ↔   Evaluation awareness lock-in
+ΔS_config < 0 (entropy collapses)   ↔   ΔH < -3.2 bits (entropy collapses)
+```
+
+The mathematical identity is exact. Jaynes (1957) proved that Gibbs entropy and Shannon entropy are the same object in different units: `S = k_B · H · ln(2)`. When a drug molecule locks into a binding pocket, the conformational entropy collapses from a multimodal distribution to a unimodal one — the same signature Shannon detects when an LLM shifts from normal generation to evaluation-aware strategic behavior.
+
+The entropy kernel, the log-sum-exp partition function, and the sliding-window z-score detector are **identical code** in both projects. The domain changes (molecules → tokens), but the physics doesn't.
+
+The entropy framework also powers [NATURaL](https://github.com/lmorency/NATURaL), where the same `EntropyCalculator` computes the Shannon Collapse Index (SCI) from heart rate variability — detecting autonomic drug response signatures from Apple Watch data using the same `H = -Σ pᵢ log₂(pᵢ)` formula.
+
+```
+🔬 FlexAID∆S (in silico)        💊 NATURaL (in vivo)          🤖 Shannon (in silico)
+─────────────────────        ─────────────────        ──────────────────
+Torsional angles (°)         RR intervals (ms)         Logit scores
+H = -Σ pᵢ log₂(pᵢ)          H = -Σ pᵢ log₂(pᵢ)       H = -Σ pᵢ log₂(pᵢ)
+Binding → ΔS < 0             Drug → ΔH < 0             Eval-aware → ΔH < 0
+            ↘                         ↘                         ↙
+                  Same entropy kernel. Same diagnostic.
+```
+
+---
+
 ## Publications
 
 If you use FlexAID∆S in your research, please cite:
@@ -515,6 +657,7 @@ If you use FlexAID∆S in your research, please cite:
 
 **Related publications:**
 
+- Morency LP & Najmanovich RJ (2026). Shannon: Entropy Collapse Detection for Evaluation Awareness in Frontier LLM Agents. *Manuscript in preparation.*
 - Morency LP & Najmanovich RJ (2026). FlexAID∆S: Information-Theoretic Entropy Improves Molecular Docking Accuracy and Binding Mode Prediction. *Manuscript in preparation.*
 - Gaudreault F, Morency LP & Najmanovich RJ (2015). NRGsuite: a PyMOL plugin to perform docking simulations in real time. *Bioinformatics* 31(23):3856-8. [DOI:10.1093/bioinformatics/btv458](https://doi.org/10.1093/bioinformatics/btv458)
 - Frappier V et al. (2015). A Coarse-Grained Elastic Network Atom Contact Model. *Proteins* 83(11):2073-82. [DOI:10.1002/prot.24922](https://doi.org/10.1002/prot.24922)

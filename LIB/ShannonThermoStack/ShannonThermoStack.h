@@ -106,4 +106,45 @@ FullThermoResult run_shannon_thermo_stack(
 bool detect_entropy_plateau(const std::vector<double>& history,
                             int window, double rel_threshold);
 
+// ─── entropy event classification (unified framework) ──────────────────────
+// Mirrors Shannon's EntropyEvent enum and NATURaL's EntropyEvent enum.
+// Collapse  = entropy drops (binding lock-in, ordering)
+// Expansion = entropy rises (solvation release, disordering)
+// Oscillation = rapid alternation (unstable binding site, external perturbation)
+enum class EntropyEventType { None = 0, Collapse = 1, Expansion = 2, Oscillation = 3 };
+
+struct EntropyEventResult {
+    EntropyEventType event    = EntropyEventType::None;
+    double            delta   = 0.0;
+    double            z_score = 0.0;
+    double            entropy = 0.0;
+};
+
+// ─── sliding-window entropy event detector ──────────────────────────────────
+// Tracks entropy over a window of recent measurements and classifies events.
+// Used for GA diversity monitoring and binding trajectory analysis.
+class EntropyEventDetector {
+public:
+    explicit EntropyEventDetector(
+        int window_size = 8,
+        double collapse_threshold = -3.2,
+        double expansion_threshold = +3.2,
+        int oscillation_window = 5);
+
+    EntropyEventResult push(double entropy);
+    void reset();
+
+    const std::vector<double>& history() const noexcept { return history_; }
+
+private:
+    int window_size_;
+    double collapse_threshold_;
+    double expansion_threshold_;
+    int oscillation_window_;
+    std::vector<double> history_;
+    std::vector<EntropyEventType> event_history_;
+
+    bool detect_oscillation() const;
+};
+
 } // namespace shannon_thermo
