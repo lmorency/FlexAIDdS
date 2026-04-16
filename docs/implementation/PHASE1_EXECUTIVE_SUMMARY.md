@@ -258,7 +258,7 @@ Tests: 12 PASS | 0 FAIL | Coverage: 87%
 **By:** LP (@BonhommePharma)  
 **Date:** March 7, 2026  
 **Branch:** claude/write-implementation-MglRZ  
-**Commit Reference:** [5ac11c8c](https://github.com/lmorency/FlexAIDdS/commit/5ac11c8c173739071f29b9588c5443527d091b7e)
+**Commit Reference:** [5ac11c8c](https://github.com/LeBonhommePharma/FlexAIDdS/commit/5ac11c8c173739071f29b9588c5443527d091b7e)
 
 ---
 

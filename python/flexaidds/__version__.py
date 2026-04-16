@@ -5,6 +5,6 @@ __version_info__ = (2, 0, 0, "final", 0)
 
 # Build metadata
 __author__ = "Louis-Philippe Morency"
-__email__ = "lp.morency@umontreal.ca"
+__email__ = "lp@thebonhomme.com"
 __license__ = "Apache-2.0"
-__url__ = "https://github.com/lmorency/FlexAIDdS"
+__url__ = "https://github.com/LeBonhommePharma/FlexAIDdS"

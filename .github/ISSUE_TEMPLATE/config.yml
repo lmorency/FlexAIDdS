@@ -1,5 +1,5 @@
 blank_issues_enabled: true
 contact_links:
   - name: Security report
-    url: https://github.com/lmorency/FlexAIDdS/security
+    url: https://github.com/LeBonhommePharma/FlexAIDdS/security
     about: Use private reporting for security-sensitive issues when possible.

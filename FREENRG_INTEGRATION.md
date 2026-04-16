@@ -6,7 +6,7 @@ FlexAID-deltaS entropy-aware docking with NRGRank virtual screening.
 ## FreeNRG Repository
 
 The FreeNRG Python package is maintained at:
-https://github.com/lmorency/FreeNRG
+https://github.com/LeBonhommePharma/FreeNRG
 
 ## What FreeNRG Provides
 

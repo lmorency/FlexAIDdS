@@ -26,15 +26,17 @@ from __future__ import absolute_import, print_function
 
 try:
     from pymol import cmd, stored
+
     PYMOL_AVAILABLE = True
 except ImportError:
     PYMOL_AVAILABLE = False
     import warnings
+
     warnings.warn("PyMOL not available. Plugin functionality disabled.", ImportWarning)
 
 __version__ = "2.0.0-alpha"
 __author__ = "Louis-Philippe Morency"
-__email__ = "lp.morency@umontreal.ca"
+__email__ = "lp@thebonhomme.com"
 
 
 def __init_plugin__(app=None):
@@ -42,8 +44,9 @@ def __init_plugin__(app=None):
     if not PYMOL_AVAILABLE:
         print("FlexAID∆S Plugin: PyMOL not available")
         return
-    
+
     from pymol.plugins import addmenuitemqt
+
     addmenuitemqt("FlexAID∆S", run_plugin_gui)
 
 
@@ -52,8 +55,9 @@ def run_plugin_gui():
     if not PYMOL_AVAILABLE:
         print("ERROR: PyMOL not available")
         return
-    
+
     from .gui import FlexAIDSPanel
+
     dialog = FlexAIDSPanel()
     dialog.show()
 

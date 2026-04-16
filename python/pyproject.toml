@@ -28,7 +28,7 @@ benchmarks-mpi = ["numpy>=2.0.2", "pyyaml>=6.0.3", "mpi4py>=4.1.1"]
 flexaidds-benchmark = "flexaidds.dataset_runner.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/lmorency/FlexAIDdS"
+Homepage = "https://github.com/LeBonhommePharma/FlexAIDdS"
 
 [tool.setuptools.packages.find]
 where = ["."]

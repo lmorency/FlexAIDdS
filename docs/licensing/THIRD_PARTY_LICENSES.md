@@ -219,10 +219,10 @@ This file is maintained alongside FlexAID∆S releases:
 For questions about licensing compliance, see:
 - Main LICENSE file (Apache-2.0 full text)
 - [docs/licensing/clean-room-policy.md](docs/licensing/clean-room-policy.md) (GPL avoidance strategy)
-- GitHub issues: https://github.com/lmorency/FlexAIDdS/issues
+- GitHub issues: https://github.com/LeBonhommePharma/FlexAIDdS/issues
 
 ---
 
 **Maintained by:** Louis-Philippe Morency, PhD (Candidate)  
 **Last Updated:** March 7, 2026  
-**Repository:** https://github.com/lmorency/FlexAIDdS
+**Repository:** https://github.com/LeBonhommePharma/FlexAIDdS

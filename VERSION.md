@@ -3,7 +3,7 @@
 **Current Version**: 2.0.0
 **Release Date**: 2026-04-04
 **Python Package**: 2.0.0 (`python/flexaidds/__version__.py`)
-**Repository**: [github.com/lmorency/FlexAIDdS](https://github.com/lmorency/FlexAIDdS)
+**Repository**: [github.com/LeBonhommePharma/FlexAIDdS](https://github.com/LeBonhommePharma/FlexAIDdS)
 **License**: Apache-2.0
 
 ---

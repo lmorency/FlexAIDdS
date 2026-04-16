@@ -43,7 +43,9 @@ def get_commit_count() -> int:
     """Return total commit count on the current branch."""
     result = subprocess.run(
         ["git", "rev-list", "--count", "HEAD"],
-        capture_output=True, text=True, check=True,
+        capture_output=True,
+        text=True,
+        check=True,
     )
     return int(result.stdout.strip())
 
@@ -234,7 +236,9 @@ def update_html(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Update site stats in index.html")
-    parser.add_argument("--repo", default="lmorency/FlexAIDdS", help="GitHub repo (owner/name)")
+    parser.add_argument(
+        "--repo", default="LeBonhommePharma/FlexAIDdS", help="GitHub repo (owner/name)"
+    )
     parser.add_argument("--html", default="site/index.html", help="Path to index.html")
     args = parser.parse_args()
 
@@ -272,8 +276,11 @@ def main() -> int:
         return 1
 
     changed = update_html(
-        args.html, commit_count, lang_entries,
-        stars=stars, release=release,
+        args.html,
+        commit_count,
+        lang_entries,
+        stars=stars,
+        release=release,
     )
     if changed:
         print(f"Updated {args.html}")

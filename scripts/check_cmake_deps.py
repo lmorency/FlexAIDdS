@@ -120,8 +120,12 @@ def create_issue(repo: str, title: str, body: str) -> bool:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Check CMake FetchContent deps for updates")
     parser.add_argument("--cmake", default="CMakeLists.txt", help="Path to CMakeLists.txt")
-    parser.add_argument("--create-issue", action="store_true", help="Create GitHub issue if deps are outdated")
-    parser.add_argument("--repo", default="lmorency/FlexAIDdS", help="GitHub repo for issue creation")
+    parser.add_argument(
+        "--create-issue", action="store_true", help="Create GitHub issue if deps are outdated"
+    )
+    parser.add_argument(
+        "--repo", default="LeBonhommePharma/FlexAIDdS", help="GitHub repo for issue creation"
+    )
     args = parser.parse_args()
 
     if not os.path.isfile(args.cmake):

@@ -35,7 +35,7 @@ Complete build and installation instructions for FlexAID∆S on all supported pl
 ### From Source (recommended)
 
 ```bash
-git clone https://github.com/lmorency/FlexAIDdS.git && cd FlexAIDdS
+git clone https://github.com/LeBonhommePharma/FlexAIDdS.git && cd FlexAIDdS
 mkdir build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release
 cmake --build . -j $(nproc)
@@ -72,7 +72,7 @@ sudo apt-get update
 sudo apt-get install -y cmake ninja-build libeigen3-dev libomp-dev g++ python3-dev
 
 # Build
-git clone https://github.com/lmorency/FlexAIDdS.git && cd FlexAIDdS
+git clone https://github.com/LeBonhommePharma/FlexAIDdS.git && cd FlexAIDdS
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
 ```
@@ -84,7 +84,7 @@ cmake --build build --parallel
 brew install cmake ninja libomp eigen
 
 # Build
-git clone https://github.com/lmorency/FlexAIDdS.git && cd FlexAIDdS
+git clone https://github.com/LeBonhommePharma/FlexAIDdS.git && cd FlexAIDdS
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
 ```
@@ -95,7 +95,7 @@ cmake --build build --parallel
 
 ```cmd
 REM Open "x64 Native Tools Command Prompt for VS 2022"
-git clone https://github.com/lmorency/FlexAIDdS.git && cd FlexAIDdS
+git clone https://github.com/LeBonhommePharma/FlexAIDdS.git && cd FlexAIDdS
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DFLEXAIDS_USE_OPENMP=OFF -DFLEXAIDS_USE_EIGEN=OFF
 cmake --build build --parallel
 ```

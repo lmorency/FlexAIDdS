@@ -84,7 +84,7 @@ class TestVersionNewer:
 class TestCheckForUpdates:
     FAKE_RELEASE = {
         "tag_name": "v99.0.0",
-        "html_url": "https://github.com/lmorency/FlexAIDdS/releases/tag/v99.0.0",
+        "html_url": "https://github.com/LeBonhommePharma/FlexAIDdS/releases/tag/v99.0.0",
         "body": "Release notes here",
         "published_at": "2026-01-15T00:00:00Z",
         "assets": [
@@ -144,8 +144,10 @@ class TestSelectAssetForPlatform:
             AssetInfo("flexaidds-linux-x86_64.tar.gz", "url1", 100, ""),
             AssetInfo("flexaidds-darwin-arm64.tar.gz", "url2", 100, ""),
         ]
-        with mock.patch("platform.system", return_value="Linux"), \
-             mock.patch("platform.machine", return_value="x86_64"):
+        with (
+            mock.patch("platform.system", return_value="Linux"),
+            mock.patch("platform.machine", return_value="x86_64"),
+        ):
             result = select_asset_for_platform(assets)
         assert result is not None
         assert result.name == "flexaidds-linux-x86_64.tar.gz"
@@ -155,8 +157,10 @@ class TestSelectAssetForPlatform:
             AssetInfo("flexaidds-linux-x86_64.tar.gz", "url1", 100, ""),
             AssetInfo("flexaidds-darwin-arm64.tar.gz", "url2", 100, ""),
         ]
-        with mock.patch("platform.system", return_value="Darwin"), \
-             mock.patch("platform.machine", return_value="arm64"):
+        with (
+            mock.patch("platform.system", return_value="Darwin"),
+            mock.patch("platform.machine", return_value="arm64"),
+        ):
             result = select_asset_for_platform(assets)
         assert result is not None
         assert result.name == "flexaidds-darwin-arm64.tar.gz"
@@ -165,7 +169,9 @@ class TestSelectAssetForPlatform:
         assets = [
             AssetInfo("flexaidds-linux-x86_64.tar.gz", "url1", 100, ""),
         ]
-        with mock.patch("platform.system", return_value="Windows"), \
-             mock.patch("platform.machine", return_value="AMD64"):
+        with (
+            mock.patch("platform.system", return_value="Windows"),
+            mock.patch("platform.machine", return_value="AMD64"),
+        ):
             result = select_asset_for_platform(assets)
         assert result is None

@@ -2,7 +2,7 @@
 
 **Complete 5-Phase Development Plan**  
 **Status as of March 23, 2026**: Phases 1–3 ✅ Complete | Phase 4 🚧 Active | Phase 5 ✅ Complete  
-**Repository**: [lmorency/FlexAIDdS](https://github.com/lmorency/FlexAIDdS) · [NRGlab/FlexAIDdS](https://github.com/NRGlab/FlexAIDdS)  
+**Repository**: [lmorency/FlexAIDdS](https://github.com/LeBonhommePharma/FlexAIDdS) · [NRGlab/FlexAIDdS](https://github.com/NRGlab/FlexAIDdS)  
 **Branch**: `master`  
 **Codebase**: 508 commits · 40K lines C++ · 19K lines Python · 10K lines Swift · 4K lines TypeScript · 12K lines tests
 

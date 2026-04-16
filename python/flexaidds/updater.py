@@ -93,7 +93,7 @@ def _version_newer(latest_tag: str, current_info: tuple) -> bool:
     return (latest_nums, latest_rank) > (current_nums, current_pre)
 
 
-def check_for_updates(repo: str = "lmorency/FlexAIDdS") -> Optional[UpdateInfo]:
+def check_for_updates(repo: str = "LeBonhommePharma/FlexAIDdS") -> Optional[UpdateInfo]:
     """Check GitHub Releases for a newer version.
 
     Returns UpdateInfo if the API call succeeds, None on failure.
